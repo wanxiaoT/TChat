@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
 
 class SettingsManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
@@ -14,46 +16,131 @@ class SettingsManager(context: Context) {
 
     private fun loadSettings(): AppSettings {
         return try {
-            val providerName = prefs.getString("provider", AIProvider.OPENAI.name) ?: AIProvider.OPENAI.name
-            val provider = try {
-                AIProvider.valueOf(providerName)
-            } catch (e: Exception) {
-                AIProvider.OPENAI  // 如果读取失败，使用默认值
-            }
+            val currentProviderId = prefs.getString("current_provider_id", "") ?: ""
+            val providersJson = prefs.getString("providers", "[]") ?: "[]"
 
-            // 读取模型列表（逗号分隔的字符串）
-            val modelsString = prefs.getString("available_models", "") ?: ""
-            val availableModels = if (modelsString.isNotBlank()) {
-                modelsString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-            } else {
-                provider.defaultModels  // 使用默认模型
-            }
-
-            val selectedModel = prefs.getString("selected_model", "") ?: ""
+            val providers = parseProviders(providersJson)
 
             AppSettings(
-                provider = provider,
-                apiKey = prefs.getString("api_key", "") ?: "",
-                endpoint = prefs.getString("endpoint", provider.defaultEndpoint) ?: provider.defaultEndpoint,
-                selectedModel = selectedModel.ifEmpty { availableModels.firstOrNull() ?: "" },
-                availableModels = availableModels
+                currentProviderId = currentProviderId,
+                providers = providers
             )
         } catch (e: Exception) {
-            // 如果出现任何错误，返回默认设置
+            e.printStackTrace()
             AppSettings()
         }
     }
 
+    private fun parseProviders(json: String): List<ProviderConfig> {
+        val providers = mutableListOf<ProviderConfig>()
+        try {
+            val jsonArray = JSONArray(json)
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                providers.add(
+                    ProviderConfig(
+                        id = obj.optString("id", ""),
+                        name = obj.optString("name", ""),
+                        providerType = try {
+                            AIProviderType.valueOf(obj.optString("providerType", "OPENAI"))
+                        } catch (e: Exception) {
+                            AIProviderType.OPENAI
+                        },
+                        apiKey = obj.optString("apiKey", ""),
+                        endpoint = obj.optString("endpoint", ""),
+                        selectedModel = obj.optString("selectedModel", ""),
+                        availableModels = parseStringList(obj.optJSONArray("availableModels"))
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return providers
+    }
+
+    private fun parseStringList(jsonArray: JSONArray?): List<String> {
+        if (jsonArray == null) return emptyList()
+        val list = mutableListOf<String>()
+        for (i in 0 until jsonArray.length()) {
+            list.add(jsonArray.optString(i, ""))
+        }
+        return list.filter { it.isNotEmpty() }
+    }
+
+    private fun serializeProviders(providers: List<ProviderConfig>): String {
+        val jsonArray = JSONArray()
+        providers.forEach { provider ->
+            val obj = JSONObject()
+            obj.put("id", provider.id)
+            obj.put("name", provider.name)
+            obj.put("providerType", provider.providerType.name)
+            obj.put("apiKey", provider.apiKey)
+            obj.put("endpoint", provider.endpoint)
+            obj.put("selectedModel", provider.selectedModel)
+            obj.put("availableModels", JSONArray(provider.availableModels))
+            jsonArray.put(obj)
+        }
+        return jsonArray.toString()
+    }
+
     fun updateSettings(settings: AppSettings) {
         prefs.edit().apply {
-            putString("provider", settings.provider.name)
-            putString("api_key", settings.apiKey)
-            putString("endpoint", settings.endpoint)
-            putString("selected_model", settings.selectedModel)
-            // 将模型列表序列化为逗号分隔的字符串
-            putString("available_models", settings.availableModels.joinToString(","))
+            putString("current_provider_id", settings.currentProviderId)
+            putString("providers", serializeProviders(settings.providers))
             apply()
         }
         _settings.value = settings
+    }
+
+    /**
+     * 添加新的服务商配置
+     */
+    fun addProvider(provider: ProviderConfig) {
+        val currentSettings = _settings.value
+        val newProviders = currentSettings.providers + provider
+        val newSettings = currentSettings.copy(
+            providers = newProviders,
+            currentProviderId = if (currentSettings.currentProviderId.isEmpty()) provider.id else currentSettings.currentProviderId
+        )
+        updateSettings(newSettings)
+    }
+
+    /**
+     * 更新服务商配置
+     */
+    fun updateProvider(provider: ProviderConfig) {
+        val currentSettings = _settings.value
+        val newProviders = currentSettings.providers.map {
+            if (it.id == provider.id) provider else it
+        }
+        updateSettings(currentSettings.copy(providers = newProviders))
+    }
+
+    /**
+     * 删除服务商配置
+     */
+    fun deleteProvider(providerId: String) {
+        val currentSettings = _settings.value
+        val newProviders = currentSettings.providers.filter { it.id != providerId }
+        val newCurrentId = if (currentSettings.currentProviderId == providerId) {
+            newProviders.firstOrNull()?.id ?: ""
+        } else {
+            currentSettings.currentProviderId
+        }
+        updateSettings(currentSettings.copy(
+            providers = newProviders,
+            currentProviderId = newCurrentId
+        ))
+    }
+
+    /**
+     * 设置当前使用的服务商
+     */
+    fun setCurrentProvider(providerId: String) {
+        val currentSettings = _settings.value
+        if (currentSettings.providers.any { it.id == providerId }) {
+            updateSettings(currentSettings.copy(currentProviderId = providerId))
+        }
     }
 }
