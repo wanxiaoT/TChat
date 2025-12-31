@@ -10,6 +10,7 @@
 The author of TChat is from mainland China. It's best to communicate in Simplified Chinese. If you can't, please use a translator. Thank you.
 
 [TChat](https://github.com/wanxiaoT/TChat) By [wanxiaoT](https://github.com/wanxiaoT)
+
 [QQ Group: 819083916](https://qm.qq.com/cgi-bin/qm/qr?k=MhzseFKAGyXOC18WbtNtz3Dh1kl-5uj-&jump_from=webapi&authKey=2Oz35S0JdSNfRwutsIyQZ8Y5k/3NG9iKfpJDUPVvjoxuu4NVYYh5WuIrKSyoFXhB)
 
 ## Features
