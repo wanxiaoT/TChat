@@ -44,8 +44,13 @@ sealed class StreamChunk {
     /** 文本内容块 */
     data class Content(val text: String) : StreamChunk()
 
-    /** 流结束标记 */
-    object Done : StreamChunk()
+    /** 流结束标记（包含统计信息） */
+    data class Done(
+        val inputTokens: Int = 0,  // 输入 token 数
+        val outputTokens: Int = 0,  // 输出 token 数
+        val tokensPerSecond: Double = 0.0,  // 每秒 token 数（TPS）
+        val firstTokenLatency: Long = 0  // 首字延时（毫秒）
+    ) : StreamChunk()
 
     /** 错误 */
     data class Error(val error: AIProviderException) : StreamChunk()

@@ -17,12 +17,14 @@ class SettingsManager(context: Context) {
     private fun loadSettings(): AppSettings {
         return try {
             val currentProviderId = prefs.getString("current_provider_id", "") ?: ""
+            val currentModel = prefs.getString("current_model", "") ?: ""
             val providersJson = prefs.getString("providers", "[]") ?: "[]"
 
             val providers = parseProviders(providersJson)
 
             AppSettings(
                 currentProviderId = currentProviderId,
+                currentModel = currentModel,
                 providers = providers
             )
         } catch (e: Exception) {
@@ -87,6 +89,7 @@ class SettingsManager(context: Context) {
     fun updateSettings(settings: AppSettings) {
         prefs.edit().apply {
             putString("current_provider_id", settings.currentProviderId)
+            putString("current_model", settings.currentModel)
             putString("providers", serializeProviders(settings.providers))
             apply()
         }
@@ -140,7 +143,23 @@ class SettingsManager(context: Context) {
     fun setCurrentProvider(providerId: String) {
         val currentSettings = _settings.value
         if (currentSettings.providers.any { it.id == providerId }) {
-            updateSettings(currentSettings.copy(currentProviderId = providerId))
+            // 切换服务商时，重置模型选择为该服务商的默认模型
+            val provider = currentSettings.providers.find { it.id == providerId }
+            val defaultModel = provider?.selectedModel?.ifEmpty {
+                provider.availableModels.firstOrNull() ?: ""
+            } ?: ""
+            updateSettings(currentSettings.copy(
+                currentProviderId = providerId,
+                currentModel = defaultModel
+            ))
         }
+    }
+
+    /**
+     * 设置当前使用的模型
+     */
+    fun setCurrentModel(model: String) {
+        val currentSettings = _settings.value
+        updateSettings(currentSettings.copy(currentModel = model))
     }
 }

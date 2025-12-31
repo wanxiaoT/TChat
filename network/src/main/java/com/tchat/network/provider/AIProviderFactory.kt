@@ -37,8 +37,9 @@ object AIProviderFactory {
             )
             ProviderType.ANTHROPIC -> createAnthropic(
                 apiKey = config.apiKey,
-                baseUrl = config.baseUrl.ifEmpty { "https://api.anthropic.com/v1" },
-                model = config.model.ifEmpty { "claude-3-5-sonnet-20241022" }
+                // AnthropicProvider 内部会自动处理 /v1 路径
+                baseUrl = config.baseUrl.ifEmpty { "https://api.anthropic.com" },
+                model = config.model.ifEmpty { "claude-sonnet-4-20250514" }
             )
             ProviderType.GEMINI -> createGemini(
                 apiKey = config.apiKey,
@@ -61,13 +62,19 @@ object AIProviderFactory {
 
     /**
      * 创建 Anthropic Provider
+     *
+     * 支持灵活的 baseUrl 格式：
+     * - https://api.anthropic.com
+     * - https://api.anthropic.com/v1
+     * - https://custom.proxy.com/anthropic
      */
     fun createAnthropic(
         apiKey: String,
-        baseUrl: String = "https://api.anthropic.com/v1",
-        model: String = "claude-3-5-sonnet-20241022"
+        baseUrl: String = "https://api.anthropic.com",
+        model: String = "claude-sonnet-4-20250514",
+        maxTokens: Int = 8192
     ): AIProvider {
-        return AnthropicProvider(apiKey, baseUrl, model)
+        return AnthropicProvider(apiKey, baseUrl, model, maxTokens)
     }
 
     /**

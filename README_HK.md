@@ -10,6 +10,7 @@
 TChat嘅作者係大陸人，交流最好用簡體中文，如果唔識用就用翻譯，唔該晒
 
 [TChat](https://github.com/wanxiaoT/TChat) By [wanxiaoT](https://github.com/wanxiaoT)
+[QQ 群：819083916](https://qm.qq.com/cgi-bin/qm/qr?k=MhzseFKAGyXOC18WbtNtz3Dh1kl-5uj-&jump_from=webapi&authKey=2Oz35S0JdSNfRwutsIyQZ8Y5k/3NG9iKfpJDUPVvjoxuu4NVYYh5WuIrKSyoFXhB)
 
 ## 功能特色
 
@@ -48,6 +49,15 @@ TChat嘅作者係大陸人，交流最好用簡體中文，如果唔識用就用
   - 輸出內容TPS/token速度/tokens數量顯示
   - 持久化資料儲存（目前淨係支援API提供商嘅服務持久化儲存）
 
+# v1.1
+
+### 新增功能：
+  - 串流式訊息輸出
+  - 輸出內容token上行/下行/TPS（每秒token數）顯示/首字延時 顯示
+  - 持久化資料儲存（而家支援API提供商嘅服務持久化儲存同本地對話持久化儲存）
+  - 多對話資料接收優化
+  - 優化對話頁面顯示，支援對話頁面揀模型而唔係設定提供商頁面設定對話模型
+  - 支援提供商對多模型
 
 
 

@@ -82,20 +82,109 @@ app → feature-chat → data → network → core
 
 **Color Usage Principles**:
 - Always use semantic colors from `MaterialTheme.colorScheme`, never hardcode colors
-- `primary`/`primaryContainer`: Brand emphasis, key actions
+- `primary`/`primaryContainer`: Brand emphasis, key actions (buttons, FABs, progress indicators)
 - `secondary`/`secondaryContainer`: User-generated content (e.g., user chat bubbles)
+- `tertiary`/`tertiaryContainer`: Complementary accents, tags, badges
+- `surface`, `surfaceVariant`: Background surfaces for content
 - `surfaceContainer*` variants: Different elevation levels for layered surfaces
+  - `surfaceContainerLowest`: Lowest elevation (0dp)
+  - `surfaceContainerLow`: Low elevation (1dp)
+  - `surfaceContainer`: Default elevation (3dp)
+  - `surfaceContainerHigh`: High elevation (6dp) - AI messages
+  - `surfaceContainerHighest`: Highest elevation (12dp)
 - `onXxx` colors: Text/icons on corresponding container (e.g., `onSecondaryContainer` on `secondaryContainer`)
+- `outline`, `outlineVariant`: Borders and dividers
+- `error`/`errorContainer`: Error states and destructive actions
 
 **Component Styling**:
-- Chat bubbles: User messages use `secondaryContainer`, AI messages use `surfaceContainerHigh`
-- Cards: Use `ElevatedCard` or `OutlinedCard` with `surfaceContainerLow`
-- Use `tonalElevation` for subtle depth instead of shadows
+- **Chat bubbles**: User messages use `secondaryContainer`, AI messages use `surfaceContainerHigh`
+- **Cards**: Use `ElevatedCard` or `OutlinedCard` with appropriate surface colors
+  - Elevated: Use `containerColor = MaterialTheme.colorScheme.surfaceContainerLow`
+  - Outlined: Use `colors = CardDefaults.outlinedCardColors()`
+- **Lists**: Use `surface` for list backgrounds, `surfaceVariant` for alternating items
+- **Dialogs**: Use `surface` with `tonalElevation = 6.dp`
+- **Bottom Sheets**: Use `surfaceContainerLow` with rounded top corners
+- Use `tonalElevation` for subtle depth instead of hard shadows
 - Shapes: Use `MaterialTheme.shapes` (extraSmall to extraLarge: 4dp → 32dp rounded corners)
+
+**Typography**:
+- Always use `MaterialTheme.typography` scale
+- `displayLarge/Medium/Small`: Large titles, hero text
+- `headlineLarge/Medium/Small`: Section headers
+- `titleLarge/Medium/Small`: List item titles, card headers
+- `bodyLarge/Medium/Small`: Body text, descriptions
+- `labelLarge/Medium/Small`: Buttons, tabs, chips
+- Avoid custom font sizes; use typography scale variants
+
+**Spacing & Layout**:
+- Use consistent spacing increments: 4dp, 8dp, 12dp, 16dp, 24dp, 32dp
+- Padding hierarchy:
+  - Screen edges: 16dp
+  - Card internal padding: 16dp horizontal, 12dp vertical
+  - List item padding: 16dp horizontal, 8dp vertical
+  - Icon-text spacing: 8dp
+  - Section spacing: 24dp
+- Minimum touch target: 48dp × 48dp for interactive elements
 
 **Icon Coloring**:
 - Vector icons: Use `Icon` component with `tint` parameter, not `Image`
 - Apply `MaterialTheme.colorScheme.onSurface` or `onSurfaceVariant` for proper theme adaptation
+- Use `onSurfaceVariant` for secondary/decorative icons
+- Use `primary` for interactive/branded icons
+
+**Interactive States**:
+- Use `Modifier.clickable` with `indication` for ripple effects
+- Apply `indication = ripple()` for bounded ripples
+- Use `rememberRipple()` for custom ripple colors
+- Hover/focus states automatically handled by Material components
+
+**Common Patterns**:
+- **Settings screens**: Use `Scaffold` with `TopAppBar`, list items with `ListItem` or custom composables
+- **Form inputs**: Use `OutlinedTextField` with proper label, supportingText, and error states
+- **Buttons**:
+  - Primary action: `Button` (filled)
+  - Secondary action: `OutlinedButton` or `TextButton`
+  - Destructive action: `Button` with `colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)`
+- **Loading states**: `CircularProgressIndicator` with `primary` color, 16-24dp size
+- **Empty states**: Centered icon + text with `onSurfaceVariant` color
+
+**Accessibility**:
+- Ensure color contrast ratios meet WCAG AA standards (handled by Material You color system)
+- Provide content descriptions for icons: `contentDescription` parameter
+- Use semantic components when available (e.g., `Switch`, `Checkbox` instead of custom implementations)
+
+**Settings Page Design Requirements**:
+- Use `Scaffold` with `TopAppBar` for consistent navigation
+- Group related settings with section headers using `titleMedium` typography
+- Use `OutlinedCard` or subtle dividers to separate setting groups
+- Setting items should follow Material 3 list item patterns:
+  - Icon (optional, 24dp) + Title + Supporting text (optional) + Trailing element (switch/chevron/etc.)
+  - Padding: 16dp horizontal, 12dp vertical
+  - Minimum height: 56dp
+- Interactive elements (switches, radio buttons) should use Material 3 components
+- Use `IconButton` for navigation and actions
+- Apply proper surface elevation for layered content (dialogs, bottom sheets)
+
+**Chat Screen Design Requirements**:
+- Message bubbles should have asymmetric alignment (user: right, AI: left)
+- User messages: Use `secondaryContainer` background with `large` shape (24dp corners)
+- AI messages: No background, full-width layout with markdown support
+- Message spacing: 4dp vertical between messages, 8dp between user/AI turns
+- Input area: Use `OutlinedTextField` with send button, stick to bottom with `Scaffold` bottomBar
+- Loading indicator: Small `CircularProgressIndicator` (16dp) below streaming message
+- Statistics info: Use `bodySmall` typography with `onSurfaceVariant` color, shown after message completion
+
+**Token Statistics Display**:
+- Position: Below AI message content, after streaming completes
+- Layout: Horizontal row with 12dp spacing between items
+- Typography: `bodySmall` (12sp)
+- Color: `onSurfaceVariant` (low emphasis)
+- Format:
+  - Token count: "150 tokens"
+  - TPS: "25.3 TPS" (1 decimal place)
+  - Latency: "450ms"
+- Only show if tokenCount > 0
+- Hide during streaming (show loading indicator instead)
 
 ### Repository Configuration
 

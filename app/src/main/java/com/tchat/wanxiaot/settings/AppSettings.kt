@@ -1,5 +1,10 @@
 package com.tchat.wanxiaot.settings
 
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.composables.icons.lucide.Bot
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Sparkles
 import java.util.UUID
 
 /**
@@ -20,6 +25,7 @@ data class ProviderConfig(
  */
 data class AppSettings(
     val currentProviderId: String = "",  // 当前使用的服务商 ID
+    val currentModel: String = "",  // 当前使用的模型（可在聊天页面切换）
     val providers: List<ProviderConfig> = emptyList()
 ) {
     /**
@@ -27,6 +33,18 @@ data class AppSettings(
      */
     fun getCurrentProvider(): ProviderConfig? {
         return providers.find { it.id == currentProviderId }
+    }
+
+    /**
+     * 获取当前使用的模型（优先使用 currentModel，否则使用服务商的默认模型）
+     */
+    fun getActiveModel(): String {
+        if (currentModel.isNotBlank()) return currentModel
+        return getCurrentProvider()?.let { provider ->
+            provider.selectedModel.ifEmpty {
+                provider.availableModels.firstOrNull() ?: ""
+            }
+        } ?: ""
     }
 }
 
@@ -36,22 +54,26 @@ data class AppSettings(
 enum class AIProviderType(
     val displayName: String,
     val defaultEndpoint: String,
-    val defaultModels: List<String>
+    val defaultModels: List<String>,
+    val icon: @Composable () -> ImageVector
 ) {
     OPENAI(
         "OpenAI",
         "https://api.openai.com/v1",
-        listOf("gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo")
+        listOf("gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"),
+        icon = { Lucide.Sparkles }
     ),
     ANTHROPIC(
         "Anthropic (Claude)",
         "https://api.anthropic.com/v1",
-        listOf("claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229")
+        listOf("claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"),
+        icon = { Lucide.Bot }
     ),
     GEMINI(
         "Google Gemini",
         "https://generativelanguage.googleapis.com/v1",
-        listOf("gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash")
+        listOf("gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash"),
+        icon = { Lucide.Sparkles }
     )
 }
 

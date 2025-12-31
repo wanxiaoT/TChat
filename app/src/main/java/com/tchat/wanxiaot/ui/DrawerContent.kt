@@ -4,18 +4,22 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tchat.data.model.Chat
+import com.tchat.wanxiaot.settings.ProviderConfig
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -24,12 +28,30 @@ fun DrawerContent(
     chats: List<Chat>,
     currentChatId: String?,
     currentProviderName: String,
+    currentProviderId: String,
+    providers: List<ProviderConfig>,
     onChatSelected: (String) -> Unit,
     onNewChat: () -> Unit,
     onDeleteChat: (String) -> Unit,
     onSettingsClick: () -> Unit,
+    onProviderSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showProviderDialog by remember { mutableStateOf(false) }
+
+    // 服务商选择抽屉
+    if (showProviderDialog) {
+        ProviderSelectionSheet(
+            providers = providers,
+            currentProviderId = currentProviderId,
+            onProviderSelected = { providerId ->
+                onProviderSelected(providerId)
+                showProviderDialog = false
+            },
+            onDismiss = { showProviderDialog = false }
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -84,20 +106,45 @@ fun DrawerContent(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 当前服务商显示
+        // 当前服务商 - 可点击的胶囊按钮
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            shape = MaterialTheme.shapes.medium
+                .padding(horizontal = 4.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .clickable { showProviderDialog = true },
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shape = RoundedCornerShape(24.dp),
+            tonalElevation = 2.dp
         ) {
-            Text(
-                text = "当前: $currentProviderName",
-                modifier = Modifier.padding(12.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "当前服务商",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = currentProviderName,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Icon(
+                    Icons.Outlined.SwapHoriz,
+                    contentDescription = "切换服务商",
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -117,6 +164,152 @@ fun DrawerContent(
         )
     }
 }
+
+/**
+ * 服务商选择抽屉 - Material You 风格的底部抽屉
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ProviderSelectionSheet(
+    providers: List<ProviderConfig>,
+    currentProviderId: String,
+    onProviderSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState()
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 32.dp)
+        ) {
+            // 标题
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "选择服务商",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Icon(
+                    Icons.Outlined.SwapHoriz,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (providers.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "暂无服务商，请先添加",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(providers) { provider ->
+                        ProviderSelectionItem(
+                            provider = provider,
+                            isSelected = provider.id == currentProviderId,
+                            onClick = { onProviderSelected(provider.id) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 服务商选择项
+ */
+@Composable
+fun ProviderSelectionItem(
+    provider: ProviderConfig,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick),
+        color = if (isSelected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        shape = MaterialTheme.shapes.medium,
+        tonalElevation = if (isSelected) 2.dp else 0.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = provider.name.ifEmpty { provider.providerType.displayName },
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = provider.selectedModel.ifEmpty { "未选择模型" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (isSelected) {
+                Icon(
+                    Icons.Outlined.Check,
+                    contentDescription = "已选中",
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+
 
 @Composable
 fun ChatHistoryItem(

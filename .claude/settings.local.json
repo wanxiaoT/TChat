@@ -15,7 +15,16 @@
       "Bash(git reset:*)",
       "Bash(git rebase:*)",
       "Bash(GIT_EDITOR=true git rebase:*)",
-      "Bash(git commit -m \"$(cat <<''EOF''\nAdd multi-language README files\n\n- README.md (简体中文)\n- README_EN.md (English)\n- README_ZH_TW.md (繁體中文 - 台灣)\n- README_HK.md (繁體中文 - 香港)\n- README_ZH_MO.MD (繁體中文 - 澳門)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd multi-language README files\n\n- README.md (简体中文)\n- README_EN.md (English)\n- README_ZH_TW.md (繁體中文 - 台灣)\n- README_HK.md (繁體中文 - 香港)\n- README_ZH_MO.MD (繁體中文 - 澳門)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(.\\gradlew.bat build:*)",
+      "Bash(C:/Users/Administrator/AndroidStudioProjects/TChat/gradlew.bat build --no-daemon)",
+      "Bash(if not exist \"D:\\release\" mkdir \"D:\\release\")",
+      "Bash(copy \"C:\\Users\\Administrator\\AndroidStudioProjects\\TChat\\app\\build\\outputs\\apk\\release\\app-release-unsigned.apk\" \"D:\\release\"\" /Y)",
+      "Bash(del \"C:\\Users\\Administrator\\AndroidStudioProjects\\TChat\\feature-chat\\src\\main\\java\\com\\tchat\\feature\\chat\\markdown\\MarkdownParser.kt\")",
+      "Bash(./gradlew :feature-chat:compileDebugKotlin:*)",
+      "WebFetch(domain:cdn.jsdelivr.net)",
+      "WebFetch(domain:github.com)",
+      "Bash(./gradlew :app:compileDebugKotlin:*)"
     ]
   }
 }

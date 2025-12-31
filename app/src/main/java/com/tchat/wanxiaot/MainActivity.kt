@@ -4,7 +4,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -16,7 +21,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.tchat.data.MessageSender
+import com.tchat.data.database.AppDatabase
 import com.tchat.data.repository.impl.ChatRepositoryImpl
 import com.tchat.feature.chat.ChatScreen
 import com.tchat.feature.chat.ChatViewModel
@@ -26,18 +34,33 @@ import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.DrawerContent
 import com.tchat.wanxiaot.ui.settings.SettingsScreen
 import com.tchat.wanxiaot.ui.theme.TChatTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    // Application 级别的 CoroutineScope，不会因为 Activity 重建而取消
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private lateinit var messageSender: MessageSender
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         val settingsManager = SettingsManager(this)
+        val database = AppDatabase.getInstance(this)
+
+        // 初始化 MessageSender 单例
+        messageSender = MessageSender.getInstance(applicationScope)
 
         setContent {
             TChatTheme {
-                MainScreen(settingsManager = settingsManager)
+                MainScreen(
+                    settingsManager = settingsManager,
+                    database = database,
+                    messageSender = messageSender
+                )
             }
         }
     }
@@ -45,12 +68,20 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(settingsManager: SettingsManager) {
+fun MainScreen(
+    settingsManager: SettingsManager,
+    database: AppDatabase,
+    messageSender: MessageSender
+) {
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val settings by settingsManager.settings.collectAsState()
     val currentProvider = settings.getCurrentProvider()
 
+    val chatDao = database.chatDao()
+    val messageDao = database.messageDao()
+
+    // null表示新对话（懒创建模式）
     var currentChatId by remember { mutableStateOf<String?>(null) }
     var chatList by remember { mutableStateOf(emptyList<com.tchat.data.model.Chat>()) }
     var repository by remember { mutableStateOf<ChatRepositoryImpl?>(null) }
@@ -64,8 +95,9 @@ fun MainScreen(settingsManager: SettingsManager) {
         }
     }
 
-    // 初始化 Repository
-    LaunchedEffect(currentProvider) {
+    // 初始化 Repository（当服务商或模型改变时重新创建）
+    val currentModel = settings.currentModel
+    LaunchedEffect(currentProvider, currentModel) {
         try {
             if (currentProvider != null && currentProvider.apiKey.isNotBlank()) {
                 println("=== 当前服务商 ===")
@@ -76,9 +108,7 @@ fun MainScreen(settingsManager: SettingsManager) {
                 println("Model: ${currentProvider.selectedModel}")
                 println("==================")
 
-                val selectedModel = currentProvider.selectedModel.ifEmpty {
-                    currentProvider.availableModels.firstOrNull() ?: ""
-                }
+                val selectedModel = settings.getActiveModel()
 
                 val providerConfig = AIProviderFactory.ProviderConfig(
                     type = when (currentProvider.providerType) {
@@ -91,7 +121,10 @@ fun MainScreen(settingsManager: SettingsManager) {
                     model = selectedModel
                 )
                 val aiProvider = AIProviderFactory.create(providerConfig)
-                repository = ChatRepositoryImpl(aiProvider)
+                val newRepo = ChatRepositoryImpl(aiProvider, chatDao, messageDao)
+                repository = newRepo
+                // 初始化 MessageSender 的 repository
+                messageSender.init(newRepo)
             } else {
                 println("No valid provider configured")
                 repository = null
@@ -102,29 +135,48 @@ fun MainScreen(settingsManager: SettingsManager) {
         }
     }
 
-    // 监听聊天列表
+    // 监听聊天列表（只更新列表，不自动选择聊天）
     LaunchedEffect(repository) {
         repository?.let { repo ->
             repo.getAllChats().collect { chats ->
                 chatList = chats
-                if (currentChatId == null && chats.isEmpty()) {
-                    val result = repo.createChat("新对话")
-                    if (result is com.tchat.core.util.Result.Success) {
-                        currentChatId = result.data.id
-                    }
-                }
             }
         }
     }
 
-    // 如果显示设置页面
-    if (showSettingsPage) {
-        SettingsScreen(
-            settingsManager = settingsManager,
-            onBack = { showSettingsPage = false }
-        )
-        return
-    }
+    // 主页面与设置页面切换动画
+    AnimatedContent(
+        targetState = showSettingsPage,
+        transitionSpec = {
+            val animationDuration = 200
+            if (targetState) {
+                // 进入设置页面：从右边滑入，主页面向左滑出
+                slideInHorizontally(
+                    animationSpec = tween(animationDuration),
+                    initialOffsetX = { it }
+                ) togetherWith slideOutHorizontally(
+                    animationSpec = tween(animationDuration),
+                    targetOffsetX = { -it }
+                )
+            } else {
+                // 返回主页面：从左边滑入，设置页面向右滑出
+                slideInHorizontally(
+                    animationSpec = tween(animationDuration),
+                    initialOffsetX = { -it }
+                ) togetherWith slideOutHorizontally(
+                    animationSpec = tween(animationDuration),
+                    targetOffsetX = { it }
+                )
+            }
+        },
+        label = "main_settings_transition"
+    ) { isSettingsPage ->
+        if (isSettingsPage) {
+            SettingsScreen(
+                settingsManager = settingsManager,
+                onBack = { showSettingsPage = false }
+            )
+        } else {
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -138,32 +190,32 @@ fun MainScreen(settingsManager: SettingsManager) {
                     chats = chatList,
                     currentChatId = currentChatId,
                     currentProviderName = currentProvider?.name ?: "未配置",
+                    currentProviderId = settings.currentProviderId,
+                    providers = settings.providers,
                     onChatSelected = { chatId ->
                         currentChatId = chatId
                         scope.launch { drawerState.close() }
                     },
                     onNewChat = {
-                        scope.launch {
-                            repository?.let { repo ->
-                                val result = repo.createChat("新对话 ${chatList.size + 1}")
-                                if (result is com.tchat.core.util.Result.Success) {
-                                    currentChatId = result.data.id
-                                }
-                            }
-                            drawerState.close()
-                        }
+                        // 新对话：设置为null进入懒创建模式
+                        currentChatId = null
+                        scope.launch { drawerState.close() }
                     },
                     onDeleteChat = { chatId ->
                         scope.launch {
                             repository?.deleteChat(chatId)
                             if (currentChatId == chatId) {
-                                currentChatId = chatList.firstOrNull { it.id != chatId }?.id
+                                // 删除当前聊天后，进入新对话模式
+                                currentChatId = null
                             }
                         }
                     },
                     onSettingsClick = {
                         scope.launch { drawerState.close() }
                         showSettingsPage = true
+                    },
+                    onProviderSelected = { providerId ->
+                        settingsManager.setCurrentProvider(providerId)
                     }
                 )
             }
@@ -202,12 +254,30 @@ fun MainScreen(settingsManager: SettingsManager) {
                     contentAlignment = Alignment.Center
                 ) {
                     when {
-                        currentChatId != null && repository != null -> {
-                            val viewModel = remember(repository) { ChatViewModel(repository!!) }
+                        repository != null -> {
+                            val viewModel = remember(repository) {
+                                ChatViewModel(repository!!, messageSender)
+                            }
+
+                            // 监听actualChatId变化，同步到currentChatId
+                            val actualChatId by viewModel.actualChatId.collectAsState()
+                            LaunchedEffect(actualChatId) {
+                                if (actualChatId != null && currentChatId == null) {
+                                    // 懒创建完成，更新currentChatId
+                                    currentChatId = actualChatId
+                                }
+                            }
+
                             ChatScreen(
                                 viewModel = viewModel,
-                                chatId = currentChatId!!,
-                                modifier = Modifier.fillMaxSize()
+                                chatId = currentChatId,
+                                modifier = Modifier.fillMaxSize(),
+                                availableModels = currentProvider?.availableModels ?: emptyList(),
+                                currentModel = settings.getActiveModel(),
+                                onModelSelected = { model ->
+                                    settingsManager.setCurrentModel(model)
+                                },
+                                providerIcon = currentProvider?.providerType?.icon?.invoke()
                             )
                         }
                         repository == null -> {
@@ -221,9 +291,6 @@ fun MainScreen(settingsManager: SettingsManager) {
                                     Text("打开设置")
                                 }
                             }
-                        }
-                        else -> {
-                            Text("正在初始化...")
                         }
                     }
                 }
@@ -243,6 +310,8 @@ fun MainScreen(settingsManager: SettingsManager) {
                         }
                 )
             }
+        }
+    }
         }
     }
 }

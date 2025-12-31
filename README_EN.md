@@ -10,6 +10,7 @@
 The author of TChat is from mainland China. It's best to communicate in Simplified Chinese. If you can't, please use a translator. Thank you.
 
 [TChat](https://github.com/wanxiaoT/TChat) By [wanxiaoT](https://github.com/wanxiaoT)
+[QQ Group: 819083916](https://qm.qq.com/cgi-bin/qm/qr?k=MhzseFKAGyXOC18WbtNtz3Dh1kl-5uj-&jump_from=webapi&authKey=2Oz35S0JdSNfRwutsIyQZ8Y5k/3NG9iKfpJDUPVvjoxuu4NVYYh5WuIrKSyoFXhB)
 
 ## Features
 
@@ -48,6 +49,15 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
   - Output content TPS/token speed/tokens count display
   - Persistent data storage (currently only supports persistent storage for API provider services)
 
+# v1.1
+
+### New Features:
+  - Streaming message output
+  - Output content token upload/download/TPS (tokens per second)/first token latency display
+  - Persistent data storage (now supports both API provider persistent storage and local conversation persistent storage)
+  - Multi-conversation data reception optimization
+  - Optimized conversation page display, supports model selection on conversation page instead of provider settings page
+  - Provider multi-model support
 
 
 
