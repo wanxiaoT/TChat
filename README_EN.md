@@ -41,6 +41,7 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
   - RadioButton options support clicking entire row text, using Material You `selectable` interaction
   - Message count input changed from outlined style to underline style (Material You TextField)
   - Input text centered for better visual harmony
+  - Fixed settings page multi-level navigation animation direction: correctly use back animation (slide in from left) when returning from detail page to list page
 
 ---
 

@@ -102,12 +102,20 @@ fun SettingsScreen(
         }
     }
 
+    // 定义页面层级用于判断导航方向
+    fun SettingsSubPage.level(): Int = when (this) {
+        is SettingsSubPage.MAIN -> 0
+        is SettingsSubPage.ASSISTANT_DETAIL, is SettingsSubPage.KNOWLEDGE_DETAIL -> 2
+        else -> 1
+    }
+
     AnimatedContent(
         targetState = currentSubPage,
         transitionSpec = {
             val animationDuration = 100
-            if (targetState is SettingsSubPage.MAIN) {
-                // 返回主页面：从左边滑入，旧页面向右滑出
+            val isNavigatingBack = targetState.level() < initialState.level()
+            if (isNavigatingBack) {
+                // 返回上级页面：从左边滑入，旧页面向右滑出
                 slideInHorizontally(
                     animationSpec = tween(animationDuration),
                     initialOffsetX = { -it }
