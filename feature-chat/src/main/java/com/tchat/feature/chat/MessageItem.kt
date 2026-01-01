@@ -1,5 +1,6 @@
 package com.tchat.feature.chat
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -7,18 +8,24 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Bot
+import com.composables.icons.lucide.Check
+import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronLeft
 import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.ChevronUp
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.RefreshCw
+import com.composables.icons.lucide.X
+import com.composables.icons.lucide.Wrench
 import com.tchat.data.model.Message
 import com.tchat.data.model.MessageRole
+import com.tchat.data.model.ToolResultData
 import com.tchat.feature.chat.markdown.MarkdownText
 
 @Composable
@@ -104,6 +111,12 @@ fun MessageItem(
             Column(
                 modifier = Modifier.weight(1f)
             ) {
+                // 工具执行结果（如果有）
+                if (!message.toolResults.isNullOrEmpty()) {
+                    ToolResultsSection(toolResults = message.toolResults!!)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
                 if (message.content.isNotEmpty()) {
                     MarkdownText(
                         markdown = message.content,
@@ -147,6 +160,102 @@ fun MessageItem(
                                 firstTokenLatency = message.firstTokenLatency
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 工具执行结果区域
+ * 每个工具调用显示为独立的可展开卡片
+ */
+@Composable
+private fun ToolResultsSection(toolResults: List<ToolResultData>) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        toolResults.forEach { result ->
+            ToolCallCard(result = result)
+        }
+    }
+}
+
+/**
+ * 单个工具调用卡片
+ * 显示"调用 xxx 工具"，点击可展开查看详细结果
+ */
+@Composable
+private fun ToolCallCard(result: ToolResultData) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Surface(
+        onClick = { expanded = !expanded },
+        shape = MaterialTheme.shapes.small,
+        color = if (result.isError)
+            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+        else
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp)
+        ) {
+            // 工具调用标题行
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // 状态图标
+                Icon(
+                    imageVector = if (result.isError) Lucide.X else Lucide.Wrench,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = if (result.isError)
+                        MaterialTheme.colorScheme.error
+                    else
+                        MaterialTheme.colorScheme.primary
+                )
+                
+                // 工具名称
+                Text(
+                    text = "调用 ${result.name}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (result.isError)
+                        MaterialTheme.colorScheme.error
+                    else
+                        MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                // 展开/收起图标
+                Icon(
+                    imageVector = if (expanded) Lucide.ChevronUp else Lucide.ChevronDown,
+                    contentDescription = if (expanded) "收起" else "查看详情",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            // 展开后显示结果详情
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    Surface(
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = result.result,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(8.dp)
+                        )
                     }
                 }
             }

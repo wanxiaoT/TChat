@@ -6,12 +6,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tchat.wanxiaot.settings.AIProviderType
 import com.tchat.wanxiaot.settings.ProviderConfig
@@ -26,7 +29,7 @@ import org.json.JSONObject
 import java.util.UUID
 
 /**
- * 服务商编辑页面
+ * 服务商编辑页面 - Material You 设计
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,17 +46,16 @@ fun ProviderEditScreen(
     var providerType by remember { mutableStateOf(provider?.providerType ?: AIProviderType.OPENAI) }
     var apiKey by remember { mutableStateOf(provider?.apiKey ?: "") }
     var endpoint by remember { mutableStateOf(provider?.endpoint ?: providerType.defaultEndpoint) }
-    var availableModels by remember {
-        mutableStateOf(provider?.availableModels?.ifEmpty { providerType.defaultModels }
-            ?: providerType.defaultModels)
-    }
+    var savedModels by remember { mutableStateOf(provider?.availableModels ?: emptyList()) }
     var selectedModel by remember {
-        mutableStateOf(provider?.selectedModel ?: availableModels.firstOrNull() ?: "")
+        mutableStateOf(provider?.selectedModel ?: savedModels.firstOrNull() ?: "")
     }
     var customModel by remember { mutableStateOf("") }
 
+    var fetchedModels by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showModelPicker by remember { mutableStateOf(false) }
+
     var typeExpanded by remember { mutableStateOf(false) }
-    var modelExpanded by remember { mutableStateOf(false) }
     var isFetchingModels by remember { mutableStateOf(false) }
     var fetchError by remember { mutableStateOf<String?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -62,10 +64,7 @@ fun ProviderEditScreen(
     val scope = rememberCoroutineScope()
     val httpClient = remember { OkHttpClient() }
 
-    // 处理系统返回键
-    BackHandler {
-        onBack()
-    }
+    BackHandler { onBack() }
 
     // 删除确认对话框
     if (showDeleteDialog) {
@@ -79,24 +78,23 @@ fun ProviderEditScreen(
                 )
             },
             title = { Text("删除服务商") },
-            text = { Text("确定要删除 \"${name.ifEmpty { "未命名" }}\" 吗？") },
+            text = { Text("确定要删除 \"${name.ifEmpty { "未命名" }}\" 吗？此操作不可撤销。") },
             confirmButton = {
-                FilledTonalButton(
+                Button(
                     onClick = {
                         onDelete?.invoke()
                         showDeleteDialog = false
                         onBack()
                     },
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.error
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
                     )
                 ) {
                     Text("删除")
                 }
             },
             dismissButton = {
-                FilledTonalButton(onClick = { showDeleteDialog = false }) {
+                OutlinedButton(onClick = { showDeleteDialog = false }) {
                     Text("取消")
                 }
             }
@@ -111,37 +109,159 @@ fun ProviderEditScreen(
         )
     }
 
+    // 模型选择器弹窗
+    if (showModelPicker && fetchedModels.isNotEmpty()) {
+        var selectedToAdd by remember { mutableStateOf(setOf<String>()) }
+        
+        AlertDialog(
+            onDismissRequest = { showModelPicker = false },
+            title = { Text("选择要添加的模型") },
+            text = {
+                Column(modifier = Modifier.heightIn(max = 400.dp)) {
+                    Text(
+                        text = "共 ${fetchedModels.size} 个可用模型",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(fetchedModels.size) { index ->
+                            val model = fetchedModels[index]
+                            val isAlreadySaved = savedModels.contains(model)
+                            val isSelected = selectedToAdd.contains(model)
+                            
+                            Surface(
+                                onClick = {
+                                    if (!isAlreadySaved) {
+                                        selectedToAdd = if (isSelected) {
+                                            selectedToAdd - model
+                                        } else {
+                                            selectedToAdd + model
+                                        }
+                                    }
+                                },
+                                color = when {
+                                    isAlreadySaved -> MaterialTheme.colorScheme.surfaceContainerHighest
+                                    isSelected -> MaterialTheme.colorScheme.primaryContainer
+                                    else -> MaterialTheme.colorScheme.surface
+                                },
+                                shape = MaterialTheme.shapes.small,
+                                enabled = !isAlreadySaved
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = model,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = when {
+                                            isAlreadySaved -> MaterialTheme.colorScheme.onSurfaceVariant
+                                            isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+                                            else -> MaterialTheme.colorScheme.onSurface
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (isAlreadySaved) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    } else if (isSelected) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        savedModels = savedModels + selectedToAdd.toList()
+                        if (selectedModel.isEmpty() && savedModels.isNotEmpty()) {
+                            selectedModel = savedModels.first()
+                        }
+                        showModelPicker = false
+                    },
+                    enabled = selectedToAdd.isNotEmpty()
+                ) {
+                    Text("添加 ${selectedToAdd.size} 个")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showModelPicker = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(if (isNew) "添加服务商" else "编辑服务商") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
                 actions = {
                     if (!isNew) {
                         IconButton(onClick = { showQRDialog = true }) {
-                            Icon(
-                                Icons.Outlined.Share,
-                                contentDescription = "分享"
-                            )
+                            Icon(Icons.Outlined.Share, contentDescription = "分享")
                         }
-                    }
-                    if (!isNew && onDelete != null) {
-                        IconButton(onClick = { showDeleteDialog = true }) {
-                            Icon(
-                                Icons.Outlined.Delete,
-                                contentDescription = "删除",
-                                tint = MaterialTheme.colorScheme.error
-                            )
+                        if (onDelete != null) {
+                            IconButton(onClick = { showDeleteDialog = true }) {
+                                Icon(
+                                    Icons.Outlined.Delete,
+                                    contentDescription = "删除",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
                 }
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = {
+                    val newProvider = ProviderConfig(
+                        id = provider?.id ?: UUID.randomUUID().toString(),
+                        name = name.trim().ifEmpty { providerType.displayName },
+                        providerType = providerType,
+                        apiKey = apiKey.trim(),
+                        endpoint = endpoint.trim(),
+                        selectedModel = selectedModel,
+                        availableModels = savedModels
+                    )
+                    onSave(newProvider)
+                    if (isNew) {
+                        settingsManager.setCurrentProvider(newProvider.id)
+                    }
+                    onBack()
+                },
+                icon = { Icon(Icons.Default.Check, contentDescription = null) },
+                text = { Text(if (isNew) "添加" else "保存") },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                expanded = true
             )
         }
     ) { innerPadding ->
@@ -150,307 +270,316 @@ fun ProviderEditScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            // 基本信息卡片
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth()
             ) {
-                // 基本信息分组
-                SectionHeader("基本信息")
-
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("名称") },
-                    placeholder = { Text("例如：我的 OpenAI") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                ExposedDropdownMenuBox(
-                    expanded = typeExpanded,
-                    onExpandedChange = { typeExpanded = !typeExpanded }
-                ) {
-                    OutlinedTextField(
-                        value = providerType.displayName,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("服务商类型") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = providerType.icon(),
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeExpanded) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                    )
-                    ExposedDropdownMenu(
-                        expanded = typeExpanded,
-                        onDismissRequest = { typeExpanded = false }
-                    ) {
-                        AIProviderType.entries.forEach { type ->
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = type.icon(),
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp),
-                                            tint = if (type == providerType) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            }
-                                        )
-                                        Text(
-                                            text = type.displayName,
-                                            color = if (type == providerType) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurface
-                                            }
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    providerType = type
-                                    endpoint = type.defaultEndpoint
-                                    availableModels = type.defaultModels
-                                    selectedModel = type.defaultModels.firstOrNull() ?: ""
-                                    typeExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                // API 配置分组
-                SectionHeader("API 配置")
-
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    label = { Text("API Key") },
-                    placeholder = { Text("sk-xxxxxxxxxxxxxxxxxxxxxxxx") },
-                    supportingText = { Text("需要保密，请妥善保管") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = endpoint,
-                    onValueChange = { endpoint = it },
-                    label = { Text("API 端点") },
-                    placeholder = { Text(providerType.defaultEndpoint) },
-                    supportingText = { Text("留空使用默认端点") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                // 模型配置分组
-                SectionHeader("模型配置")
-
-                // 拉取模型按钮
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Text(
-                        text = "可用模型 (${availableModels.size})",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        text = "基本信息",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
                     )
-                    FilledTonalButton(
-                        onClick = {
-                            scope.launch {
-                                isFetchingModels = true
-                                fetchError = null
-                                try {
-                                    val models = fetchModelsFromApi(
-                                        httpClient = httpClient,
-                                        endpoint = endpoint,
-                                        apiKey = apiKey,
-                                        providerType = providerType
-                                    )
-                                    availableModels = models
-                                    if (models.isNotEmpty() && selectedModel.isEmpty()) {
-                                        selectedModel = models.first()
-                                    }
-                                } catch (e: Exception) {
-                                    fetchError = e.message ?: "拉取失败"
-                                }
-                                isFetchingModels = false
-                            }
-                        },
-                        enabled = !isFetchingModels && apiKey.isNotBlank() && endpoint.isNotBlank()
-                    ) {
-                        if (isFetchingModels) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Text("拉取模型")
-                    }
-                }
 
-                if (fetchError != null) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        shape = MaterialTheme.shapes.small
-                    ) {
-                        Text(
-                            text = fetchError!!,
-                            modifier = Modifier.padding(12.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("名称") },
+                        placeholder = { Text("例如：我的 OpenAI") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
 
-                if (availableModels.isNotEmpty()) {
                     ExposedDropdownMenuBox(
-                        expanded = modelExpanded,
-                        onExpandedChange = { modelExpanded = !modelExpanded }
+                        expanded = typeExpanded,
+                        onExpandedChange = { typeExpanded = !typeExpanded }
                     ) {
                         OutlinedTextField(
-                            value = selectedModel,
+                            value = providerType.displayName,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("选择模型") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded) },
+                            label = { Text("服务商类型") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = providerType.icon(),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeExpanded) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                         )
                         ExposedDropdownMenu(
-                            expanded = modelExpanded,
-                            onDismissRequest = { modelExpanded = false }
+                            expanded = typeExpanded,
+                            onDismissRequest = { typeExpanded = false }
                         ) {
-                            availableModels.forEach { model ->
+                            AIProviderType.entries.forEach { type ->
                                 DropdownMenuItem(
-                                    text = { Text(model) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = type.icon(),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp),
+                                            tint = if (type == providerType)
+                                                MaterialTheme.colorScheme.primary
+                                            else
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    text = {
+                                        Text(
+                                            text = type.displayName,
+                                            color = if (type == providerType)
+                                                MaterialTheme.colorScheme.primary
+                                            else
+                                                MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
                                     onClick = {
-                                        selectedModel = model
-                                        modelExpanded = false
+                                        providerType = type
+                                        endpoint = type.defaultEndpoint
+                                        savedModels = type.defaultModels
+                                        selectedModel = type.defaultModels.firstOrNull() ?: ""
+                                        typeExpanded = false
                                     }
                                 )
                             }
                         }
                     }
                 }
+            }
 
-                // 手动输入模型
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.Top
+            // API 配置卡片
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    Text(
+                        text = "API 配置",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
                     OutlinedTextField(
-                        value = customModel,
-                        onValueChange = { customModel = it },
-                        label = { Text("手动输入模型") },
-                        placeholder = { Text("输入模型名称") },
-                        modifier = Modifier.weight(1f),
+                        value = apiKey,
+                        onValueChange = { apiKey = it },
+                        label = { Text("API Key") },
+                        placeholder = { Text("sk-xxxxxxxxxxxxxxxxxxxxxxxx") },
+                        supportingText = { Text("需要保密，请妥善保管") },
+                        modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
-                    FilledTonalButton(
-                        onClick = {
-                            if (customModel.isNotBlank()) {
-                                if (!availableModels.contains(customModel)) {
-                                    availableModels = availableModels + customModel
-                                }
-                                selectedModel = customModel
-                                customModel = ""
-                            }
-                        },
-                        enabled = customModel.isNotBlank(),
-                        modifier = Modifier.padding(top = 8.dp)
-                    ) {
-                        Text("添加")
-                    }
+
+                    OutlinedTextField(
+                        value = endpoint,
+                        onValueChange = { endpoint = it },
+                        label = { Text("API 端点") },
+                        placeholder = { Text(providerType.defaultEndpoint) },
+                        supportingText = { Text("留空使用默认端点") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.weight(1f))
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 底部操作按钮
-            Surface(
-                tonalElevation = 3.dp,
-                shadowElevation = 8.dp
+            // 模型配置卡片
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Button(
-                        onClick = {
-                            val newProvider = ProviderConfig(
-                                id = provider?.id ?: UUID.randomUUID().toString(),
-                                name = name.trim().ifEmpty { providerType.displayName },
-                                providerType = providerType,
-                                apiKey = apiKey.trim(),
-                                endpoint = endpoint.trim(),
-                                selectedModel = selectedModel,
-                                availableModels = availableModels
-                            )
-                            onSave(newProvider)
-                            if (isNew) {
-                                settingsManager.setCurrentProvider(newProvider.id)
-                            }
-                        },
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = apiKey.isNotBlank() && endpoint.isNotBlank()
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            if (isNew) "添加并使用" else "保存",
-                            modifier = Modifier.padding(vertical = 4.dp)
+                            text = "模型配置",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
                         )
+                        FilledTonalButton(
+                            onClick = {
+                                scope.launch {
+                                    isFetchingModels = true
+                                    fetchError = null
+                                    try {
+                                        val models = fetchModelsFromApi(
+                                            httpClient = httpClient,
+                                            endpoint = endpoint,
+                                            apiKey = apiKey,
+                                            providerType = providerType
+                                        )
+                                        fetchedModels = models
+                                        showModelPicker = true
+                                    } catch (e: Exception) {
+                                        fetchError = e.message ?: "拉取失败"
+                                    }
+                                    isFetchingModels = false
+                                }
+                            },
+                            enabled = !isFetchingModels && apiKey.isNotBlank() && endpoint.isNotBlank()
+                        ) {
+                            if (isFetchingModels) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text("拉取模型")
+                        }
                     }
 
-                    if (!isNew) {
-                        OutlinedButton(
-                            onClick = {
-                                settingsManager.setCurrentProvider(provider!!.id)
-                            },
-                            modifier = Modifier.fillMaxWidth()
+                    if (fetchError != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = MaterialTheme.shapes.small
                         ) {
                             Text(
-                                "设为当前使用",
-                                modifier = Modifier.padding(vertical = 4.dp)
+                                text = fetchError!!,
+                                modifier = Modifier.padding(12.dp),
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodySmall
                             )
+                        }
+                    }
+
+                    Text(
+                        text = "已保存 ${savedModels.size} 个模型",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // 已保存的模型列表
+                    if (savedModels.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            savedModels.forEach { model ->
+                                Surface(
+                                    onClick = { selectedModel = model },
+                                    color = if (model == selectedModel)
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.surfaceContainerLow,
+                                    shape = MaterialTheme.shapes.small
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            if (model == selectedModel) {
+                                                Icon(
+                                                    Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp),
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                            Text(
+                                                text = model,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = if (model == selectedModel)
+                                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                                else
+                                                    MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                savedModels = savedModels - model
+                                                if (selectedModel == model) {
+                                                    selectedModel = savedModels.firstOrNull() ?: ""
+                                                }
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Outlined.Delete,
+                                                contentDescription = "删除",
+                                                modifier = Modifier.size(18.dp),
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            shape = MaterialTheme.shapes.small
+                        ) {
+                            Text(
+                                text = "暂无保存的模型，请拉取或手动添加",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    // 手动添加模型
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = customModel,
+                            onValueChange = { customModel = it },
+                            label = { Text("手动添加") },
+                            placeholder = { Text("模型名称") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        FilledIconButton(
+                            onClick = {
+                                if (customModel.isNotBlank()) {
+                                    if (!savedModels.contains(customModel)) {
+                                        savedModels = savedModels + customModel
+                                    }
+                                    selectedModel = customModel
+                                    customModel = ""
+                                }
+                            },
+                            enabled = customModel.isNotBlank()
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "添加")
                         }
                     }
                 }
             }
+
+            // 底部留空给 FAB
+            Spacer(modifier = Modifier.height(80.dp))
         }
     }
-}
-
-/**
- * 分组标题组件
- */
-@Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-    )
 }
 
 /**

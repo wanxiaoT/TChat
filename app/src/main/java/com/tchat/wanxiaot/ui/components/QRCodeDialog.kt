@@ -12,8 +12,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,8 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.util.QRCodeGenerator
@@ -33,8 +32,9 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * 二维码显示对话框
+ * 二维码分享弹窗 - Material You BottomSheet 风格
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QRCodeDialog(
     provider: ProviderConfig,
@@ -42,120 +42,179 @@ fun QRCodeDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // 导出选项
+    var includeModels by remember { mutableStateOf(true) }
 
     // 生成二维码
-    val qrBitmap = remember(provider) {
-        val json = QRCodeGenerator.providerToJson(provider)
+    val qrBitmap = remember(provider, includeModels) {
+        val json = QRCodeGenerator.providerToJson(provider, includeModels)
         QRCodeGenerator.generateQRCode(json, 512)
     }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = MaterialTheme.shapes.extraLarge,
-            tonalElevation = 6.dp,
-            color = MaterialTheme.colorScheme.surface
+    // 计算预计大小
+    val estimatedSize = remember(provider, includeModels) {
+        val json = QRCodeGenerator.providerToJson(provider, includeModels)
+        "${json.length}B"
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            // 标题栏
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // 标题栏
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "分享配置",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    IconButton(onClick = onDismiss) {
-                        Icon(
-                            Icons.Outlined.Close,
-                            contentDescription = "关闭"
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 服务商名称
                 Text(
-                    text = provider.name.ifEmpty { provider.providerType.displayName },
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "共享你的LLM模型",
+                    style = MaterialTheme.typography.titleLarge
                 )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 二维码图片
-                Box(
-                    modifier = Modifier
-                        .size(256.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            shape = MaterialTheme.shapes.medium
-                        )
-                        .padding(16.dp)
-                ) {
-                    Image(
-                        bitmap = qrBitmap.asImageBitmap(),
-                        contentDescription = "二维码",
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 提示文字
-                Text(
-                    text = "扫描二维码导入配置",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // 操作按钮
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // 保存按钮
-                    OutlinedButton(
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(
                         onClick = {
                             scope.launch {
                                 saveQRCodeToGallery(context, qrBitmap, provider.name)
                             }
-                        },
-                        modifier = Modifier.weight(1f)
+                        }
                     ) {
                         Icon(
-                            Icons.Outlined.Save,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            Icons.Outlined.Download,
+                            contentDescription = "保存",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("保存")
                     }
-
-                    // 分享按钮
-                    Button(
+                    IconButton(
                         onClick = {
                             scope.launch {
                                 shareQRCode(context, qrBitmap, provider.name)
                             }
-                        },
-                        modifier = Modifier.weight(1f)
+                        }
                     ) {
                         Icon(
                             Icons.Outlined.Share,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            contentDescription = "分享",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("分享")
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 导出选项
+            Text(
+                text = "导出选项",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 包含模型列表选项
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = includeModels,
+                    onCheckedChange = { includeModels = it }
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "包含模型列表（${provider.availableModels.size} 个模型）",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            // 预计大小
+            Row(
+                modifier = Modifier.padding(start = 12.dp, top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "预计大小：",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = estimatedSize,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 二维码卡片
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // 服务商名称
+                    Text(
+                        text = provider.name.ifEmpty { provider.providerType.displayName },
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // API 端点
+                    Text(
+                        text = provider.endpoint,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // 二维码
+                    Box(
+                        modifier = Modifier
+                            .size(280.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.surface,
+                                shape = MaterialTheme.shapes.medium
+                            )
+                            .padding(8.dp)
+                    ) {
+                        Image(
+                            bitmap = qrBitmap.asImageBitmap(),
+                            contentDescription = "二维码",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // 署名
+                    Text(
+                        text = "由 Tchat - By wanxiaoT 生成",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }
@@ -174,7 +233,6 @@ private suspend fun saveQRCodeToGallery(
         val fileName = "TChat_${providerName.replace(" ", "_")}_${System.currentTimeMillis()}.png"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Android 10+ 使用 MediaStore
             val contentValues = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/png")
@@ -192,7 +250,6 @@ private suspend fun saveQRCodeToGallery(
                 }
             }
         } else {
-            // Android 9 及以下
             val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
             val tchatDir = File(picturesDir, "TChat")
             if (!tchatDir.exists()) tchatDir.mkdirs()
@@ -222,7 +279,6 @@ private suspend fun shareQRCode(
     providerName: String
 ) = withContext(Dispatchers.IO) {
     try {
-        // 保存临时文件
         val cacheDir = File(context.cacheDir, "share")
         if (!cacheDir.exists()) cacheDir.mkdirs()
 
@@ -232,14 +288,12 @@ private suspend fun shareQRCode(
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
         }
 
-        // 获取 FileProvider URI
         val uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
             file
         )
 
-        // 创建分享 Intent
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
             putExtra(Intent.EXTRA_STREAM, uri)

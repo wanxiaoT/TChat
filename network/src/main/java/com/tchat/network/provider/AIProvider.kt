@@ -4,7 +4,7 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * AI 服务提供商接口
- * 支持异步流式聊天
+ * 支持异步流式聊天和工具调用
  */
 interface AIProvider {
     /**
@@ -15,17 +15,40 @@ interface AIProvider {
     suspend fun streamChat(messages: List<ChatMessage>): Flow<StreamChunk>
 
     /**
+     * 发送消息并接收流式响应（支持工具调用）
+     * @param messages 消息列表
+     * @param tools 可用的工具列表
+     * @return 流式响应（可能包含工具调用）
+     */
+    suspend fun streamChatWithTools(
+        messages: List<ChatMessage>,
+        tools: List<ToolDefinition>
+    ): Flow<StreamChunk> = streamChat(messages) // 默认实现忽略工具
+
+    /**
      * 取消当前请求
      */
     fun cancel()
 }
 
 /**
+ * 工具定义
+ */
+data class ToolDefinition(
+    val name: String,
+    val description: String,
+    val parametersJson: String?  // JSON字符串格式的参数定义
+)
+
+/**
  * 聊天消息
  */
 data class ChatMessage(
     val role: MessageRole,
-    val content: String
+    val content: String,
+    val toolCalls: List<ToolCallInfo>? = null,  // AI返回的工具调用
+    val toolCallId: String? = null,              // 工具结果的调用ID
+    val name: String? = null                     // 工具名称（用于工具结果）
 )
 
 /**
@@ -34,8 +57,18 @@ data class ChatMessage(
 enum class MessageRole(val value: String) {
     SYSTEM("system"),
     USER("user"),
-    ASSISTANT("assistant")
+    ASSISTANT("assistant"),
+    TOOL("tool")
 }
+
+/**
+ * 工具调用信息
+ */
+data class ToolCallInfo(
+    val id: String,
+    val name: String,
+    val arguments: String  // JSON字符串
+)
 
 /**
  * 流式数据块
@@ -44,12 +77,15 @@ sealed class StreamChunk {
     /** 文本内容块 */
     data class Content(val text: String) : StreamChunk()
 
+    /** 工具调用块 */
+    data class ToolCall(val toolCalls: List<ToolCallInfo>) : StreamChunk()
+
     /** 流结束标记（包含统计信息） */
     data class Done(
-        val inputTokens: Int = 0,  // 输入 token 数
-        val outputTokens: Int = 0,  // 输出 token 数
-        val tokensPerSecond: Double = 0.0,  // 每秒 token 数（TPS）
-        val firstTokenLatency: Long = 0  // 首字延时（毫秒）
+        val inputTokens: Int = 0,
+        val outputTokens: Int = 0,
+        val tokensPerSecond: Double = 0.0,
+        val firstTokenLatency: Long = 0
     ) : StreamChunk()
 
     /** 错误 */

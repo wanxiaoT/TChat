@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
 /**
  * Google Gemini API Provider
  *
- * 支持完整的 SSE 流式响应处理
+ * 支持完整的 SSE 流式响应处理和工具调用
  */
 class GeminiProvider(
     private val apiKey: String,
@@ -26,13 +26,22 @@ class GeminiProvider(
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
+        // 强制使用 HTTP/1.1，避免某些代理服务器的 HTTP/2 兼容问题
+        .protocols(listOf(Protocol.HTTP_1_1))
         .build()
 
     private var currentCall: Call? = null
 
-    override suspend fun streamChat(messages: List<ChatMessage>): Flow<StreamChunk> = callbackFlow {
-        val jsonBody = buildRequestBody(messages)
-        val request = buildRequest(jsonBody)
+    override suspend fun streamChat(messages: List<ChatMessage>): Flow<StreamChunk> {
+        return streamChatWithTools(messages, emptyList())
+    }
+
+    override suspend fun streamChatWithTools(
+        messages: List<ChatMessage>,
+        tools: List<ToolDefinition>
+    ): Flow<StreamChunk> = callbackFlow {
+        val jsonBody = buildRequestBody(messages, tools)
+        val request = buildRequest(jsonBody, tools.isNotEmpty())
 
         // 统计信息
         val startTime = System.currentTimeMillis()
@@ -40,6 +49,9 @@ class GeminiProvider(
         var outputTokenCount = 0
         var inputTokens = 0
         var outputTokens = 0
+
+        // 工具调用构建器
+        val toolCallsBuilder = mutableMapOf<Int, ToolCallBuilder>()
 
         currentCall = client.newCall(request)
         currentCall?.enqueue(object : Callback {
@@ -60,7 +72,7 @@ class GeminiProvider(
                         return
                     }
 
-                    processStreamResponse(response) { chunk ->
+                    processStreamResponseWithTools(response, toolCallsBuilder) { chunk ->
                         // 收集统计信息
                         when (chunk) {
                             is StreamChunk.Content -> {
@@ -70,6 +82,14 @@ class GeminiProvider(
                                 outputTokenCount += (chunk.text.length * 0.5).toInt()
                             }
                             is StreamChunk.Done -> {
+                                // 如果有工具调用，先发送
+                                if (toolCallsBuilder.isNotEmpty()) {
+                                    val toolCalls = toolCallsBuilder.values.mapNotNull { it.build() }
+                                    if (toolCalls.isNotEmpty()) {
+                                        trySend(StreamChunk.ToolCall(toolCalls))
+                                    }
+                                }
+
                                 // 优先使用 API 返回的真实 token 数
                                 val finalInputTokens = if (chunk.inputTokens > 0) chunk.inputTokens else inputTokens
                                 val finalOutputTokens = if (chunk.outputTokens > 0) chunk.outputTokens else outputTokenCount
@@ -85,7 +105,7 @@ class GeminiProvider(
                                     tokensPerSecond = tps,
                                     firstTokenLatency = latency
                                 ))
-                                return@processStreamResponse true
+                                return@processStreamResponseWithTools true
                             }
                             else -> {}
                         }
@@ -112,6 +132,25 @@ class GeminiProvider(
 
     override fun cancel() {
         currentCall?.cancel()
+    }
+
+    /**
+     * 用于构建流式工具调用
+     */
+    private class ToolCallBuilder {
+        var id: String = ""
+        var name: String = ""
+        val arguments = StringBuilder()
+
+        fun build(): ToolCallInfo? {
+            return if (name.isNotEmpty()) {
+                // Gemini 不提供 id，我们生成一个
+                val finalId = id.ifEmpty { "call_${System.currentTimeMillis()}_${name.hashCode()}" }
+                ToolCallInfo(finalId, name, arguments.toString().ifEmpty { "{}" })
+            } else {
+                null
+            }
+        }
     }
 
     /**
@@ -217,7 +256,130 @@ class GeminiProvider(
         return false
     }
 
-    private fun buildRequestBody(messages: List<ChatMessage>): String {
+    /**
+     * 处理 SSE 流式响应（支持工具调用）
+     */
+    private fun processStreamResponseWithTools(
+        response: Response,
+        toolCallsBuilder: MutableMap<Int, ToolCallBuilder>,
+        onChunk: (StreamChunk) -> Boolean
+    ) {
+        response.body?.byteStream()?.bufferedReader()?.use { reader ->
+            val dataBuffer = StringBuilder()
+
+            reader.lineSequence().forEach { line ->
+                when {
+                    // SSE 数据行
+                    line.startsWith("data: ") -> {
+                        dataBuffer.append(line.substring(6))
+                    }
+                    // 空行表示事件结束
+                    line.isEmpty() && dataBuffer.isNotEmpty() -> {
+                        val data = dataBuffer.toString()
+                        dataBuffer.clear()
+
+                        val shouldStop = processSSEDataWithTools(data, toolCallsBuilder, onChunk)
+                        if (shouldStop) {
+                            return@use
+                        }
+                    }
+                    // 直接 JSON（非 SSE 格式兼容）
+                    line.startsWith("{") -> {
+                        val shouldStop = processSSEDataWithTools(line, toolCallsBuilder, onChunk)
+                        if (shouldStop) {
+                            return@use
+                        }
+                    }
+                }
+            }
+
+            // 流结束
+            onChunk(StreamChunk.Done())
+        }
+    }
+
+    /**
+     * 处理 SSE 数据（支持工具调用）
+     */
+    private fun processSSEDataWithTools(
+        data: String,
+        toolCallsBuilder: MutableMap<Int, ToolCallBuilder>,
+        onChunk: (StreamChunk) -> Boolean
+    ): Boolean {
+        try {
+            val json = JSONObject(data)
+
+            // 检查错误
+            if (json.has("error")) {
+                val error = json.getJSONObject("error")
+                val errorMsg = error.optString("message", "Unknown error")
+                val errorCode = error.optInt("code", 0)
+
+                val exception = when (errorCode) {
+                    400 -> AIProviderException.InvalidRequestError(errorMsg)
+                    401, 403 -> AIProviderException.AuthenticationError(errorMsg)
+                    429 -> AIProviderException.RateLimitError(errorMsg)
+                    500, 503 -> AIProviderException.ServiceUnavailableError(errorMsg)
+                    else -> AIProviderException.UnknownError(errorMsg)
+                }
+                onChunk(StreamChunk.Error(exception))
+                return true
+            }
+
+            // 提取内容
+            if (json.has("candidates")) {
+                val candidates = json.getJSONArray("candidates")
+                if (candidates.length() > 0) {
+                    val candidate = candidates.getJSONObject(0)
+                    val content = candidate.optJSONObject("content")
+
+                    if (content != null && content.has("parts")) {
+                        val parts = content.getJSONArray("parts")
+                        for (i in 0 until parts.length()) {
+                            val part = parts.getJSONObject(i)
+                            
+                            // 处理文本内容
+                            if (part.has("text")) {
+                                val text = part.getString("text")
+                                if (text.isNotEmpty()) {
+                                    onChunk(StreamChunk.Content(text))
+                                }
+                            }
+                            
+                            // 处理函数调用
+                            if (part.has("functionCall")) {
+                                val functionCall = part.getJSONObject("functionCall")
+                                val name = functionCall.optString("name", "")
+                                val args = functionCall.optJSONObject("args")
+                                
+                                if (name.isNotEmpty()) {
+                                    val builder = ToolCallBuilder()
+                                    builder.name = name
+                                    if (args != null) {
+                                        builder.arguments.append(args.toString())
+                                    }
+                                    toolCallsBuilder[i] = builder
+                                }
+                            }
+                        }
+                    }
+
+                    // 检查是否完成
+                    val finishReason = candidate.optString("finishReason", "")
+                    if (finishReason == "STOP" || finishReason == "MAX_TOKENS" ||
+                        finishReason == "SAFETY" || finishReason == "RECITATION") {
+                        onChunk(StreamChunk.Done())
+                        return true
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // 解析错误时继续处理，不中断流
+        }
+        return false
+    }
+
+    private fun buildRequestBody(messages: List<ChatMessage>, tools: List<ToolDefinition>): String {
         val jsonObject = JSONObject()
 
         // 分离 system 消息和其他消息
@@ -235,24 +397,97 @@ class GeminiProvider(
             jsonObject.put("systemInstruction", systemContent)
         }
 
+        // 添加工具定义
+        if (tools.isNotEmpty()) {
+            val toolsArray = JSONArray()
+            val toolDeclarationsArray = JSONArray()
+            tools.forEach { tool ->
+                val funcDecl = JSONObject()
+                funcDecl.put("name", tool.name)
+                funcDecl.put("description", tool.description)
+                if (tool.parametersJson != null) {
+                    funcDecl.put("parameters", JSONObject(tool.parametersJson))
+                } else {
+                    // 无参数工具
+                    funcDecl.put("parameters", JSONObject().apply {
+                        put("type", "object")
+                        put("properties", JSONObject())
+                    })
+                }
+                toolDeclarationsArray.put(funcDecl)
+            }
+            val toolsObj = JSONObject()
+            toolsObj.put("functionDeclarations", toolDeclarationsArray)
+            toolsArray.put(toolsObj)
+            jsonObject.put("tools", toolsArray)
+        }
+
         val contents = JSONArray()
         otherMessages.forEach { msg ->
             val contentObj = JSONObject()
 
-            // Gemini 使用 "user" 和 "model" 作为角色
-            val role = when (msg.role) {
-                MessageRole.USER -> "user"
-                MessageRole.ASSISTANT -> "model"
-                MessageRole.SYSTEM -> "user" // 已在上面处理
+            when (msg.role) {
+                MessageRole.TOOL -> {
+                    // 工具结果作为 functionResponse
+                    contentObj.put("role", "function")
+                    val parts = JSONArray()
+                    val partObj = JSONObject()
+                    val funcResponse = JSONObject()
+                    funcResponse.put("name", msg.name ?: "")
+                    // 尝试解析 content 为 JSON，否则包装为对象
+                    try {
+                        funcResponse.put("response", JSONObject(msg.content))
+                    } catch (e: Exception) {
+                        funcResponse.put("response", JSONObject().apply {
+                            put("result", msg.content)
+                        })
+                    }
+                    partObj.put("functionResponse", funcResponse)
+                    parts.put(partObj)
+                    contentObj.put("parts", parts)
+                }
+                MessageRole.ASSISTANT -> {
+                    contentObj.put("role", "model")
+                    val parts = JSONArray()
+                    
+                    // 检查是否有工具调用
+                    if (msg.toolCalls != null && msg.toolCalls.isNotEmpty()) {
+                        // 如果有文本内容，先添加
+                        if (msg.content.isNotEmpty()) {
+                            val textPart = JSONObject()
+                            textPart.put("text", msg.content)
+                            parts.put(textPart)
+                        }
+                        // 添加工具调用
+                        msg.toolCalls.forEach { tc ->
+                            val funcCallPart = JSONObject()
+                            val funcCall = JSONObject()
+                            funcCall.put("name", tc.name)
+                            try {
+                                funcCall.put("args", JSONObject(tc.arguments))
+                            } catch (e: Exception) {
+                                funcCall.put("args", JSONObject())
+                            }
+                            funcCallPart.put("functionCall", funcCall)
+                            parts.put(funcCallPart)
+                        }
+                    } else {
+                        val partObj = JSONObject()
+                        partObj.put("text", msg.content)
+                        parts.put(partObj)
+                    }
+                    contentObj.put("parts", parts)
+                }
+                else -> {
+                    // USER 和其他角色
+                    contentObj.put("role", "user")
+                    val parts = JSONArray()
+                    val partObj = JSONObject()
+                    partObj.put("text", msg.content)
+                    parts.put(partObj)
+                    contentObj.put("parts", parts)
+                }
             }
-            contentObj.put("role", role)
-
-            val parts = JSONArray()
-            val partObj = JSONObject()
-            partObj.put("text", msg.content)
-            parts.put(partObj)
-
-            contentObj.put("parts", parts)
             contents.put(contentObj)
         }
 
@@ -266,7 +501,7 @@ class GeminiProvider(
         return jsonObject.toString()
     }
 
-    private fun buildRequest(jsonBody: String): Request {
+    private fun buildRequest(jsonBody: String, hasTools: Boolean = false): Request {
         val url = "$baseUrl/models/$model:streamGenerateContent?key=$apiKey&alt=sse"
 
         return Request.Builder()

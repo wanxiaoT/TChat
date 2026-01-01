@@ -6,21 +6,22 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.composables.icons.lucide.BrainCircuit
+import com.composables.icons.lucide.Lucide
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.components.QRCodeScannerScreen
@@ -46,7 +47,6 @@ fun ProvidersScreen(
     val settings by settingsManager.settings.collectAsState()
     var pageState by remember { mutableStateOf<ProvidersPageState>(ProvidersPageState.List) }
 
-    // 处理系统返回键
     BackHandler {
         when (pageState) {
             is ProvidersPageState.List -> onBack()
@@ -60,7 +60,6 @@ fun ProvidersScreen(
             val animationDuration = 200
             when {
                 targetState is ProvidersPageState.List -> {
-                    // 返回列表页面：从左边滑入，旧页面向右滑出
                     slideInHorizontally(
                         animationSpec = tween(animationDuration),
                         initialOffsetX = { -it }
@@ -70,7 +69,6 @@ fun ProvidersScreen(
                     )
                 }
                 else -> {
-                    // 进入子页面：从右边滑入，旧页面向左滑出
                     slideInHorizontally(
                         animationSpec = tween(animationDuration),
                         initialOffsetX = { it }
@@ -126,7 +124,7 @@ fun ProvidersScreen(
 }
 
 /**
- * 服务商列表内容
+ * 服务商列表内容 - Material You 设计
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -143,25 +141,28 @@ private fun ProvidersListContent(
                 title = { Text("服务商") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
                 actions = {
                     IconButton(onClick = onScan) {
                         Icon(Icons.Outlined.QrCodeScanner, contentDescription = "扫码导入")
                     }
-                    IconButton(onClick = onAddNew) {
-                        Icon(Icons.Default.Add, contentDescription = "添加服务商")
-                    }
                 }
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = onAddNew,
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("添加") },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             )
         }
     ) { innerPadding ->
         if (settings.providers.isEmpty()) {
-            // 空状态 - 居中显示
+            // 空状态
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -173,53 +174,62 @@ private fun ProvidersListContent(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.padding(32.dp)
                 ) {
-                    Icon(
-                        Icons.Default.Settings,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Surface(
+                        shape = MaterialTheme.shapes.extraLarge,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(80.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Lucide.BrainCircuit,
+                                contentDescription = null,
+                                modifier = Modifier.size(40.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
                     Text(
                         "还没有添加服务商",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        "点击右上角 + 添加你的第一个服务商",
+                        "添加一个 AI 服务商开始聊天",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    FilledTonalButton(onClick = onAddNew) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("添加服务商")
-                    }
                 }
             }
         } else {
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
-                    .verticalScroll(rememberScrollState())
+                    .padding(innerPadding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // 分组标题
-                Text(
-                    "我的服务商",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                )
+                item {
+                    Text(
+                        text = "已配置 ${settings.providers.size} 个服务商",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
 
-                settings.providers.forEach { provider ->
+                items(settings.providers, key = { it.id }) { provider ->
                     val isCurrentProvider = provider.id == settings.currentProviderId
 
-                    ProviderListItem(
+                    ProviderCard(
                         provider = provider,
                         isCurrentProvider = isCurrentProvider,
                         onClick = { onEditProvider(provider) }
                     )
+                }
+
+                // 底部留空给 FAB
+                item {
+                    Spacer(modifier = Modifier.height(72.dp))
                 }
             }
         }
@@ -227,53 +237,52 @@ private fun ProvidersListContent(
 }
 
 /**
- * 服务商列表项 - Material 3 设计
+ * 服务商卡片 - Material You 设计
  */
 @Composable
-private fun ProviderListItem(
+private fun ProviderCard(
     provider: ProviderConfig,
     isCurrentProvider: Boolean,
     onClick: () -> Unit
 ) {
-    Surface(
+    ElevatedCard(
         onClick = onClick,
-        color = if (isCurrentProvider) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surface
-        },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = if (isCurrentProvider)
+                MaterialTheme.colorScheme.primaryContainer
+            else
+                MaterialTheme.colorScheme.surface
+        )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // 提供商图标
             Surface(
-                shape = MaterialTheme.shapes.small,
-                color = if (isCurrentProvider) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh
-                }
+                shape = MaterialTheme.shapes.medium,
+                color = if (isCurrentProvider)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.surfaceContainerHighest
             ) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(40.dp)
-                        .padding(8.dp)
+                        .size(48.dp)
+                        .padding(12.dp)
                 ) {
                     Icon(
                         imageVector = provider.providerType.icon(),
                         contentDescription = provider.providerType.displayName,
-                        tint = if (isCurrentProvider) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
+                        tint = if (isCurrentProvider)
+                            MaterialTheme.colorScheme.onPrimary
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -281,67 +290,94 @@ private fun ProviderListItem(
 
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
                     text = provider.name.ifEmpty { "未命名" },
                     style = MaterialTheme.typography.titleMedium,
-                    color = if (isCurrentProvider) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    }
+                    color = if (isCurrentProvider)
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    else
+                        MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = provider.providerType.displayName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (isCurrentProvider) {
-                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                    if (provider.selectedModel.isNotEmpty()) {
+                    // 服务商类型标签
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = if (isCurrentProvider)
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                        else
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                    ) {
                         Text(
-                            text = "•",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isCurrentProvider) {
-                                MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            }
-                        )
-                        Text(
-                            text = provider.selectedModel,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isCurrentProvider) {
-                                MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
+                            text = provider.providerType.displayName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isCurrentProvider)
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
+
+                    // 模型数量标签
+                    if (provider.availableModels.isNotEmpty()) {
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = if (isCurrentProvider)
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                            else
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                        ) {
+                            Text(
+                                text = "${provider.availableModels.size} 个模型",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isCurrentProvider)
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+
+                // 当前使用的模型
+                if (provider.selectedModel.isNotEmpty()) {
+                    Text(
+                        text = "当前: ${provider.selectedModel}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isCurrentProvider)
+                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
 
             if (isCurrentProvider) {
-                Icon(
-                    Icons.Default.Check,
-                    contentDescription = "当前使用",
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.size(24.dp)
-                )
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = "当前使用",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .padding(4.dp)
+                    )
+                }
             }
         }
     }
-
-    // 分隔线
-    HorizontalDivider(
-        modifier = Modifier.padding(start = 16.dp),
-        color = MaterialTheme.colorScheme.outlineVariant
-    )
 }

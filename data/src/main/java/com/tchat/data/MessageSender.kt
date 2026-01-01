@@ -3,6 +3,7 @@ package com.tchat.data
 import com.tchat.core.util.Result
 import com.tchat.data.model.Message
 import com.tchat.data.model.MessageRole
+import com.tchat.data.repository.ChatConfig
 import com.tchat.data.repository.ChatRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -17,11 +18,15 @@ import kotlinx.coroutines.launch
  * 使用 Application 级别的 CoroutineScope，支持：
  * - 切换聊天时继续接收 AI 响应
  * - 多个聊天同时进行流式响应
+ * - 工具调用循环
  */
 class MessageSender(
     private val scope: CoroutineScope
 ) {
     private var repository: ChatRepository? = null
+
+    // 当前聊天配置
+    private var currentConfig: ChatConfig? = null
 
     // 每个聊天的发送任务
     private val sendingJobs = mutableMapOf<String, Job>()
@@ -39,16 +44,24 @@ class MessageSender(
     }
 
     /**
+     * 设置当前聊天配置（包含工具、系统提示等）
+     */
+    fun setConfig(config: ChatConfig?) {
+        this.currentConfig = config
+    }
+
+    /**
      * 发送消息到已有聊天
      */
-    fun sendMessage(chatId: String, content: String) {
+    fun sendMessage(chatId: String, content: String, config: ChatConfig? = null) {
         val repo = repository ?: return
+        val chatConfig = config ?: currentConfig
 
         // 取消同一个聊天的之前请求（避免重复发送）
         sendingJobs[chatId]?.cancel()
 
         sendingJobs[chatId] = scope.launch {
-            repo.sendMessage(chatId, content).collect { result ->
+            repo.sendMessage(chatId, content, chatConfig).collect { result ->
                 when (result) {
                     is Result.Success -> {
                         val message = result.data
@@ -78,8 +91,9 @@ class MessageSender(
      * 发送消息到新聊天（懒创建）
      * @return 创建的 chatId
      */
-    fun sendMessageToNewChat(content: String, onChatCreated: (String) -> Unit) {
+    fun sendMessageToNewChat(content: String, config: ChatConfig? = null, onChatCreated: (String) -> Unit) {
         val repo = repository ?: return
+        val chatConfig = config ?: currentConfig
 
         // 使用临时 ID 标识新聊天任务
         val tempId = "new_${System.currentTimeMillis()}"
@@ -87,7 +101,7 @@ class MessageSender(
         sendingJobs[tempId] = scope.launch {
             var realChatId: String? = null
 
-            repo.sendMessageToNewChat(content).collect { result ->
+            repo.sendMessageToNewChat(content, chatConfig).collect { result ->
                 when (result) {
                     is Result.Success -> {
                         val messageResult = result.data
@@ -148,15 +162,17 @@ class MessageSender(
     fun regenerateMessage(
         chatId: String,
         userMessageId: String,
-        aiMessageId: String
+        aiMessageId: String,
+        config: ChatConfig? = null
     ) {
         val repo = repository ?: return
+        val chatConfig = config ?: currentConfig
 
         // 取消同一个聊天的之前请求
         sendingJobs[chatId]?.cancel()
 
         sendingJobs[chatId] = scope.launch {
-            repo.regenerateMessage(chatId, userMessageId, aiMessageId).collect { result ->
+            repo.regenerateMessage(chatId, userMessageId, aiMessageId, chatConfig).collect { result ->
                 when (result) {
                     is Result.Success -> {
                         val message = result.data

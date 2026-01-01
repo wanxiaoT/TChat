@@ -26,6 +26,7 @@ data class ProviderConfig(
 data class AppSettings(
     val currentProviderId: String = "",  // 当前使用的服务商 ID
     val currentModel: String = "",  // 当前使用的模型（可在聊天页面切换）
+    val currentAssistantId: String = "",  // 当前使用的助手 ID
     val providers: List<ProviderConfig> = emptyList()
 ) {
     /**

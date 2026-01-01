@@ -12,6 +12,25 @@ data class MessageVariant(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+/**
+ * 工具调用信息
+ */
+data class ToolCallData(
+    val id: String,
+    val name: String,
+    val arguments: String
+)
+
+/**
+ * 工具执行结果
+ */
+data class ToolResultData(
+    val toolCallId: String,
+    val name: String,
+    val result: String,
+    val isError: Boolean = false
+)
+
 data class Message(
     val id: String,
     val chatId: String,
@@ -26,7 +45,11 @@ data class Message(
     val firstTokenLatency: Long = 0,
     // 变体支持（仅 AI 消息使用）
     val variants: List<MessageVariant> = emptyList(),
-    val selectedVariantIndex: Int = 0
+    val selectedVariantIndex: Int = 0,
+    // 工具调用支持
+    val toolCalls: List<ToolCallData>? = null,      // AI发起的工具调用
+    val toolCallId: String? = null,                  // 工具结果对应的调用ID
+    val toolResults: List<ToolResultData>? = null    // 工具执行结果（用于显示）
 ) {
     /**
      * 获取当前选中的变体内容
@@ -60,5 +83,6 @@ data class Message(
 enum class MessageRole {
     USER,
     ASSISTANT,
-    SYSTEM
+    SYSTEM,
+    TOOL  // 工具执行结果
 }

@@ -12,20 +12,33 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.tchat.data.database.AppDatabase
+import com.tchat.data.repository.impl.AssistantRepositoryImpl
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.wanxiaot.ui.assistant.AssistantDetailScreen
+import com.tchat.wanxiaot.ui.assistant.AssistantDetailViewModel
+import com.tchat.wanxiaot.ui.assistant.AssistantScreen
+import com.tchat.wanxiaot.ui.assistant.AssistantViewModel
 
 /**
  * 设置子页面类型
  */
-private enum class SettingsSubPage {
-    MAIN, PROVIDERS, ABOUT
+private sealed class SettingsSubPage {
+    data object MAIN : SettingsSubPage()
+    data object PROVIDERS : SettingsSubPage()
+    data object ABOUT : SettingsSubPage()
+    data object LOGCAT : SettingsSubPage()
+    data object ASSISTANTS : SettingsSubPage()
+    data class ASSISTANT_DETAIL(val id: String) : SettingsSubPage()
 }
 
 /**
@@ -35,16 +48,22 @@ private enum class SettingsSubPage {
 @Composable
 fun SettingsScreen(
     settingsManager: SettingsManager,
+    database: AppDatabase,
     onBack: () -> Unit
 ) {
-    var currentSubPage by remember { mutableStateOf(SettingsSubPage.MAIN) }
+    var currentSubPage by remember { mutableStateOf<SettingsSubPage>(SettingsSubPage.MAIN) }
+
+    // 创建助手Repository
+    val assistantRepository = remember(database) {
+        AssistantRepositoryImpl(database.assistantDao())
+    }
 
     // 处理系统返回键
     BackHandler {
-        if (currentSubPage == SettingsSubPage.MAIN) {
-            onBack()
-        } else {
-            currentSubPage = SettingsSubPage.MAIN
+        when (currentSubPage) {
+            is SettingsSubPage.MAIN -> onBack()
+            is SettingsSubPage.ASSISTANT_DETAIL -> currentSubPage = SettingsSubPage.ASSISTANTS
+            else -> currentSubPage = SettingsSubPage.MAIN
         }
     }
 
@@ -52,7 +71,7 @@ fun SettingsScreen(
         targetState = currentSubPage,
         transitionSpec = {
             val animationDuration = 100
-            if (targetState == SettingsSubPage.MAIN) {
+            if (targetState is SettingsSubPage.MAIN) {
                 // 返回主页面：从左边滑入，旧页面向右滑出
                 slideInHorizontally(
                     animationSpec = tween(animationDuration),
@@ -75,21 +94,45 @@ fun SettingsScreen(
         label = "settings_page_transition"
     ) { page ->
         when (page) {
-            SettingsSubPage.MAIN -> {
+            is SettingsSubPage.MAIN -> {
                 SettingsMainContent(
                     onBack = onBack,
                     onProvidersClick = { currentSubPage = SettingsSubPage.PROVIDERS },
-                    onAboutClick = { currentSubPage = SettingsSubPage.ABOUT }
+                    onAboutClick = { currentSubPage = SettingsSubPage.ABOUT },
+                    onLogcatClick = { currentSubPage = SettingsSubPage.LOGCAT },
+                    onAssistantsClick = { currentSubPage = SettingsSubPage.ASSISTANTS }
                 )
             }
-            SettingsSubPage.PROVIDERS -> {
+            is SettingsSubPage.PROVIDERS -> {
                 ProvidersScreen(
                     settingsManager = settingsManager,
                     onBack = { currentSubPage = SettingsSubPage.MAIN }
                 )
             }
-            SettingsSubPage.ABOUT -> {
+            is SettingsSubPage.ABOUT -> {
                 AboutScreen(onBack = { currentSubPage = SettingsSubPage.MAIN })
+            }
+            is SettingsSubPage.LOGCAT -> {
+                LogcatScreen(onBack = { currentSubPage = SettingsSubPage.MAIN })
+            }
+            is SettingsSubPage.ASSISTANTS -> {
+                val viewModel = remember(assistantRepository) {
+                    AssistantViewModel(assistantRepository)
+                }
+                AssistantScreen(
+                    viewModel = viewModel,
+                    onBack = { currentSubPage = SettingsSubPage.MAIN },
+                    onAssistantClick = { id -> currentSubPage = SettingsSubPage.ASSISTANT_DETAIL(id) }
+                )
+            }
+            is SettingsSubPage.ASSISTANT_DETAIL -> {
+                val viewModel = remember(assistantRepository, page.id) {
+                    AssistantDetailViewModel(assistantRepository, page.id)
+                }
+                AssistantDetailScreen(
+                    viewModel = viewModel,
+                    onBack = { currentSubPage = SettingsSubPage.ASSISTANTS }
+                )
             }
         }
     }
@@ -103,7 +146,9 @@ fun SettingsScreen(
 private fun SettingsMainContent(
     onBack: () -> Unit,
     onProvidersClick: () -> Unit,
-    onAboutClick: () -> Unit
+    onAboutClick: () -> Unit,
+    onLogcatClick: () -> Unit,
+    onAssistantsClick: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -182,6 +227,48 @@ private fun SettingsMainContent(
                 }
             }
 
+            // 助手设置卡片
+            OutlinedCard(
+                onClick = onAssistantsClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Person,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "助手",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "管理AI助手和本地工具",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
             // 其他分组标题
@@ -191,6 +278,48 @@ private fun SettingsMainContent(
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
             )
+
+            // 日志查看卡片
+            OutlinedCard(
+                onClick = onLogcatClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.BugReport,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "日志查看",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "查看应用运行日志",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             // 关于卡片
             OutlinedCard(

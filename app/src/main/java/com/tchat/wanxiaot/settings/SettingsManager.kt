@@ -18,6 +18,7 @@ class SettingsManager(context: Context) {
         return try {
             val currentProviderId = prefs.getString("current_provider_id", "") ?: ""
             val currentModel = prefs.getString("current_model", "") ?: ""
+            val currentAssistantId = prefs.getString("current_assistant_id", "") ?: ""
             val providersJson = prefs.getString("providers", "[]") ?: "[]"
 
             val providers = parseProviders(providersJson)
@@ -25,6 +26,7 @@ class SettingsManager(context: Context) {
             AppSettings(
                 currentProviderId = currentProviderId,
                 currentModel = currentModel,
+                currentAssistantId = currentAssistantId,
                 providers = providers
             )
         } catch (e: Exception) {
@@ -90,6 +92,7 @@ class SettingsManager(context: Context) {
         prefs.edit().apply {
             putString("current_provider_id", settings.currentProviderId)
             putString("current_model", settings.currentModel)
+            putString("current_assistant_id", settings.currentAssistantId)
             putString("providers", serializeProviders(settings.providers))
             apply()
         }
@@ -161,5 +164,13 @@ class SettingsManager(context: Context) {
     fun setCurrentModel(model: String) {
         val currentSettings = _settings.value
         updateSettings(currentSettings.copy(currentModel = model))
+    }
+
+    /**
+     * 设置当前使用的助手
+     */
+    fun setCurrentAssistant(assistantId: String) {
+        val currentSettings = _settings.value
+        updateSettings(currentSettings.copy(currentAssistantId = assistantId))
     }
 }

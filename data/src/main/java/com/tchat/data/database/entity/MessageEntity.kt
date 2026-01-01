@@ -8,7 +8,7 @@ import androidx.room.PrimaryKey
 /**
  * 消息实体
  *
- * 借鉴cherry-studio的Message模型设计
+ * 支持工具调用存储
  */
 @Entity(
     tableName = "messages",
@@ -17,7 +17,7 @@ import androidx.room.PrimaryKey
             entity = ChatEntity::class,
             parentColumns = ["id"],
             childColumns = ["chatId"],
-            onDelete = ForeignKey.CASCADE  // 删除聊天时级联删除消息
+            onDelete = ForeignKey.CASCADE
         )
     ],
     indices = [Index(value = ["chatId"])]
@@ -27,7 +27,7 @@ data class MessageEntity(
     val id: String,
     val chatId: String,
     val content: String,
-    val role: String,  // "user", "assistant", "system"
+    val role: String,  // "user", "assistant", "system", "tool"
     val timestamp: Long,
     // 统计信息
     val inputTokens: Int = 0,
@@ -36,5 +36,10 @@ data class MessageEntity(
     val firstTokenLatency: Long = 0,
     // 变体支持（JSON 格式存储）
     val variantsJson: String? = null,
-    val selectedVariantIndex: Int = 0
+    val selectedVariantIndex: Int = 0,
+    // 工具调用支持
+    val toolCallId: String? = null,      // 工具结果对应的调用ID
+    val toolName: String? = null,        // 工具名称（用于工具结果消息）
+    val toolCallsJson: String? = null,   // AI发起的工具调用（JSON数组）
+    val toolResultsJson: String? = null  // 工具执行结果（JSON数组，用于显示）
 )

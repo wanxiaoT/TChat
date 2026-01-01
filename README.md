@@ -26,30 +26,117 @@ TChat的作者是大陆人，交流最好用简体中文，如果不会使用那
 
 
 
-# v1.0
+# v1.2
 
-### 首个正式版本发布！
-### 核心功能
-- **多服务商支持**
-  - Open AI
-  - Anthropic Claude
-  - Gemini
-  **灵活的服务商配置**
-  - 自定义 API Key
-  - 自定义 API 端点（支持第三方代理）
-  - 从 API 自动拉取可用模型列表
-  - 手动输入自定义模型名称
-  - 多服务商配置管理，一键切换
-- **聊天功能**
-  - 非流式回复，实时显示 AI 响应
-  - 多会话管理
-  - 侧边栏聊天记录导航
-  - 新建/删除/切换对话
+### 新增功能
 
-###还没实现的功能：
-  - 流式信息输出
-  - 输出内容TPS/token速度/tokens数量显示
-  - 持久化数据存储（目前仅支持API提供商的服务持久化存储）
+- **服务商多模型管理**
+  - 服务商配置支持从 API 拉取模型列表
+  - 拉取后弹窗选择要保存的模型（支持多选）
+  - 已保存模型可单独删除
+  - 支持手动添加自定义模型
+
+- **聊天页面模型选择**
+  - 在聊天页面输入框上方工具栏选择模型
+  - 使用 **Lucide Icon** 显示模型类型图标
+    - OpenAI → ✨ Sparkles
+    - Claude → 🤖 Bot
+    - Gemini → 🧠 BrainCircuit
+
+- **二维码分享优化**
+  - 使用 ModalBottomSheet 样式替代弹窗
+  - 支持选择是否包含模型列表
+  - 显示预计数据大小
+  - 二维码卡片显示服务商名称和端点
+
+- **Material You 界面重构**
+  - 服务商列表页使用 ElevatedCard 卡片设计
+  - 服务商编辑页使用卡片分组布局
+  - 使用 FAB 浮动按钮替代底部固定按钮
+  - 删除"设为当前使用"按钮（简化操作）
+
+- **本地工具调用功能**
+  - 支持 AI 调用本地工具完成任务
+  - **三大提供商全支持**：OpenAI、Anthropic Claude、Google Gemini 均可使用工具
+  - 聊天工具栏添加工具开关按钮
+  - 工具执行结果可展开查看详情
+  - 支持的工具：
+    - `read_file` - 读取文件内容
+    - `write_file` - 写入文件内容
+    - `list_directory` - 列出目录文件
+    - `delete_file` - 删除文件
+    - `create_directory` - 创建目录
+    - `web_fetch` - 网页内容抓取
+    - `get_system_info` - 获取设备信息
+
+---
+
+### 技术改进详情
+
+#### 1. 工具调用循环机制
+
+**功能**：AI 可以连续调用多个工具完成复杂任务
+
+**实现**：
+- 发送消息时携带工具定义给 AI
+- AI 返回工具调用请求时自动执行
+- 执行结果发送回 AI 继续对话
+- 最多支持 10 轮工具调用，避免无限循环
+
+---
+
+#### 2. 工具结果可视化
+
+**功能**：在聊天界面显示工具执行详情
+
+**实现**：
+- 每个工具调用显示为独立的可点击卡片
+- 显示"调用 xxx"，点击可展开查看详细执行结果
+- 成功使用主题色，失败使用错误色
+
+---
+
+#### 3. 数据库支持工具数据
+
+**修改**：
+- MessageEntity 添加 `toolCallId`、`toolName`、`toolCallsJson`、`toolResultsJson` 字段
+- 数据库版本 5 → 6 迁移
+
+---
+
+#### 4. 无参数工具兼容性修复
+
+**问题**：`get_system_info` 等无参数工具在某些 API（如 Anthropic）中无法被调用
+
+**原因**：无参数工具的 `parameters` 返回 `null`，但 Anthropic 等 API 要求必须有有效的 `input_schema`
+
+**修复**：无参数工具改为返回空对象 `InputSchema.Obj(emptyMap(), emptyList())`
+
+---
+
+### 涉及文件
+
+| 模块 | 文件 | 修改 |
+|------|------|------|
+| network | AIProvider.kt | 添加工具调用相关数据类 |
+| network | OpenAIProvider.kt | 支持 Function Calling |
+| network | AnthropicProvider.kt | 支持 Tool Use（工具调用） |
+| network | GeminiProvider.kt | 支持 Function Calling |
+| data | Tool.kt | 工具定义和执行接口 |
+| data | LocalTools.kt | 本地工具实现 |
+| data | Message.kt | 添加 ToolCallData、ToolResultData |
+| data | MessageEntity.kt | 添加工具相关字段 |
+| data | ChatRepository.kt | 添加 ChatConfig 配置 |
+| data | ChatRepositoryImpl.kt | 工具调用循环实现 |
+| data | AppDatabase.kt | 版本 6，工具字段迁移 |
+| feature-chat | ChatScreen.kt | 工具开关按钮 |
+| feature-chat | MessageItem.kt | 工具结果展示 UI |
+| app | MainActivity.kt | LocalTools 集成 |
+
+---
+
+
+
 
 # v1.1
 
@@ -137,6 +224,33 @@ TChat的作者是大陆人，交流最好用简体中文，如果不会使用那
 | feature-chat | ChatScreen.kt | 连接回调 |
 | network | OpenAIProvider.kt | 修复流式响应 |
 | app | MainActivity.kt | MessageSender 初始化 |
+
+
+
+# v1.0
+
+### 首个正式版本发布！
+### 核心功能
+- **多服务商支持**
+  - Open AI
+  - Anthropic Claude
+  - Gemini
+  **灵活的服务商配置**
+  - 自定义 API Key
+  - 自定义 API 端点（支持第三方代理）
+  - 从 API 自动拉取可用模型列表
+  - 手动输入自定义模型名称
+  - 多服务商配置管理，一键切换
+- **聊天功能**
+  - 非流式回复，实时显示 AI 响应
+  - 多会话管理
+  - 侧边栏聊天记录导航
+  - 新建/删除/切换对话
+
+###还没实现的功能：
+  - 流式信息输出
+  - 输出内容TPS/token速度/tokens数量显示
+  - 持久化数据存储（目前仅支持API提供商的服务持久化存储）
 
 
 

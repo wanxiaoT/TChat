@@ -7,6 +7,7 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.tchat.wanxiaot.settings.AIProviderType
 import com.tchat.wanxiaot.settings.ProviderConfig
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -18,15 +19,18 @@ import org.json.JSONObject
  * t=type（类型）
  * e=endpoint（端点）
  * k=apiKey（API密钥）
+ * m=models（模型列表，可选）
+ * s=selectedModel（当前选择的模型）
  */
 
 object QRCodeGenerator {
 
     /**
      * 将服务商配置转换为精简JSON
-     * 格式: {"n":"名称","t":"o/a/g","e":"端点","k":"apiKey"}
+     * @param provider 服务商配置
+     * @param includeModels 是否包含模型列表
      */
-    fun providerToJson(provider: ProviderConfig): String {
+    fun providerToJson(provider: ProviderConfig, includeModels: Boolean = true): String {
         val json = JSONObject()
         json.put("n", provider.name)
         json.put("t", when (provider.providerType) {
@@ -36,6 +40,14 @@ object QRCodeGenerator {
         })
         json.put("e", provider.endpoint)
         json.put("k", provider.apiKey)
+        
+        if (includeModels && provider.availableModels.isNotEmpty()) {
+            json.put("m", JSONArray(provider.availableModels))
+            if (provider.selectedModel.isNotEmpty()) {
+                json.put("s", provider.selectedModel)
+            }
+        }
+        
         return json.toString()
     }
 
@@ -69,14 +81,27 @@ object QRCodeGenerator {
             }
 
             val providerType = parseProviderType(typeCode)
+            
+            // 解析模型列表
+            val modelsArray = json.optJSONArray("m")
+            val models = if (modelsArray != null) {
+                (0 until modelsArray.length()).map { modelsArray.getString(it) }
+            } else {
+                providerType.defaultModels
+            }
+            
+            // 解析当前选择的模型
+            val selectedModel = json.optString("s", "").ifEmpty {
+                models.firstOrNull() ?: ""
+            }
 
             ProviderConfig(
                 name = name.ifBlank { providerType.displayName },
                 providerType = providerType,
                 endpoint = endpoint,
                 apiKey = apiKey,
-                selectedModel = providerType.defaultModels.firstOrNull() ?: "",
-                availableModels = providerType.defaultModels
+                selectedModel = selectedModel,
+                availableModels = models
             )
         } catch (e: Exception) {
             null

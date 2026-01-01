@@ -14,25 +14,37 @@ import java.util.concurrent.TimeUnit
 /**
  * OpenAI API Provider
  *
- * 支持完整的 SSE 流式响应处理
+ * 支持完整的 SSE 流式响应处理和工具调用
  * 兼容 OpenAI API 格式的所有提供商
  */
 class OpenAIProvider(
     private val apiKey: String,
-    private val baseUrl: String = "https://api.openai.com/v1",
+    baseUrl: String = "https://api.openai.com/v1",
     private val model: String = "gpt-3.5-turbo"
 ) : AIProvider {
+
+    // 规范化 baseUrl：移除末尾斜杠
+    private val normalizedBaseUrl = baseUrl.trimEnd('/')
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
+        // 强制使用 HTTP/1.1，避免某些代理服务器的 HTTP/2 兼容问题
+        .protocols(listOf(Protocol.HTTP_1_1))
         .build()
 
     private var currentCall: Call? = null
 
-    override suspend fun streamChat(messages: List<ChatMessage>): Flow<StreamChunk> = callbackFlow {
-        val jsonBody = buildRequestBody(messages)
+    override suspend fun streamChat(messages: List<ChatMessage>): Flow<StreamChunk> {
+        return streamChatWithTools(messages, emptyList())
+    }
+
+    override suspend fun streamChatWithTools(
+        messages: List<ChatMessage>,
+        tools: List<ToolDefinition>
+    ): Flow<StreamChunk> = callbackFlow {
+        val jsonBody = buildRequestBody(messages, tools)
         val request = buildRequest(jsonBody)
 
         // 统计信息
@@ -68,21 +80,17 @@ class OpenAIProvider(
                                 if (firstTokenTime == null) {
                                     firstTokenTime = System.currentTimeMillis()
                                 }
-                                // 粗略估算：每个字符约 0.5 token（适用于中英文混合）
                                 outputTokenCount += (chunk.text.length * 0.5).toInt()
                             }
                             is StreamChunk.Done -> {
-                                // 优先使用 API 返回的真实 token 数
                                 val finalInputTokens = if (chunk.inputTokens > 0) chunk.inputTokens else inputTokens
                                 val finalOutputTokens = if (chunk.outputTokens > 0) chunk.outputTokens else outputTokenCount
 
-                                // 计算统计数据
                                 val endTime = System.currentTimeMillis()
                                 val totalDuration = (endTime - startTime) / 1000.0
                                 val tps = if (totalDuration > 0) finalOutputTokens / totalDuration else 0.0
                                 val latency = firstTokenTime?.let { it - startTime } ?: 0L
 
-                                // 发送带统计信息的 Done
                                 trySend(StreamChunk.Done(
                                     inputTokens = finalInputTokens,
                                     outputTokens = finalOutputTokens,
@@ -125,17 +133,25 @@ class OpenAIProvider(
         response: Response,
         onChunk: (StreamChunk) -> Boolean
     ) {
-        // 保存 usage 信息，等到流结束再发送
         var savedInputTokens = 0
         var savedOutputTokens = 0
+
+        // 用于收集流式工具调用
+        val toolCallsBuilder = mutableMapOf<Int, ToolCallBuilder>()
 
         response.body?.byteStream()?.bufferedReader()?.use { reader ->
             reader.lineSequence().forEach { line ->
                 if (line.startsWith("data: ")) {
                     val data = line.substring(6).trim()
 
-                    // 检查流结束标记
                     if (data == "[DONE]") {
+                        // 如果有收集到的工具调用，先发送
+                        if (toolCallsBuilder.isNotEmpty()) {
+                            val toolCalls = toolCallsBuilder.values.mapNotNull { it.build() }
+                            if (toolCalls.isNotEmpty()) {
+                                onChunk(StreamChunk.ToolCall(toolCalls))
+                            }
+                        }
                         onChunk(StreamChunk.Done(
                             inputTokens = savedInputTokens,
                             outputTokens = savedOutputTokens
@@ -146,7 +162,6 @@ class OpenAIProvider(
                     try {
                         val json = JSONObject(data)
 
-                        // 检查流内错误
                         if (json.has("error")) {
                             val error = json.getJSONObject("error")
                             val errorMsg = error.optString("message", "Unknown error")
@@ -163,33 +178,65 @@ class OpenAIProvider(
                             return@use
                         }
 
-                        // 先提取内容（优先处理内容，避免 usage 导致提前退出）
                         val choices = json.optJSONArray("choices")
                         if (choices != null && choices.length() > 0) {
                             val choice = choices.getJSONObject(0)
                             val delta = choice.optJSONObject("delta")
 
-                            if (delta != null && delta.has("content")) {
-                                val content = delta.getString("content")
-                                if (content.isNotEmpty()) {
-                                    onChunk(StreamChunk.Content(content))
+                            if (delta != null) {
+                                // 处理文本内容
+                                if (delta.has("content")) {
+                                    val content = delta.getString("content")
+                                    if (content.isNotEmpty()) {
+                                        onChunk(StreamChunk.Content(content))
+                                    }
+                                }
+
+                                // 处理工具调用（流式）
+                                if (delta.has("tool_calls")) {
+                                    val toolCalls = delta.getJSONArray("tool_calls")
+                                    for (i in 0 until toolCalls.length()) {
+                                        val toolCall = toolCalls.getJSONObject(i)
+                                        val index = toolCall.optInt("index", i)
+
+                                        val builder = toolCallsBuilder.getOrPut(index) { ToolCallBuilder() }
+
+                                        if (toolCall.has("id")) {
+                                            builder.id = toolCall.getString("id")
+                                        }
+                                        if (toolCall.has("function")) {
+                                            val function = toolCall.getJSONObject("function")
+                                            if (function.has("name")) {
+                                                builder.name = function.getString("name")
+                                            }
+                                            if (function.has("arguments")) {
+                                                builder.arguments.append(function.getString("arguments"))
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
 
-                        // 保存 usage 信息（不立即结束，等待 [DONE] 标记）
                         if (json.has("usage")) {
                             val usage = json.getJSONObject("usage")
                             savedInputTokens = usage.optInt("prompt_tokens", 0)
                             savedOutputTokens = usage.optInt("completion_tokens", 0)
                         }
                     } catch (e: Exception) {
-                        // 解析错误时继续处理，不中断流
+                        // 解析错误时继续处理
                     }
                 }
             }
 
-            // 如果没有收到 [DONE] 但流结束了，也发送 Done
+            // 如果有工具调用，发送它们
+            if (toolCallsBuilder.isNotEmpty()) {
+                val toolCalls = toolCallsBuilder.values.mapNotNull { it.build() }
+                if (toolCalls.isNotEmpty()) {
+                    onChunk(StreamChunk.ToolCall(toolCalls))
+                }
+            }
+
             onChunk(StreamChunk.Done(
                 inputTokens = savedInputTokens,
                 outputTokens = savedOutputTokens
@@ -197,31 +244,79 @@ class OpenAIProvider(
         }
     }
 
-    private fun buildRequestBody(messages: List<ChatMessage>): String {
+    private fun buildRequestBody(messages: List<ChatMessage>, tools: List<ToolDefinition>): String {
         val jsonObject = JSONObject()
         jsonObject.put("model", model)
         jsonObject.put("stream", true)
 
-        // 启用流式 usage 统计
         val streamOptions = JSONObject()
         streamOptions.put("include_usage", true)
         jsonObject.put("stream_options", streamOptions)
 
+        // 构建消息数组
         val messagesArray = JSONArray()
         messages.forEach { msg ->
             val msgObj = JSONObject()
             msgObj.put("role", msg.role.value)
-            msgObj.put("content", msg.content)
+
+            when (msg.role) {
+                MessageRole.TOOL -> {
+                    // 工具结果消息
+                    msgObj.put("content", msg.content)
+                    msgObj.put("tool_call_id", msg.toolCallId)
+                }
+                MessageRole.ASSISTANT -> {
+                    // 助手消息可能包含工具调用
+                    if (msg.toolCalls != null && msg.toolCalls.isNotEmpty()) {
+                        msgObj.put("content", JSONObject.NULL)
+                        val toolCallsArray = JSONArray()
+                        msg.toolCalls.forEach { tc ->
+                            val tcObj = JSONObject()
+                            tcObj.put("id", tc.id)
+                            tcObj.put("type", "function")
+                            val funcObj = JSONObject()
+                            funcObj.put("name", tc.name)
+                            funcObj.put("arguments", tc.arguments)
+                            tcObj.put("function", funcObj)
+                            toolCallsArray.put(tcObj)
+                        }
+                        msgObj.put("tool_calls", toolCallsArray)
+                    } else {
+                        msgObj.put("content", msg.content)
+                    }
+                }
+                else -> {
+                    msgObj.put("content", msg.content)
+                }
+            }
             messagesArray.put(msgObj)
         }
         jsonObject.put("messages", messagesArray)
+
+        // 添加工具定义
+        if (tools.isNotEmpty()) {
+            val toolsArray = JSONArray()
+            tools.forEach { tool ->
+                val toolObj = JSONObject()
+                toolObj.put("type", "function")
+                val funcObj = JSONObject()
+                funcObj.put("name", tool.name)
+                funcObj.put("description", tool.description)
+                if (tool.parametersJson != null) {
+                    funcObj.put("parameters", JSONObject(tool.parametersJson))
+                }
+                toolObj.put("function", funcObj)
+                toolsArray.put(toolObj)
+            }
+            jsonObject.put("tools", toolsArray)
+        }
 
         return jsonObject.toString()
     }
 
     private fun buildRequest(jsonBody: String): Request {
         return Request.Builder()
-            .url("$baseUrl/chat/completions")
+            .url("$normalizedBaseUrl/chat/completions")
             .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
             .addHeader("Accept", "text/event-stream")
@@ -232,7 +327,6 @@ class OpenAIProvider(
     private fun handleErrorResponse(response: Response): AIProviderException {
         val errorBody = response.body?.string() ?: ""
 
-        // 尝试从 JSON 中提取详细错误
         val detailedMessage = try {
             val json = JSONObject(errorBody)
             val error = json.optJSONObject("error")
@@ -242,27 +336,30 @@ class OpenAIProvider(
         }
 
         return when (response.code) {
-            401 -> AIProviderException.AuthenticationError(
-                "API Key 无效或已过期\n$detailedMessage"
-            )
-            403 -> AIProviderException.AuthenticationError(
-                "API 访问被拒绝\n$detailedMessage"
-            )
-            429 -> AIProviderException.RateLimitError(
-                "请求过于频繁，请稍后再试\n$detailedMessage"
-            )
-            400 -> AIProviderException.InvalidRequestError(
-                "无效的请求参数\n$detailedMessage"
-            )
-            404 -> AIProviderException.InvalidRequestError(
-                "模型不存在或 API 端点错误\n$detailedMessage"
-            )
-            500, 502, 503, 504 -> AIProviderException.ServiceUnavailableError(
-                "API 服务暂时不可用\n$detailedMessage"
-            )
-            else -> AIProviderException.UnknownError(
-                "API 错误 (${response.code}): ${response.message}\n$detailedMessage"
-            )
+            401 -> AIProviderException.AuthenticationError("API Key 无效或已过期\n$detailedMessage")
+            403 -> AIProviderException.AuthenticationError("API 访问被拒绝\n$detailedMessage")
+            429 -> AIProviderException.RateLimitError("请求过于频繁，请稍后再试\n$detailedMessage")
+            400 -> AIProviderException.InvalidRequestError("无效的请求参数\n$detailedMessage")
+            404 -> AIProviderException.InvalidRequestError("模型不存在或 API 端点错误\n$detailedMessage")
+            500, 502, 503, 504 -> AIProviderException.ServiceUnavailableError("API 服务暂时不可用\n$detailedMessage")
+            else -> AIProviderException.UnknownError("API 错误 (${response.code}): ${response.message}\n$detailedMessage")
+        }
+    }
+
+    /**
+     * 用于构建流式工具调用
+     */
+    private class ToolCallBuilder {
+        var id: String = ""
+        var name: String = ""
+        val arguments = StringBuilder()
+
+        fun build(): ToolCallInfo? {
+            return if (id.isNotEmpty() && name.isNotEmpty()) {
+                ToolCallInfo(id, name, arguments.toString())
+            } else {
+                null
+            }
         }
     }
 }

@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit
  * - 动态端点格式化：支持自定义 API 端点
  * - 完整的 SSE 事件处理：处理所有 Anthropic 流事件类型
  * - 增强的错误处理：从错误响应中提取详细信息
+ * - 工具调用支持：完整的 Function Calling 实现
  */
 class AnthropicProvider(
     private val apiKey: String,
@@ -43,18 +44,31 @@ class AnthropicProvider(
         // Delta 类型
         private const val DELTA_TEXT = "text_delta"
         private const val DELTA_INPUT_JSON = "input_json_delta"
+
+        // Content Block 类型
+        private const val CONTENT_TYPE_TEXT = "text"
+        private const val CONTENT_TYPE_TOOL_USE = "tool_use"
     }
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)  // 增加读取超时以支持长响应
         .writeTimeout(30, TimeUnit.SECONDS)
+        // 强制使用 HTTP/1.1，避免某些代理服务器的 HTTP/2 兼容问题
+        .protocols(listOf(Protocol.HTTP_1_1))
         .build()
 
     private var currentCall: Call? = null
 
-    override suspend fun streamChat(messages: List<ChatMessage>): Flow<StreamChunk> = callbackFlow {
-        val jsonBody = buildRequestBody(messages)
+    override suspend fun streamChat(messages: List<ChatMessage>): Flow<StreamChunk> {
+        return streamChatWithTools(messages, emptyList())
+    }
+
+    override suspend fun streamChatWithTools(
+        messages: List<ChatMessage>,
+        tools: List<ToolDefinition>
+    ): Flow<StreamChunk> = callbackFlow {
+        val jsonBody = buildRequestBody(messages, tools)
         val requestUrl = formatApiEndpoint(baseUrl)
         val request = buildRequest(requestUrl, jsonBody)
 
@@ -64,6 +78,9 @@ class AnthropicProvider(
         var outputTokenCount = 0
         var inputTokens = 0
         var outputTokens = 0
+
+        // 工具调用构建器
+        val toolCallsBuilder = mutableMapOf<Int, ToolCallBuilder>()
 
         currentCall = client.newCall(request)
         currentCall?.enqueue(object : Callback {
@@ -84,7 +101,7 @@ class AnthropicProvider(
                         return
                     }
 
-                    processStreamResponse(response) { chunk ->
+                    processStreamResponseWithTools(response, toolCallsBuilder) { chunk ->
                         // 收集统计信息
                         when (chunk) {
                             is StreamChunk.Content -> {
@@ -94,6 +111,14 @@ class AnthropicProvider(
                                 outputTokenCount += (chunk.text.length * 0.5).toInt()
                             }
                             is StreamChunk.Done -> {
+                                // 如果有工具调用，先发送
+                                if (toolCallsBuilder.isNotEmpty()) {
+                                    val toolCalls = toolCallsBuilder.values.mapNotNull { it.build() }
+                                    if (toolCalls.isNotEmpty()) {
+                                        trySend(StreamChunk.ToolCall(toolCalls))
+                                    }
+                                }
+
                                 // 优先使用 API 返回的真实 token 数
                                 val finalInputTokens = if (chunk.inputTokens > 0) chunk.inputTokens else inputTokens
                                 val finalOutputTokens = if (chunk.outputTokens > 0) chunk.outputTokens else outputTokenCount
@@ -109,7 +134,7 @@ class AnthropicProvider(
                                     tokensPerSecond = tps,
                                     firstTokenLatency = latency
                                 ))
-                                return@processStreamResponse true
+                                return@processStreamResponseWithTools true
                             }
                             else -> {}
                         }
@@ -139,6 +164,23 @@ class AnthropicProvider(
     }
 
     /**
+     * 用于构建流式工具调用
+     */
+    private class ToolCallBuilder {
+        var id: String = ""
+        var name: String = ""
+        val arguments = StringBuilder()
+
+        fun build(): ToolCallInfo? {
+            return if (id.isNotEmpty() && name.isNotEmpty()) {
+                ToolCallInfo(id, name, arguments.toString().ifEmpty { "{}" })
+            } else {
+                null
+            }
+        }
+    }
+
+    /**
      * 格式化 API 端点
      *
      * 支持多种输入格式：
@@ -160,20 +202,21 @@ class AnthropicProvider(
     }
 
     /**
-     * 处理 SSE 流式响应
+     * 处理 SSE 流式响应（支持工具调用）
      *
      * 支持完整的 Anthropic 事件类型：
      * - message_start: 消息开始
-     * - content_block_start: 内容块开始
-     * - content_block_delta: 内容增量（文本或工具调用）
+     * - content_block_start: 内容块开始（可能是文本或工具调用）
+     * - content_block_delta: 内容增量（文本或工具调用参数）
      * - content_block_stop: 内容块结束
      * - message_delta: 消息增量（包含 stop_reason）
      * - message_stop: 消息结束
      * - ping: 心跳
      * - error: 错误
      */
-    private fun processStreamResponse(
+    private fun processStreamResponseWithTools(
         response: Response,
+        toolCallsBuilder: MutableMap<Int, ToolCallBuilder>,
         onChunk: (StreamChunk) -> Boolean
     ) {
         response.body?.byteStream()?.bufferedReader()?.use { reader ->
@@ -195,7 +238,7 @@ class AnthropicProvider(
                         val data = dataBuffer.toString()
                         dataBuffer.clear()
 
-                        val shouldStop = processSSEEvent(currentEventType, data, onChunk)
+                        val shouldStop = processSSEEventWithTools(currentEventType, data, toolCallsBuilder, onChunk)
                         if (shouldStop) {
                             return@use
                         }
@@ -203,6 +246,120 @@ class AnthropicProvider(
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * 处理单个 SSE 事件（支持工具调用）
+     * 返回 true 表示应该停止处理
+     */
+    private fun processSSEEventWithTools(
+        eventType: String?,
+        data: String,
+        toolCallsBuilder: MutableMap<Int, ToolCallBuilder>,
+        onChunk: (StreamChunk) -> Boolean
+    ): Boolean {
+        try {
+            val json = JSONObject(data)
+            val type = eventType ?: json.optString("type")
+
+            return when (type) {
+                EVENT_CONTENT_BLOCK_START -> {
+                    // 内容块开始，检查是否是工具调用
+                    val index = json.optInt("index", 0)
+                    val contentBlock = json.optJSONObject("content_block")
+                    if (contentBlock != null) {
+                        val blockType = contentBlock.optString("type", "")
+                        if (blockType == CONTENT_TYPE_TOOL_USE) {
+                            // 开始一个新的工具调用
+                            val builder = ToolCallBuilder()
+                            builder.id = contentBlock.optString("id", "")
+                            builder.name = contentBlock.optString("name", "")
+                            toolCallsBuilder[index] = builder
+                        }
+                    }
+                    false
+                }
+
+                EVENT_CONTENT_BLOCK_DELTA -> {
+                    val index = json.optInt("index", 0)
+                    val delta = json.getJSONObject("delta")
+                    val deltaType = delta.optString("type")
+
+                    when (deltaType) {
+                        DELTA_TEXT -> {
+                            val text = delta.optString("text", "")
+                            if (text.isNotEmpty()) {
+                                onChunk(StreamChunk.Content(text))
+                            } else {
+                                false
+                            }
+                        }
+                        DELTA_INPUT_JSON -> {
+                            // 工具调用的 JSON 增量
+                            val partialJson = delta.optString("partial_json", "")
+                            val builder = toolCallsBuilder[index]
+                            if (builder != null && partialJson.isNotEmpty()) {
+                                builder.arguments.append(partialJson)
+                            }
+                            false
+                        }
+                        else -> false
+                    }
+                }
+
+                EVENT_MESSAGE_DELTA -> {
+                    // 解析 usage 信息
+                    val usage = json.optJSONObject("usage")
+                    if (usage != null) {
+                        val outputTokens = usage.optInt("output_tokens", 0)
+                        // Anthropic 在 message_delta 中只返回 output_tokens
+                        if (outputTokens > 0) {
+                            onChunk(StreamChunk.Done(
+                                outputTokens = outputTokens
+                            ))
+                            return true
+                        }
+                    }
+                    false
+                }
+
+                EVENT_MESSAGE_STOP -> {
+                    onChunk(StreamChunk.Done())
+                    true
+                }
+
+                EVENT_ERROR -> {
+                    val error = json.optJSONObject("error")
+                    val errorType = error?.optString("type", "unknown_error") ?: "unknown_error"
+                    val errorMsg = error?.optString("message", "未知错误") ?: "未知错误"
+
+                    val exception = mapStreamErrorToException(errorType, errorMsg)
+                    onChunk(StreamChunk.Error(exception))
+                    true
+                }
+
+                EVENT_MESSAGE_START -> {
+                    // 解析 message_start 中的 usage 获取 input_tokens
+                    val message = json.optJSONObject("message")
+                    val usage = message?.optJSONObject("usage")
+                    if (usage != null) {
+                        val inputTokens = usage.optInt("input_tokens", 0)
+                        // 暂时忽略，input_tokens 会在 Done 中传递
+                    }
+                    false
+                }
+
+                EVENT_CONTENT_BLOCK_STOP, EVENT_PING -> {
+                    // 这些事件不需要特殊处理，继续
+                    false
+                }
+
+                else -> false
+            }
+        } catch (e: Exception) {
+            // 解析错误时继续处理，不中断流
+            return false
         }
     }
 
@@ -314,7 +471,7 @@ class AnthropicProvider(
         }
     }
 
-    private fun buildRequestBody(messages: List<ChatMessage>): String {
+    private fun buildRequestBody(messages: List<ChatMessage>, tools: List<ToolDefinition>): String {
         val jsonObject = JSONObject()
         jsonObject.put("model", model)
         jsonObject.put("stream", true)
@@ -329,20 +486,78 @@ class AnthropicProvider(
             jsonObject.put("system", systemMessages.joinToString("\n") { it.content })
         }
 
-        // 构建消息数组，确保消息角色交替
+        // 添加工具定义
+        if (tools.isNotEmpty()) {
+            val toolsArray = JSONArray()
+            tools.forEach { tool ->
+                val toolObj = JSONObject()
+                toolObj.put("name", tool.name)
+                toolObj.put("description", tool.description)
+                if (tool.parametersJson != null) {
+                    toolObj.put("input_schema", JSONObject(tool.parametersJson))
+                } else {
+                    // 无参数工具需要空对象
+                    toolObj.put("input_schema", JSONObject().apply {
+                        put("type", "object")
+                        put("properties", JSONObject())
+                    })
+                }
+                toolsArray.put(toolObj)
+            }
+            jsonObject.put("tools", toolsArray)
+        }
+
+        // 构建消息数组
         val messagesArray = JSONArray()
-        var lastRole: String? = null
 
         otherMessages.forEach { msg ->
-            // Anthropic 要求 user/assistant 角色交替
-            // 如果连续相同角色，需要合并或跳过
-            if (msg.role.value != lastRole) {
-                val msgObj = JSONObject()
-                msgObj.put("role", msg.role.value)
-                msgObj.put("content", msg.content)
-                messagesArray.put(msgObj)
-                lastRole = msg.role.value
+            val msgObj = JSONObject()
+
+            when (msg.role) {
+                MessageRole.TOOL -> {
+                    // 工具结果消息
+                    msgObj.put("role", "user")
+                    val contentArray = JSONArray()
+                    val toolResultObj = JSONObject()
+                    toolResultObj.put("type", "tool_result")
+                    toolResultObj.put("tool_use_id", msg.toolCallId ?: "")
+                    toolResultObj.put("content", msg.content)
+                    contentArray.put(toolResultObj)
+                    msgObj.put("content", contentArray)
+                }
+                MessageRole.ASSISTANT -> {
+                    msgObj.put("role", "assistant")
+                    // 检查是否有工具调用
+                    if (msg.toolCalls != null && msg.toolCalls.isNotEmpty()) {
+                        val contentArray = JSONArray()
+                        // 如果有文本内容，先添加
+                        if (msg.content.isNotEmpty()) {
+                            val textObj = JSONObject()
+                            textObj.put("type", "text")
+                            textObj.put("text", msg.content)
+                            contentArray.put(textObj)
+                        }
+                        // 添加工具调用
+                        msg.toolCalls.forEach { tc ->
+                            val toolUseObj = JSONObject()
+                            toolUseObj.put("type", "tool_use")
+                            toolUseObj.put("id", tc.id)
+                            toolUseObj.put("name", tc.name)
+                            toolUseObj.put("input", JSONObject(tc.arguments))
+                            contentArray.put(toolUseObj)
+                        }
+                        msgObj.put("content", contentArray)
+                    } else {
+                        msgObj.put("content", msg.content)
+                    }
+                }
+                else -> {
+                    // USER 和其他角色
+                    msgObj.put("role", msg.role.value)
+                    msgObj.put("content", msg.content)
+                }
             }
+            messagesArray.put(msgObj)
         }
         jsonObject.put("messages", messagesArray)
 

@@ -25,7 +25,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.tchat.data.MessageSender
 import com.tchat.data.database.AppDatabase
+import com.tchat.data.database.entity.AssistantEntity
+import com.tchat.data.model.Assistant
+import com.tchat.data.model.LocalToolOption
 import com.tchat.data.repository.impl.ChatRepositoryImpl
+import com.tchat.data.tool.LocalTools
 import com.tchat.feature.chat.ChatScreen
 import com.tchat.feature.chat.ChatViewModel
 import com.tchat.network.provider.AIProviderFactory
@@ -37,7 +41,11 @@ import com.tchat.wanxiaot.ui.theme.TChatTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+// 默认助手ID - 固定值，确保只创建一次
+const val DEFAULT_ASSISTANT_ID = "default_assistant"
 
 class MainActivity : ComponentActivity() {
     // Application 级别的 CoroutineScope，不会因为 Activity 重建而取消
@@ -54,6 +62,11 @@ class MainActivity : ComponentActivity() {
         // 初始化 MessageSender 单例
         messageSender = MessageSender.getInstance(applicationScope)
 
+        // 确保默认助手存在
+        applicationScope.launch(Dispatchers.IO) {
+            ensureDefaultAssistantExists(database, settingsManager)
+        }
+
         setContent {
             TChatTheme {
                 MainScreen(
@@ -62,6 +75,44 @@ class MainActivity : ComponentActivity() {
                     messageSender = messageSender
                 )
             }
+        }
+    }
+
+    /**
+     * 确保默认助手存在
+     */
+    private suspend fun ensureDefaultAssistantExists(
+        database: AppDatabase,
+        settingsManager: SettingsManager
+    ) {
+        val assistantDao = database.assistantDao()
+        val existingAssistant = assistantDao.getAssistantById(DEFAULT_ASSISTANT_ID)
+
+        if (existingAssistant == null) {
+            // 创建默认助手
+            val now = System.currentTimeMillis()
+            val defaultAssistant = AssistantEntity(
+                id = DEFAULT_ASSISTANT_ID,
+                name = "默认助手",
+                avatar = null,
+                systemPrompt = "你是一个有帮助的AI助手。",
+                temperature = null,
+                topP = null,
+                maxTokens = null,
+                contextMessageSize = 64,
+                streamOutput = true,
+                localTools = "[]", // 空的工具列表
+                createdAt = now,
+                updatedAt = now
+            )
+            assistantDao.insertAssistant(defaultAssistant)
+            println("Created default assistant")
+        }
+
+        // 如果当前没有选中的助手，则选中默认助手
+        if (settingsManager.settings.first().currentAssistantId.isEmpty()) {
+            settingsManager.setCurrentAssistant(DEFAULT_ASSISTANT_ID)
+            println("Set default assistant as current")
         }
     }
 }
@@ -80,6 +131,7 @@ fun MainScreen(
 
     val chatDao = database.chatDao()
     val messageDao = database.messageDao()
+    val assistantDao = database.assistantDao()
 
     // null表示新对话（懒创建模式）
     var currentChatId by remember { mutableStateOf<String?>(null) }
@@ -87,6 +139,26 @@ fun MainScreen(
     var repository by remember { mutableStateOf<ChatRepositoryImpl?>(null) }
     var showSettingsPage by remember { mutableStateOf(false) }
     var isDrawerRequested by remember { mutableStateOf(false) }
+
+    // 当前助手
+    var currentAssistant by remember { mutableStateOf<Assistant?>(null) }
+
+    // 启用的工具集合（运行时状态，每次启动都重置为助手配置）
+    var enabledTools by remember { mutableStateOf<Set<LocalToolOption>>(emptySet()) }
+
+    // 加载当前助手
+    LaunchedEffect(settings.currentAssistantId) {
+        if (settings.currentAssistantId.isNotEmpty()) {
+            scope.launch(Dispatchers.IO) {
+                val entity = assistantDao.getAssistantById(settings.currentAssistantId)
+                entity?.let {
+                    currentAssistant = entityToAssistant(it)
+                    // 初始化启用的工具为助手配置的工具
+                    enabledTools = currentAssistant?.localTools?.toSet() ?: emptySet()
+                }
+            }
+        }
+    }
 
     // 同步 isDrawerRequested 和 drawerState - 监听 targetValue 以便滑动关闭时也能重置
     LaunchedEffect(drawerState.targetValue) {
@@ -174,6 +246,7 @@ fun MainScreen(
         if (isSettingsPage) {
             SettingsScreen(
                 settingsManager = settingsManager,
+                database = database,
                 onBack = { showSettingsPage = false }
             )
         } else {
@@ -232,7 +305,9 @@ fun MainScreen(
                 modifier = Modifier.fillMaxSize(),
                 topBar = {
                     TopAppBar(
-                        title = { Text("AI 聊天") },
+                        title = { 
+                            Text(currentAssistant?.name ?: "AI 聊天") 
+                        },
                         navigationIcon = {
                             IconButton(onClick = {
                                 isDrawerRequested = true
@@ -268,16 +343,36 @@ fun MainScreen(
                                 }
                             }
 
+                            // 创建本地工具实例
+                            val context = LocalContext.current
+                            val localTools = remember(context) {
+                                LocalTools(context)
+                            }
+
                             ChatScreen(
                                 viewModel = viewModel,
                                 chatId = currentChatId,
                                 modifier = Modifier.fillMaxSize(),
+                                // 使用当前服务商的模型列表
                                 availableModels = currentProvider?.availableModels ?: emptyList(),
                                 currentModel = settings.getActiveModel(),
                                 onModelSelected = { model ->
                                     settingsManager.setCurrentModel(model)
                                 },
-                                providerIcon = currentProvider?.providerType?.icon?.invoke()
+                                providerIcon = currentProvider?.providerType?.icon?.invoke(),
+                                // 本地工具支持
+                                enabledTools = enabledTools,
+                                onToolToggle = { tool, enabled ->
+                                    enabledTools = if (enabled) {
+                                        enabledTools + tool
+                                    } else {
+                                        enabledTools - tool
+                                    }
+                                },
+                                getToolsForOptions = { options ->
+                                    localTools.getToolsForOptions(options)
+                                },
+                                systemPrompt = currentAssistant?.systemPrompt
                             )
                         }
                         repository == null -> {
@@ -314,4 +409,33 @@ fun MainScreen(
     }
         }
     }
+}
+
+/**
+ * 将 AssistantEntity 转换为 Assistant
+ */
+private fun entityToAssistant(entity: AssistantEntity): Assistant {
+    val toolOptions = try {
+        val jsonArray = org.json.JSONArray(entity.localTools)
+        (0 until jsonArray.length()).mapNotNull { i ->
+            LocalToolOption.fromId(jsonArray.getString(i))
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    return Assistant(
+        id = entity.id,
+        name = entity.name,
+        avatar = entity.avatar,
+        systemPrompt = entity.systemPrompt,
+        temperature = entity.temperature,
+        topP = entity.topP,
+        maxTokens = entity.maxTokens,
+        contextMessageSize = entity.contextMessageSize,
+        streamOutput = entity.streamOutput,
+        localTools = toolOptions,
+        createdAt = entity.createdAt,
+        updatedAt = entity.updatedAt
+    )
 }
