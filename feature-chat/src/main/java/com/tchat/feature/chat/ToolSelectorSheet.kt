@@ -236,8 +236,8 @@ private fun ToolCard(
                 )
             }
             
-            // 文件系统工具的权限按钮
-            if (showPermissionButton) {
+            // 文件系统工具的权限按钮（只在未授权时显示）
+            if (showPermissionButton && !hasPermission) {
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 Row(
@@ -254,35 +254,27 @@ private fun ToolCard(
                             imageVector = Lucide.ShieldCheck,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp),
-                            tint = if (hasPermission) 
-                                MaterialTheme.colorScheme.primary 
-                            else 
-                                MaterialTheme.colorScheme.error
+                            tint = MaterialTheme.colorScheme.error
                         )
                         Text(
-                            text = if (hasPermission) "已授权文件访问" else "需要文件访问权限",
+                            text = "需要文件访问权限",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (hasPermission) 
-                                MaterialTheme.colorScheme.primary 
-                            else 
-                                MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error
                         )
                     }
                     
                     // 授权按钮
-                    if (!hasPermission) {
-                        Button(
-                            onClick = onRequestPermission,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            ),
-                            modifier = Modifier.height(32.dp)
-                        ) {
-                            Text(
-                                text = "授权",
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
+                    Button(
+                        onClick = onRequestPermission,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text(
+                            text = "授权",
+                            style = MaterialTheme.typography.labelMedium
+                        )
                     }
                 }
             }

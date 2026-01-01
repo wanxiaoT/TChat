@@ -14,6 +14,7 @@ fun MessageList(
     messages: List<Message>,
     modifier: Modifier = Modifier,
     providerIcon: ImageVector? = null,
+    modelName: String = "",
     onRegenerate: ((userMessageId: String, aiMessageId: String) -> Unit)? = null,
     onSelectVariant: ((messageId: String, variantIndex: Int) -> Unit)? = null
 ) {
@@ -32,6 +33,7 @@ fun MessageList(
             MessageItem(
                 message = message,
                 providerIcon = providerIcon,
+                modelName = modelName,
                 nextMessage = nextMessage,
                 onRegenerate = onRegenerate,
                 onSelectVariant = onSelectVariant

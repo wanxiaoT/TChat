@@ -16,7 +16,6 @@ import io.noties.markwon.Markwon
 import io.noties.markwon.core.MarkwonTheme
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.html.HtmlPlugin
-import io.noties.markwon.linkify.LinkifyPlugin
 
 /**
  * Markdown 渲染组件 - 使用 Markwon 库
@@ -54,7 +53,6 @@ fun MarkdownText(
     val markwon = remember(isDarkTheme, textColor, linkColor) {
         Markwon.builder(context)
             .usePlugin(StrikethroughPlugin.create())
-            .usePlugin(LinkifyPlugin.create())
             .usePlugin(HtmlPlugin.create())
             .usePlugin(object : io.noties.markwon.AbstractMarkwonPlugin() {
                 override fun configureTheme(builder: MarkwonTheme.Builder) {

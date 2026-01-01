@@ -18,6 +18,8 @@ data class Assistant(
     val localTools: List<LocalToolOption> = emptyList(),
     /** 关联的知识库ID，用于RAG检索 */
     val knowledgeBaseId: String? = null,
+    /** 关联的MCP服务器ID列表 */
+    val mcpServerIds: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {

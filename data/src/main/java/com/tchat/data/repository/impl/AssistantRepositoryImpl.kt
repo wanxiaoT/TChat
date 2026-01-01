@@ -56,6 +56,15 @@ class AssistantRepositoryImpl(
             emptyList()
         }
 
+        val mcpIds: List<String> = try {
+            val jsonArray = JSONArray(mcpServerIds)
+            (0 until jsonArray.length()).map { i ->
+                jsonArray.getString(i)
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+
         return Assistant(
             id = id,
             name = name,
@@ -68,6 +77,7 @@ class AssistantRepositoryImpl(
             streamOutput = streamOutput,
             localTools = toolOptions,
             knowledgeBaseId = knowledgeBaseId,
+            mcpServerIds = mcpIds,
             createdAt = createdAt,
             updatedAt = updatedAt
         )
@@ -79,6 +89,10 @@ class AssistantRepositoryImpl(
     private fun Assistant.toEntity(): AssistantEntity {
         val toolsJson = JSONArray().apply {
             localTools.forEach { put(it.id) }
+        }.toString()
+
+        val mcpIdsJson = JSONArray().apply {
+            mcpServerIds.forEach { put(it) }
         }.toString()
 
         return AssistantEntity(
@@ -93,6 +107,7 @@ class AssistantRepositoryImpl(
             streamOutput = streamOutput,
             localTools = toolsJson,
             knowledgeBaseId = knowledgeBaseId,
+            mcpServerIds = mcpIdsJson,
             createdAt = createdAt,
             updatedAt = System.currentTimeMillis()
         )

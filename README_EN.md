@@ -22,8 +22,98 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
 - Chat history with sidebar navigation
 - Streaming chat responses
 - Material 3 UI with Jetpack Compose
+- Knowledge Base (RAG) feature
+- MCP (Model Context Protocol) tool server support
+
+[Voluntary Donation](https://tchat.153595.xyz/Donate/)
 
 
+# v1.4
+
+### New Features
+
+- **Chat Interface Optimization**
+  - Disabled Markdown link auto-parsing, `[name](link)` format displays as plain text
+  - Top title bar shows current assistant name, subtitle shows `Provider > Model`
+  - AI avatar moved above message, model name displayed next to avatar
+  - Tool selector popup optimization: hide permission status when authorized, only show when unauthorized
+
+- **Usage Statistics**
+  - New "Usage Statistics" entry in settings page
+  - Display total upstream Token (input)
+  - Display total downstream Token (output)
+  - Display total API call count
+  - Display call count by model
+
+- **MCP (Model Context Protocol) Tool Server Support**
+  - Support connecting to external MCP servers to extend AI tool capabilities
+  - Support SSE and Streamable HTTP transport protocols
+  - Server management: add/edit/delete/enable/disable
+  - Connection test feature, shows available tool count
+  - Custom request headers and timeout configuration
+
+- **MCP Server Management Page**
+  - New "MCP Servers" entry in settings page
+  - Card-style server list showing name, description, URL
+  - One-click connection status test
+  - Support batch management of multiple MCP servers
+
+- **Assistant MCP Tool Configuration**
+  - New "MCP Tools" tab in assistant detail page
+  - Independently select enabled MCP servers for each assistant
+  - MCP tools work together with local tools and knowledge base tools
+
+- **Chat Integration**
+  - AI can automatically call enabled MCP server tools
+  - Tool call results displayed in real-time
+  - Support multi-round tool calls
+
+---
+
+# v1.3
+
+### New Features
+
+- **Knowledge Base (RAG) Feature**
+  - Support creating and managing multiple knowledge bases
+  - Content import support: text notes, URL web scraping, file upload (TXT/MD)
+  - Vector embedding generation and similarity retrieval
+  - Support OpenAI and Gemini Embedding API
+
+- **Knowledge Base Management**
+  - Create/edit/delete knowledge bases
+  - Select Embedding provider and model
+  - Batch process pending entries
+  - Processing status display (pending/processing/completed/failed)
+
+- **Knowledge Entry Management**
+  - Tab switching view (All/Files/Notes/URL)
+  - Add/edit/delete entries
+  - Individual or batch processing
+  - Semantic search functionality
+
+- **Settings Entry**
+  - New "Knowledge Base" entry in settings page
+  - Located under "General" group
+
+- **Tool Call Parameter Storage**
+  - Save complete tool call parameters (JSON format)
+  - Record tool execution time (millisecond level)
+  - Persistent storage to database, view historical calls when reloading conversation
+
+- **Tool Call UI Improvements**
+  - New tool call card design
+  - Display tool name, parameter summary, execution time
+  - Click to expand and view full input parameters and execution results
+  - Formatted JSON display for better readability
+  - Success/failure status icon differentiation
+
+- **Error Handling Optimization**
+  - Safely handle parameterless tool calls
+  - Compatible with old version corrupted data, provide friendly prompts
+  - Display friendly error message when JSON parsing fails
+
+---
 
 # v1.2
 

@@ -23,6 +23,7 @@ data class AssistantEntity(
     val streamOutput: Boolean,
     val localTools: String, // JSON序列化的LocalToolOption列表
     val knowledgeBaseId: String? = null, // 关联的知识库ID
+    val mcpServerIds: String = "[]", // JSON序列化的MCP服务器ID列表
     val createdAt: Long,
     val updatedAt: Long
 )

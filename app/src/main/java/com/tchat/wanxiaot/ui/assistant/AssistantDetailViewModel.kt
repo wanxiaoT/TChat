@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tchat.data.database.entity.KnowledgeBaseEntity
 import com.tchat.data.model.Assistant
+import com.tchat.data.model.McpServer
 import com.tchat.data.repository.AssistantRepository
 import com.tchat.data.repository.KnowledgeRepository
+import com.tchat.data.repository.McpServerRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,6 +19,7 @@ import kotlinx.coroutines.launch
 class AssistantDetailViewModel(
     private val repository: AssistantRepository,
     private val knowledgeRepository: KnowledgeRepository,
+    private val mcpRepository: McpServerRepository,
     private val assistantId: String
 ) : ViewModel() {
 
@@ -29,9 +32,13 @@ class AssistantDetailViewModel(
     private val _knowledgeBases = MutableStateFlow<List<KnowledgeBaseEntity>>(emptyList())
     val knowledgeBases: StateFlow<List<KnowledgeBaseEntity>> = _knowledgeBases.asStateFlow()
 
+    private val _mcpServers = MutableStateFlow<List<McpServer>>(emptyList())
+    val mcpServers: StateFlow<List<McpServer>> = _mcpServers.asStateFlow()
+
     init {
         loadAssistant()
         loadKnowledgeBases()
+        loadMcpServers()
     }
 
     /**
@@ -54,6 +61,17 @@ class AssistantDetailViewModel(
         viewModelScope.launch {
             knowledgeRepository.getAllBases().collect { bases ->
                 _knowledgeBases.value = bases
+            }
+        }
+    }
+
+    /**
+     * 加载MCP服务器列表
+     */
+    private fun loadMcpServers() {
+        viewModelScope.launch {
+            mcpRepository.getAllServers().collect { servers ->
+                _mcpServers.value = servers
             }
         }
     }

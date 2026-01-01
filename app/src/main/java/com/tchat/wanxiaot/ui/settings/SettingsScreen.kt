@@ -12,7 +12,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
@@ -23,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.BookOpen
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.ScrollText
 import com.tchat.data.database.AppDatabase
 import com.tchat.data.repository.impl.AssistantRepositoryImpl
 import com.tchat.data.repository.impl.KnowledgeRepositoryImpl
@@ -35,6 +38,9 @@ import com.tchat.wanxiaot.ui.assistant.AssistantViewModel
 import com.tchat.wanxiaot.ui.knowledge.KnowledgeDetailScreen
 import com.tchat.wanxiaot.ui.knowledge.KnowledgeScreen
 import com.tchat.wanxiaot.ui.knowledge.KnowledgeViewModel
+import com.tchat.wanxiaot.ui.mcp.McpScreen
+import com.tchat.wanxiaot.ui.mcp.McpViewModel
+import com.tchat.data.repository.impl.McpServerRepositoryImpl
 
 /**
  * 设置子页面类型
@@ -48,6 +54,8 @@ private sealed class SettingsSubPage {
     data class ASSISTANT_DETAIL(val id: String) : SettingsSubPage()
     data object KNOWLEDGE : SettingsSubPage()
     data class KNOWLEDGE_DETAIL(val id: String) : SettingsSubPage()
+    data object MCP : SettingsSubPage()
+    data object USAGE_STATS : SettingsSubPage()
 }
 
 /**
@@ -77,6 +85,11 @@ fun SettingsScreen(
     }
     val knowledgeService = remember(knowledgeRepository) {
         KnowledgeService(knowledgeRepository)
+    }
+
+    // 创建MCP Repository
+    val mcpRepository = remember(database) {
+        McpServerRepositoryImpl(database.mcpServerDao())
     }
 
     // 处理系统返回键
@@ -123,7 +136,9 @@ fun SettingsScreen(
                     onAboutClick = { currentSubPage = SettingsSubPage.ABOUT },
                     onLogcatClick = { currentSubPage = SettingsSubPage.LOGCAT },
                     onAssistantsClick = { currentSubPage = SettingsSubPage.ASSISTANTS },
-                    onKnowledgeClick = { currentSubPage = SettingsSubPage.KNOWLEDGE }
+                    onKnowledgeClick = { currentSubPage = SettingsSubPage.KNOWLEDGE },
+                    onMcpClick = { currentSubPage = SettingsSubPage.MCP },
+                    onUsageStatsClick = { currentSubPage = SettingsSubPage.USAGE_STATS }
                 )
             }
             is SettingsSubPage.PROVIDERS -> {
@@ -149,8 +164,8 @@ fun SettingsScreen(
                 )
             }
             is SettingsSubPage.ASSISTANT_DETAIL -> {
-                val viewModel = remember(assistantRepository, knowledgeRepository, page.id) {
-                    AssistantDetailViewModel(assistantRepository, knowledgeRepository, page.id)
+                val viewModel = remember(assistantRepository, knowledgeRepository, mcpRepository, page.id) {
+                    AssistantDetailViewModel(assistantRepository, knowledgeRepository, mcpRepository, page.id)
                 }
                 AssistantDetailScreen(
                     viewModel = viewModel,
@@ -177,6 +192,21 @@ fun SettingsScreen(
                     onBack = { currentSubPage = SettingsSubPage.KNOWLEDGE }
                 )
             }
+            is SettingsSubPage.MCP -> {
+                val viewModel = remember(mcpRepository) {
+                    McpViewModel(mcpRepository)
+                }
+                McpScreen(
+                    viewModel = viewModel,
+                    onBack = { currentSubPage = SettingsSubPage.MAIN }
+                )
+            }
+            is SettingsSubPage.USAGE_STATS -> {
+                UsageStatsScreen(
+                    messageDao = database.messageDao(),
+                    onBack = { currentSubPage = SettingsSubPage.MAIN }
+                )
+            }
         }
     }
 }
@@ -192,7 +222,9 @@ private fun SettingsMainContent(
     onAboutClick: () -> Unit,
     onLogcatClick: () -> Unit,
     onAssistantsClick: () -> Unit,
-    onKnowledgeClick: () -> Unit
+    onKnowledgeClick: () -> Unit,
+    onMcpClick: () -> Unit,
+    onUsageStatsClick: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -229,48 +261,6 @@ private fun SettingsMainContent(
                 modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
             )
 
-            // 服务商设置卡片
-            OutlinedCard(
-                onClick = onProvidersClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Settings,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "服务商",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "管理 AI 服务商配置",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
             // 助手设置卡片
             OutlinedCard(
                 onClick = onAssistantsClick,
@@ -300,6 +290,48 @@ private fun SettingsMainContent(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "管理AI助手和本地工具",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // 服务商设置卡片
+            OutlinedCard(
+                onClick = onProvidersClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "服务商",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "管理 AI 服务商配置",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -355,6 +387,48 @@ private fun SettingsMainContent(
                 }
             }
 
+            // MCP 服务器设置卡片
+            OutlinedCard(
+                onClick = onMcpClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Cloud,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "MCP 服务器",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "管理 MCP 工具服务器连接",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
             // 其他分组标题
@@ -364,6 +438,48 @@ private fun SettingsMainContent(
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
             )
+
+            // 使用统计卡片
+            OutlinedCard(
+                onClick = onUsageStatsClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.BarChart,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "使用统计",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "查看 Token 和模型调用统计",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             // 日志查看卡片
             OutlinedCard(
@@ -377,7 +493,7 @@ private fun SettingsMainContent(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        Icons.Default.BugReport,
+                        Lucide.ScrollText,
                         contentDescription = null,
                         modifier = Modifier.size(24.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant

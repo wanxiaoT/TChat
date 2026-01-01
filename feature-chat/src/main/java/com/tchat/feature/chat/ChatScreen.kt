@@ -68,16 +68,16 @@ fun ChatScreen(
     }
 
     // 当工具状态变化时更新ViewModel的配置
-    LaunchedEffect(enabledTools, currentTools, systemPrompt) {
+    LaunchedEffect(enabledTools, currentTools, systemPrompt, currentModel) {
         // 只要有工具或系统提示，就设置配置
         val hasTools = currentTools.isNotEmpty()
         val hasSystemPrompt = !systemPrompt.isNullOrEmpty()
         
         if (hasTools || hasSystemPrompt) {
-            viewModel.setTools(currentTools, systemPrompt)
+            viewModel.setTools(currentTools, systemPrompt, currentModel)
         } else {
             // 即使没有工具和系统提示，也设置一个空配置，确保消息可以正常发送
-            viewModel.setTools(emptyList(), null)
+            viewModel.setTools(emptyList(), null, currentModel)
         }
     }
 
@@ -115,6 +115,7 @@ fun ChatScreen(
                         messages = state.messages,
                         modifier = Modifier.weight(1f),
                         providerIcon = providerIcon,
+                        modelName = currentModel,
                         onRegenerate = { userMessageId, aiMessageId ->
                             viewModel.regenerateMessage(userMessageId, aiMessageId)
                         },

@@ -33,6 +33,7 @@ fun MessageItem(
     message: Message,
     modifier: Modifier = Modifier,
     providerIcon: ImageVector? = null,
+    modelName: String = "",
     nextMessage: Message? = null,  // 下一条消息（用于找到对应的 AI 回复）
     onRegenerate: ((userMessageId: String, aiMessageId: String) -> Unit)? = null,
     onSelectVariant: ((messageId: String, variantIndex: Int) -> Unit)? = null
@@ -81,36 +82,50 @@ fun MessageItem(
             }
         }
     } else {
-        // AI 消息：带图标的全宽布局
-        Row(
+        // AI 消息：头像和模型名称在上方，内容在下方
+        Column(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            // AI 提供商图标
-            Surface(
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.size(32.dp)
+            // 头像和模型名称行
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize()
+                // AI 提供商图标
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.size(28.dp)
                 ) {
-                    Icon(
-                        imageVector = providerIcon ?: Lucide.Bot,
-                        contentDescription = "AI Provider",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Icon(
+                            imageVector = providerIcon ?: Lucide.Bot,
+                            contentDescription = "AI Provider",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // 模型名称
+                if (modelName.isNotEmpty()) {
+                    Text(
+                        text = modelName,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
             // 消息内容
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
+            Column {
                 // 工具执行结果（如果有）
                 if (!message.toolResults.isNullOrEmpty()) {
                     ToolResultsSection(toolResults = message.toolResults!!)

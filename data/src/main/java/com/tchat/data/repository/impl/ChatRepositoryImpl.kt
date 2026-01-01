@@ -142,6 +142,7 @@ class ChatRepositoryImpl(
                 messages = messages,
                 tools = config?.tools ?: emptyList(),
                 toolDefinitions = toolDefinitions,
+                modelName = config?.modelName,
                 onStreamingUpdate = { msg -> emit(Result.Success(msg)) }
             )
 
@@ -221,6 +222,7 @@ class ChatRepositoryImpl(
                 messages = messages,
                 tools = config?.tools ?: emptyList(),
                 toolDefinitions = toolDefinitions,
+                modelName = config?.modelName,
                 onStreamingUpdate = { msg -> emit(Result.Success(MessageResult(chatId, msg))) }
             )
 
@@ -241,6 +243,7 @@ class ChatRepositoryImpl(
         messages: MutableList<ChatMessage>,
         tools: List<Tool>,
         toolDefinitions: List<ToolDefinition>,
+        modelName: String? = null,
         onStreamingUpdate: suspend (Message) -> Unit
     ): Message {
         var currentContent = ""
@@ -403,6 +406,7 @@ class ChatRepositoryImpl(
             outputTokens = outputTokens,
             tokensPerSecond = tokensPerSecond,
             firstTokenLatency = firstTokenLatency,
+            modelName = modelName,
             toolResults = if (allToolResults.isNotEmpty()) allToolResults.toList() else null
         )
         
@@ -687,6 +691,7 @@ class ChatRepositoryImpl(
             outputTokens = message.outputTokens,
             tokensPerSecond = message.tokensPerSecond,
             firstTokenLatency = message.firstTokenLatency,
+            modelName = message.modelName,
             variantsJson = if (message.variants.isNotEmpty()) variantsToJson(message.variants) else null,
             selectedVariantIndex = message.selectedVariantIndex,
             toolCallId = message.toolCallId,
@@ -893,6 +898,7 @@ class ChatRepositoryImpl(
             outputTokens = currentVariant?.outputTokens ?: outputTokens,
             tokensPerSecond = currentVariant?.tokensPerSecond ?: tokensPerSecond,
             firstTokenLatency = currentVariant?.firstTokenLatency ?: firstTokenLatency,
+            modelName = modelName,
             variants = variants,
             selectedVariantIndex = selectedVariantIndex,
             toolCallId = toolCallId,

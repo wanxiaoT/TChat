@@ -34,6 +34,8 @@ data class MessageEntity(
     val outputTokens: Int = 0,
     val tokensPerSecond: Double = 0.0,
     val firstTokenLatency: Long = 0,
+    // 模型名称（用于统计）
+    val modelName: String? = null,
     // 变体支持（JSON 格式存储）
     val variantsJson: String? = null,
     val selectedVariantIndex: Int = 0,

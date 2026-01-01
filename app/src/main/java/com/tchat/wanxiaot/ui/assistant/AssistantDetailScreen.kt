@@ -69,6 +69,7 @@ import com.tchat.data.model.Assistant
 import com.tchat.data.model.LocalToolOption
 import com.tchat.data.model.LocalToolOption.Companion.description
 import com.tchat.data.model.LocalToolOption.Companion.displayName
+import com.tchat.data.model.McpServer
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -86,8 +87,9 @@ fun AssistantDetailScreen(
     val assistant by viewModel.assistant.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val knowledgeBases by viewModel.knowledgeBases.collectAsState()
+    val mcpServers by viewModel.mcpServers.collectAsState()
 
-    val tabs = listOf("基本设置", "提示词", "本地工具", "知识库")
+    val tabs = listOf("基本设置", "提示词", "本地工具", "MCP工具", "知识库")
     val pagerState = rememberPagerState { tabs.size }
 
     Scaffold(
@@ -174,7 +176,12 @@ fun AssistantDetailScreen(
                             assistant = assistant!!,
                             onUpdate = { viewModel.updateAssistant(it) }
                         )
-                        3 -> KnowledgeBaseTab(
+                        3 -> McpToolsTab(
+                            assistant = assistant!!,
+                            mcpServers = mcpServers,
+                            onUpdate = { viewModel.updateAssistant(it) }
+                        )
+                        4 -> KnowledgeBaseTab(
                             assistant = assistant!!,
                             knowledgeBases = knowledgeBases,
                             onUpdate = { viewModel.updateAssistant(it) }
@@ -538,6 +545,122 @@ private fun LocalToolsTab(
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "已启用 ${assistant.localTools.size} 个本地工具",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+/**
+ * MCP 工具设置标签页
+ */
+@Composable
+private fun McpToolsTab(
+    assistant: Assistant,
+    mcpServers: List<McpServer>,
+    onUpdate: (Assistant) -> Unit
+) {
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "选择要启用的 MCP 服务器，AI 可以调用其提供的工具",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        if (mcpServers.isEmpty()) {
+            // 空状态
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "暂无 MCP 服务器",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "请先在设置中添加 MCP 服务器",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        } else {
+            mcpServers.forEach { server ->
+                val isEnabled = assistant.mcpServerIds.contains(server.id)
+
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = server.name,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            if (server.description.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = server.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = isEnabled,
+                            onCheckedChange = { enabled ->
+                                val newIds = if (enabled) {
+                                    assistant.mcpServerIds + server.id
+                                } else {
+                                    assistant.mcpServerIds - server.id
+                                }
+                                onUpdate(assistant.copy(mcpServerIds = newIds))
+                                Toast.makeText(
+                                    context,
+                                    if (enabled) "已启用 ${server.name}" else "已禁用 ${server.name}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            enabled = server.enabled
+                        )
+                    }
+                }
+            }
+        }
+
+        if (assistant.mcpServerIds.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "已启用 ${assistant.mcpServerIds.size} 个 MCP 服务器",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary
             )

@@ -22,7 +22,8 @@ data class ChatConfig(
     val tools: List<Tool> = emptyList(),
     val temperature: Float? = null,
     val topP: Float? = null,
-    val maxTokens: Int? = null
+    val maxTokens: Int? = null,
+    val modelName: String? = null  // 模型名称（用于统计）
 )
 
 interface ChatRepository {

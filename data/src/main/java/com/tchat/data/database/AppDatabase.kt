@@ -13,12 +13,14 @@ import com.tchat.data.database.dao.KnowledgeBaseDao
 import com.tchat.data.database.dao.KnowledgeItemDao
 import com.tchat.data.database.dao.KnowledgeChunkDao
 import com.tchat.data.database.dao.AssistantDao
+import com.tchat.data.database.dao.McpServerDao
 import com.tchat.data.database.entity.ChatEntity
 import com.tchat.data.database.entity.MessageEntity
 import com.tchat.data.database.entity.KnowledgeBaseEntity
 import com.tchat.data.database.entity.KnowledgeItemEntity
 import com.tchat.data.database.entity.KnowledgeChunkEntity
 import com.tchat.data.database.entity.AssistantEntity
+import com.tchat.data.database.entity.McpServerEntity
 import com.tchat.data.database.entity.LocalToolOptionConverter
 
 /**
@@ -33,9 +35,10 @@ import com.tchat.data.database.entity.LocalToolOptionConverter
         KnowledgeBaseEntity::class,
         KnowledgeItemEntity::class,
         KnowledgeChunkEntity::class,
-        AssistantEntity::class
+        AssistantEntity::class,
+        McpServerEntity::class
     ],
-    version = 8,
+    version = 10,
     exportSchema = false
 )
 @TypeConverters(LocalToolOptionConverter::class)
@@ -47,6 +50,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun knowledgeItemDao(): KnowledgeItemDao
     abstract fun knowledgeChunkDao(): KnowledgeChunkDao
     abstract fun assistantDao(): AssistantDao
+    abstract fun mcpServerDao(): McpServerDao
 
     companion object {
         @Volatile
@@ -170,6 +174,35 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // 迁移:添加MCP服务器表
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS mcp_servers (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        type TEXT NOT NULL,
+                        url TEXT NOT NULL,
+                        enabled INTEGER NOT NULL,
+                        timeout INTEGER NOT NULL,
+                        headers TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                // 为助手添加MCP服务器ID列表字段
+                db.execSQL("ALTER TABLE assistants ADD COLUMN mcpServerIds TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
+        // 迁移:为消息添加模型名称字段
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN modelName TEXT DEFAULT NULL")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -177,7 +210,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "tchat_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     .build()
                 INSTANCE = instance
                 instance

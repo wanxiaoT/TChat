@@ -105,10 +105,11 @@ class ChatViewModel(
     /**
      * 设置可用的工具
      */
-    fun setTools(tools: List<Tool>, systemPrompt: String? = null) {
+    fun setTools(tools: List<Tool>, systemPrompt: String? = null, modelName: String? = null) {
         val config = ChatConfig(
             systemPrompt = systemPrompt,
-            tools = tools
+            tools = tools,
+            modelName = modelName
         )
         setChatConfig(config)
     }

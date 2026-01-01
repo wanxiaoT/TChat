@@ -24,6 +24,162 @@ TChat的作者是大陆人，交流最好用简体中文，如果不会使用那
 - 流式聊天回复
 - Material 3 UI 搭配 Jetpack Compose
 - 知识库（RAG）功能
+- MCP（Model Context Protocol）工具服务器支持
+
+[自愿赞助](https://tchat.153595.xyz/Donate/)
+
+
+# v1.4
+
+### 新增功能
+
+- **聊天界面优化**
+  - 禁用 Markdown 链接自动解析，`[名字](链接)` 格式显示为纯文本
+  - 顶部标题栏显示当前助手名称，副标题显示 `服务商 > 模型`
+  - AI 头像移至消息上方，头像旁显示模型名称
+  - 工具选择弹窗优化：已授权时隐藏权限状态，只在未授权时显示
+
+- **使用统计功能**
+  - 设置页面新增"使用统计"入口
+  - 显示上行 Token（输入）总计
+  - 显示下行 Token（输出）总计
+  - 显示总调用次数
+  - 按模型分类显示调用次数
+
+- **MCP（Model Context Protocol）工具服务器支持**
+  - 支持连接外部 MCP 服务器，扩展 AI 工具能力
+  - 支持 SSE 和 Streamable HTTP 两种传输协议
+  - 服务器管理：添加/编辑/删除/启用/禁用
+  - 连接测试功能，显示可用工具数量
+  - 自定义请求头和超时配置
+
+- **MCP 服务器管理页面**
+  - 设置页面新增"MCP 服务器"入口
+  - 卡片式服务器列表，显示名称、描述、URL
+  - 一键测试连接状态
+  - 支持批量管理多个 MCP 服务器
+
+- **助手 MCP 工具配置**
+  - 助手详情页新增"MCP工具"标签页
+  - 为每个助手独立选择启用的 MCP 服务器
+  - MCP 工具与本地工具、知识库工具协同工作
+
+- **聊天集成**
+  - AI 可自动调用已启用的 MCP 服务器工具
+  - 工具调用结果实时显示
+  - 支持多轮工具调用
+
+---
+
+### 技术改进详情
+
+#### 1. 聊天界面优化
+
+**功能**：改进聊天消息显示布局
+
+**实现**：
+- 移除 `LinkifyPlugin`，禁用链接自动解析
+- TopAppBar 添加副标题显示 `服务商 > 模型`
+- AI 消息布局改为垂直结构：头像+模型名称在上，内容在下
+
+---
+
+#### 2. 使用统计功能
+
+**功能**：统计 Token 使用量和模型调用次数
+
+**实现**：
+- `MessageEntity` 添加 `modelName` 字段
+- `MessageDao` 添加统计查询方法
+- `UsageStatsScreen` 使用统计页面
+- 数据库版本 9 → 10 迁移
+
+---
+
+#### 3. MCP 客户端实现
+
+**功能**：支持 MCP 协议的 SSE 客户端
+
+**实现**：
+- `McpClient` 接口定义连接、工具列表、工具调用操作
+- `McpSseClient` 实现 SSE 传输协议
+- JSON-RPC 2.0 消息格式
+- 支持 session 管理
+
+---
+
+#### 4. MCP 数据层
+
+**功能**：MCP 服务器配置持久化
+
+**实现**：
+- `McpServerEntity` 数据库实体
+- `McpServerDao` 数据访问对象
+- `McpServerRepository` 仓库接口和实现
+- 数据库版本 8 → 9 迁移
+
+---
+
+#### 5. MCP 工具服务
+
+**功能**：将 MCP 工具转换为本地 Tool 对象
+
+**实现**：
+- `McpToolService` 工具转换服务
+- 工具缓存机制，避免重复请求
+- 自动处理工具调用和结果返回
+
+---
+
+#### 6. 助手模型扩展
+
+**修改**：
+- `Assistant` 添加 `mcpServerIds` 字段
+- `AssistantEntity` 添加 `mcpServerIds` 字段
+- 支持为每个助手配置不同的 MCP 服务器
+
+---
+
+### 涉及文件
+
+| 模块 | 文件 | 修改 |
+|------|------|------|
+| feature-chat | MarkdownText.kt | 移除 LinkifyPlugin |
+| feature-chat | MessageItem.kt | AI 头像移至上方，显示模型名称 |
+| feature-chat | MessageList.kt | 传递 modelName 参数 |
+| feature-chat | ChatScreen.kt | 传递 modelName 到 ViewModel |
+| feature-chat | ChatViewModel.kt | setTools 支持 modelName |
+| data | MessageEntity.kt | 添加 modelName 字段 |
+| data | MessageDao.kt | 添加统计查询方法 |
+| data | Message.kt | 添加 modelName 字段 |
+| data | ChatRepository.kt | ChatConfig 添加 modelName |
+| data | ChatRepositoryImpl.kt | 保存消息时记录模型名称 |
+| data | AppDatabase.kt | 版本 10，modelName 迁移 |
+| data | McpServer.kt | MCP 服务器模型定义 |
+| data | McpServerEntity.kt | MCP 服务器数据库实体 |
+| data | McpServerDao.kt | MCP 服务器 DAO |
+| data | McpClient.kt | MCP 客户端接口 |
+| data | McpSseClient.kt | SSE 客户端实现 |
+| data | McpClientFactory.kt | 客户端工厂 |
+| data | McpServerRepository.kt | Repository 接口 |
+| data | McpServerRepositoryImpl.kt | Repository 实现 |
+| data | McpToolService.kt | MCP 工具服务 |
+| data | Assistant.kt | 添加 mcpServerIds 字段 |
+| data | AssistantEntity.kt | 添加 mcpServerIds 字段 |
+| data | AssistantRepositoryImpl.kt | 更新转换逻辑 |
+| data | AppDatabase.kt | 版本 9，MCP 表迁移 |
+| data | build.gradle.kts | 添加 OkHttp SSE 依赖 |
+| app | McpViewModel.kt | MCP 管理 ViewModel |
+| app | McpScreen.kt | MCP 服务器管理页面 |
+| app | SettingsScreen.kt | 添加 MCP 设置入口 |
+| app | AssistantDetailScreen.kt | 添加 MCP 工具标签页 |
+| app | AssistantDetailViewModel.kt | 添加 MCP 服务器支持 |
+| app | MainActivity.kt | 集成 MCP 工具到聊天，添加副标题 |
+| app | UsageStatsScreen.kt | 使用统计页面（新增） |
+| app | SettingsScreen.kt | 添加使用统计入口 |
+| feature-chat | ToolSelectorSheet.kt | 已授权时隐藏权限状态显示 |
+
+---
 
 
 

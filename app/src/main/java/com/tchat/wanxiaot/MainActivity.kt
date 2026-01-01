@@ -34,6 +34,8 @@ import com.tchat.data.service.KnowledgeService
 import com.tchat.data.tool.KnowledgeSearchTool
 import com.tchat.data.tool.LocalTools
 import com.tchat.data.tool.Tool
+import com.tchat.data.mcp.McpToolService
+import com.tchat.data.repository.impl.McpServerRepositoryImpl
 import com.tchat.feature.chat.ChatScreen
 import com.tchat.feature.chat.ChatViewModel
 import com.tchat.network.provider.AIProviderFactory
@@ -148,6 +150,14 @@ fun MainScreen(
     }
     val knowledgeService = remember(knowledgeRepository) {
         KnowledgeService(knowledgeRepository)
+    }
+
+    // MCP 相关
+    val mcpRepository = remember(database) {
+        McpServerRepositoryImpl(database.mcpServerDao())
+    }
+    val mcpToolService = remember(mcpRepository) {
+        McpToolService(mcpRepository)
     }
 
     // null表示新对话（懒创建模式）
@@ -322,8 +332,15 @@ fun MainScreen(
                 modifier = Modifier.fillMaxSize(),
                 topBar = {
                     TopAppBar(
-                        title = { 
-                            Text(currentAssistant?.name ?: "AI 聊天") 
+                        title = {
+                            Column {
+                                Text(currentAssistant?.name ?: "AI 聊天")
+                                Text(
+                                    text = "${currentProvider?.name ?: "未配置"} > ${settings.getActiveModel()}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         },
                         navigationIcon = {
                             IconButton(onClick = {
@@ -393,6 +410,25 @@ fun MainScreen(
                                 }
                             }
 
+                            // 计算 MCP 工具（当 currentAssistant 变化时重新计算）
+                            var mcpTools by remember { mutableStateOf<List<Tool>>(emptyList()) }
+                            LaunchedEffect(currentAssistant?.mcpServerIds) {
+                                val serverIds = currentAssistant?.mcpServerIds ?: emptyList()
+                                if (serverIds.isNotEmpty()) {
+                                    println("=== MCP 工具加载中 ===")
+                                    println("服务器IDs: $serverIds")
+                                    mcpTools = mcpToolService.getToolsForServers(serverIds)
+                                    println("已加载 ${mcpTools.size} 个 MCP 工具")
+                                } else {
+                                    mcpTools = emptyList()
+                                }
+                            }
+
+                            // 合并所有额外工具
+                            val allExtraTools = remember(knowledgeTools, mcpTools) {
+                                knowledgeTools + mcpTools
+                            }
+
                             ChatScreen(
                                 viewModel = viewModel,
                                 chatId = currentChatId,
@@ -417,7 +453,7 @@ fun MainScreen(
                                     localTools.getToolsForOptions(options)
                                 },
                                 // 知识库搜索工具作为额外工具传递
-                                extraTools = knowledgeTools,
+                                extraTools = allExtraTools,
                                 systemPrompt = currentAssistant?.systemPrompt
                             )
                         }

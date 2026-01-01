@@ -42,4 +42,25 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE chatId = :chatId")
     suspend fun deleteMessagesByChatId(chatId: String)
+
+    // 统计查询
+    @Query("SELECT SUM(inputTokens) FROM messages WHERE role = 'assistant'")
+    suspend fun getTotalInputTokens(): Long?
+
+    @Query("SELECT SUM(outputTokens) FROM messages WHERE role = 'assistant'")
+    suspend fun getTotalOutputTokens(): Long?
+
+    @Query("SELECT COUNT(*) FROM messages WHERE role = 'assistant'")
+    suspend fun getTotalAssistantMessages(): Int
+
+    @Query("SELECT modelName, COUNT(*) as count FROM messages WHERE role = 'assistant' AND modelName IS NOT NULL GROUP BY modelName")
+    suspend fun getModelUsageStats(): List<ModelUsageStat>
 }
+
+/**
+ * 模型使用统计数据类
+ */
+data class ModelUsageStat(
+    val modelName: String,
+    val count: Int
+)

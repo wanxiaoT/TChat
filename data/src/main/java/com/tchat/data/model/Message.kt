@@ -47,6 +47,8 @@ data class Message(
     val outputTokens: Int = 0,
     val tokensPerSecond: Double = 0.0,
     val firstTokenLatency: Long = 0,
+    // 模型名称（用于统计）
+    val modelName: String? = null,
     // 变体支持（仅 AI 消息使用）
     val variants: List<MessageVariant> = emptyList(),
     val selectedVariantIndex: Int = 0,
