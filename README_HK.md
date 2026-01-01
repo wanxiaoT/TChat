@@ -70,6 +70,9 @@ TChat嘅作者係大陸人，交流最好用簡體中文，如果唔識用就用
 
 ---
 
+<img width="544" height="945" alt="image" src="https://github.com/user-attachments/assets/f45d79d0-07fd-4a1e-91cf-5620cfa9136f" />
+
+
 # v1.3
 
 ### 新增功能

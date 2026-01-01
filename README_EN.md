@@ -70,6 +70,9 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
 
 ---
 
+<img width="544" height="945" alt="image" src="https://github.com/user-attachments/assets/f45d79d0-07fd-4a1e-91cf-5620cfa9136f" />
+
+
 # v1.3
 
 ### New Features
