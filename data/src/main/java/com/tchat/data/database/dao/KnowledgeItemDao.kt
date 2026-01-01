@@ -18,6 +18,12 @@ interface KnowledgeItemDao {
     @Query("SELECT * FROM knowledge_items WHERE knowledgeBaseId = :baseId")
     suspend fun getItemsByBaseIdSync(baseId: String): List<KnowledgeItemEntity>
 
+    @Query("SELECT * FROM knowledge_items WHERE status = :status")
+    suspend fun getItemsByStatus(status: String): List<KnowledgeItemEntity>
+
+    @Query("SELECT * FROM knowledge_items WHERE knowledgeBaseId = :baseId AND status = :status")
+    suspend fun getItemsByBaseIdAndStatus(baseId: String, status: String): List<KnowledgeItemEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertItem(item: KnowledgeItemEntity)
 
@@ -26,6 +32,9 @@ interface KnowledgeItemDao {
 
     @Update
     suspend fun updateItem(item: KnowledgeItemEntity)
+
+    @Query("UPDATE knowledge_items SET status = :status, errorMessage = :errorMessage, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateItemStatus(id: String, status: String, errorMessage: String? = null, updatedAt: Long = System.currentTimeMillis())
 
     @Delete
     suspend fun deleteItem(item: KnowledgeItemEntity)
@@ -38,4 +47,7 @@ interface KnowledgeItemDao {
 
     @Query("SELECT COUNT(*) FROM knowledge_items WHERE knowledgeBaseId = :baseId")
     suspend fun getItemsCountByBaseId(baseId: String): Int
+
+    @Query("SELECT COUNT(*) FROM knowledge_items WHERE knowledgeBaseId = :baseId AND status = :status")
+    suspend fun getItemsCountByBaseIdAndStatus(baseId: String, status: String): Int
 }

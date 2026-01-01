@@ -29,10 +29,15 @@ import com.tchat.data.database.entity.AssistantEntity
 import com.tchat.data.model.Assistant
 import com.tchat.data.model.LocalToolOption
 import com.tchat.data.repository.impl.ChatRepositoryImpl
+import com.tchat.data.repository.impl.KnowledgeRepositoryImpl
+import com.tchat.data.service.KnowledgeService
+import com.tchat.data.tool.KnowledgeSearchTool
 import com.tchat.data.tool.LocalTools
+import com.tchat.data.tool.Tool
 import com.tchat.feature.chat.ChatScreen
 import com.tchat.feature.chat.ChatViewModel
 import com.tchat.network.provider.AIProviderFactory
+import com.tchat.network.provider.EmbeddingProviderFactory
 import com.tchat.wanxiaot.settings.AIProviderType
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.DrawerContent
@@ -132,6 +137,18 @@ fun MainScreen(
     val chatDao = database.chatDao()
     val messageDao = database.messageDao()
     val assistantDao = database.assistantDao()
+
+    // 知识库相关
+    val knowledgeRepository = remember(database) {
+        KnowledgeRepositoryImpl(
+            database.knowledgeBaseDao(),
+            database.knowledgeItemDao(),
+            database.knowledgeChunkDao()
+        )
+    }
+    val knowledgeService = remember(knowledgeRepository) {
+        KnowledgeService(knowledgeRepository)
+    }
 
     // null表示新对话（懒创建模式）
     var currentChatId by remember { mutableStateOf<String?>(null) }
@@ -349,6 +366,33 @@ fun MainScreen(
                                 LocalTools(context)
                             }
 
+                            // 计算知识库搜索工具（当 currentAssistant 变化时重新计算）
+                            val knowledgeTools = remember(currentAssistant?.knowledgeBaseId, knowledgeService, knowledgeRepository) {
+                                currentAssistant?.knowledgeBaseId?.let { kbId ->
+                                    println("=== 知识库工具已启用 ===")
+                                    println("知识库ID: $kbId")
+                                    println("助手: ${currentAssistant?.name}")
+                                    listOf(
+                                        KnowledgeSearchTool.create(
+                                            knowledgeService = knowledgeService,
+                                            repository = knowledgeRepository,
+                                            getEmbeddingProvider = { knowledgeBaseId ->
+                                                // 从知识库配置获取 Embedding Provider
+                                                getEmbeddingProviderForKnowledgeBase(
+                                                    knowledgeBaseId = knowledgeBaseId,
+                                                    knowledgeRepository = knowledgeRepository,
+                                                    settingsManager = settingsManager
+                                                )
+                                            },
+                                            knowledgeBaseId = kbId
+                                        )
+                                    )
+                                } ?: run {
+                                    println("=== 未绑定知识库 ===")
+                                    emptyList()
+                                }
+                            }
+
                             ChatScreen(
                                 viewModel = viewModel,
                                 chatId = currentChatId,
@@ -372,6 +416,8 @@ fun MainScreen(
                                 getToolsForOptions = { options ->
                                     localTools.getToolsForOptions(options)
                                 },
+                                // 知识库搜索工具作为额外工具传递
+                                extraTools = knowledgeTools,
                                 systemPrompt = currentAssistant?.systemPrompt
                             )
                         }
@@ -435,7 +481,46 @@ private fun entityToAssistant(entity: AssistantEntity): Assistant {
         contextMessageSize = entity.contextMessageSize,
         streamOutput = entity.streamOutput,
         localTools = toolOptions,
+        knowledgeBaseId = entity.knowledgeBaseId,
         createdAt = entity.createdAt,
         updatedAt = entity.updatedAt
     )
+}
+
+/**
+ * 根据知识库配置获取对应的 Embedding Provider
+ * 知识库使用自己配置的 Embedding 服务商，与对话模型提供商独立
+ */
+private fun getEmbeddingProviderForKnowledgeBase(
+    knowledgeBaseId: String,
+    knowledgeRepository: KnowledgeRepositoryImpl,
+    settingsManager: SettingsManager
+): com.tchat.network.provider.EmbeddingProvider? {
+    return try {
+        // 获取知识库配置（同步方式，因为我们在工具执行时需要）
+        val base = kotlinx.coroutines.runBlocking {
+            knowledgeRepository.getBaseById(knowledgeBaseId)
+        } ?: return null
+        
+        // 获取设置中的服务商配置
+        val settings = settingsManager.settings.value
+        val providerConfig = settings.providers.find { it.id == base.embeddingProviderId }
+            ?: return null
+        
+        // 根据服务商类型创建 Embedding Provider
+        val providerType = when (providerConfig.providerType) {
+            AIProviderType.OPENAI -> EmbeddingProviderFactory.EmbeddingProviderType.OPENAI
+            AIProviderType.GEMINI -> EmbeddingProviderFactory.EmbeddingProviderType.GEMINI
+            else -> return null
+        }
+        
+        EmbeddingProviderFactory.create(
+            type = providerType,
+            apiKey = providerConfig.apiKey,
+            baseUrl = providerConfig.endpoint.ifBlank { null }
+        )
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
 }

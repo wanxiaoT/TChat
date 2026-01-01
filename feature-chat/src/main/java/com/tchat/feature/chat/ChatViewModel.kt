@@ -48,6 +48,9 @@ class ChatViewModel(
     private var messagesLoadJob: Job? = null
     private var streamingObserveJob: Job? = null
 
+    // 缓存最后的流式消息（用于保留 toolResults）
+    private val lastStreamingMessages = mutableMapOf<String, Message>()
+
     init {
         // 观察流式消息变化，合并到 UI 状态
         streamingObserveJob = viewModelScope.launch {

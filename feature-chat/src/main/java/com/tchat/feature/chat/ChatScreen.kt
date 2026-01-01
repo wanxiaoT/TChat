@@ -33,6 +33,8 @@ fun ChatScreen(
     onToolToggle: (LocalToolOption, Boolean) -> Unit = { _, _ -> },
     // 工具实例 - 从外部传入
     getToolsForOptions: (List<LocalToolOption>) -> List<Tool> = { emptyList() },
+    // 额外的工具（如知识库搜索工具）
+    extraTools: List<Tool> = emptyList(),
     // 系统提示
     systemPrompt: String? = null
 ) {
@@ -60,13 +62,9 @@ fun ChatScreen(
     var showToolSheet by remember { mutableStateOf(false) }
     val toolSheetState = rememberModalBottomSheetState()
 
-    // 计算当前启用的工具列表 - 每次 enabledTools 变化时重新计算
-    val currentTools = remember(enabledTools, getToolsForOptions) {
-        if (enabledTools.isEmpty()) {
-            emptyList()
-        } else {
-            getToolsForOptions(enabledTools.toList())
-        }
+    // 计算当前启用的工具列表 - 合并本地工具和额外工具（如知识库工具）
+    val currentTools = remember(enabledTools, getToolsForOptions, extraTools) {
+        getToolsForOptions(enabledTools.toList()) + extraTools
     }
 
     // 当工具状态变化时更新ViewModel的配置

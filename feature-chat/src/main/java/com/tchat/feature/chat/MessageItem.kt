@@ -185,23 +185,47 @@ private fun ToolResultsSection(toolResults: List<ToolResultData>) {
 
 /**
  * 单个工具调用卡片
- * 显示"调用 xxx 工具"，点击可展开查看详细结果
+ * 显示工具名称、参数、执行时间和结果
+ * 点击可展开/收起查看详细信息
  */
 @Composable
 private fun ToolCallCard(result: ToolResultData) {
     var expanded by remember { mutableStateOf(false) }
+    
+    // 格式化参数显示（安全处理空字符串）
+    val formattedArgs = remember(result.arguments) {
+        val args = result.arguments.trim()
+        if (args.isEmpty() || args == "{}") {
+            null
+        } else {
+            try {
+                val json = org.json.JSONObject(args)
+                if (json.length() == 0) {
+                    null
+                } else {
+                    json.keys().asSequence().map { key ->
+                        val value = json.opt(key)?.toString()?.take(50) ?: ""
+                        "$key: $value"
+                    }.joinToString(", ")
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
 
     Surface(
         onClick = { expanded = !expanded },
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.shapes.medium,
         color = if (result.isError)
-            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
         else
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+        tonalElevation = 1.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(10.dp)
+            modifier = Modifier.padding(12.dp)
         ) {
             // 工具调用标题行
             Row(
@@ -210,56 +234,160 @@ private fun ToolCallCard(result: ToolResultData) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 // 状态图标
-                Icon(
-                    imageVector = if (result.isError) Lucide.X else Lucide.Wrench,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = if (result.isError)
-                        MaterialTheme.colorScheme.error
-                    else
-                        MaterialTheme.colorScheme.primary
-                )
-                
-                // 工具名称
-                Text(
-                    text = "调用 ${result.name}",
-                    style = MaterialTheme.typography.labelLarge,
+                Surface(
+                    shape = MaterialTheme.shapes.small,
                     color = if (result.isError)
-                        MaterialTheme.colorScheme.error
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
                     else
-                        MaterialTheme.colorScheme.primary,
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Icon(
+                            imageVector = if (result.isError) Lucide.X else Lucide.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = if (result.isError)
+                                MaterialTheme.colorScheme.error
+                            else
+                                MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                
+                // 工具名称和简要信息
+                Column(
                     modifier = Modifier.weight(1f)
-                )
+                ) {
+                    Text(
+                        text = result.name,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (result.isError)
+                            MaterialTheme.colorScheme.error
+                        else
+                            MaterialTheme.colorScheme.primary
+                    )
+                    
+                    // 参数摘要（如果有）
+                    if (formattedArgs != null) {
+                        Text(
+                            text = formattedArgs,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                
+                // 执行时间
+                if (result.executionTimeMs > 0) {
+                    Text(
+                        text = "${result.executionTimeMs}ms",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 
                 // 展开/收起图标
                 Icon(
                     imageVector = if (expanded) Lucide.ChevronUp else Lucide.ChevronDown,
                     contentDescription = if (expanded) "收起" else "查看详情",
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(18.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             
-            // 展开后显示结果详情
+            // 展开后显示详细信息
             AnimatedVisibility(visible = expanded) {
                 Column(
-                    modifier = Modifier.padding(top = 8.dp)
+                    modifier = Modifier.padding(top = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Surface(
-                        shape = MaterialTheme.shapes.extraSmall,
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = result.result,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(8.dp)
+                    // 输入参数
+                    if (result.arguments.isNotEmpty() && result.arguments != "{}") {
+                        ToolDetailSection(
+                            title = "输入参数",
+                            content = formatJson(result.arguments),
+                            isInput = true
                         )
                     }
+                    
+                    // 输出结果
+                    ToolDetailSection(
+                        title = if (result.isError) "错误信息" else "执行结果",
+                        content = formatJson(result.result),
+                        isError = result.isError
+                    )
                 }
             }
         }
+    }
+}
+
+/**
+ * 工具详情区块
+ */
+@Composable
+private fun ToolDetailSection(
+    title: String,
+    content: String,
+    isInput: Boolean = false,
+    isError: Boolean = false
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelSmall,
+            color = when {
+                isError -> MaterialTheme.colorScheme.error
+                isInput -> MaterialTheme.colorScheme.tertiary
+                else -> MaterialTheme.colorScheme.primary
+            }
+        )
+        
+        Surface(
+            shape = MaterialTheme.shapes.small,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = content,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isError)
+                    MaterialTheme.colorScheme.error
+                else
+                    MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(10.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 格式化 JSON 字符串，使其更易读
+ * 安全处理空字符串和无效输入
+ */
+private fun formatJson(jsonStr: String): String {
+    val trimmed = jsonStr.trim()
+    if (trimmed.isEmpty() || trimmed == "{}") {
+        return "(无参数)"
+    }
+    
+    return try {
+        when {
+            trimmed.startsWith("{") -> org.json.JSONObject(trimmed).toString(2)
+            trimmed.startsWith("[") -> org.json.JSONArray(trimmed).toString(2)
+            else -> jsonStr
+        }
+    } catch (e: Exception) {
+        // 如果解析失败，返回原始字符串
+        jsonStr.ifEmpty { "(解析失败)" }
     }
 }
 
@@ -322,7 +450,7 @@ private fun StreamingIndicator() {
 }
 
 /**
- * 统计信息显示 - Material You 风格
+ * 统计信息显示
  */
 @Composable
 private fun StatisticsInfo(

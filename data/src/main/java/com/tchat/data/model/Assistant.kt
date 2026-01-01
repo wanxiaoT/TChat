@@ -16,6 +16,8 @@ data class Assistant(
     val contextMessageSize: Int = 64,
     val streamOutput: Boolean = true,
     val localTools: List<LocalToolOption> = emptyList(),
+    /** 关联的知识库ID，用于RAG检索 */
+    val knowledgeBaseId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {

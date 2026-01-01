@@ -70,8 +70,9 @@ class MessageSender(
                                 // 更新流式消息状态
                                 updateStreamingMessage(chatId, message)
                             } else {
-                                // 流式结束，移除状态
-                                removeStreamingMessage(chatId)
+                                // 流式结束，更新为最终消息状态（保留 toolResults 等信息）
+                                // 不立即移除，让数据库 Flow 有时间更新
+                                updateStreamingMessage(chatId, message)
                             }
                         }
                     }
@@ -82,7 +83,8 @@ class MessageSender(
                     is Result.Loading -> {}
                 }
             }
-            // 任务完成，从 Map 移除
+            // 任务完成，移除流式消息状态并从 Map 移除
+            removeStreamingMessage(chatId)
             sendingJobs.remove(chatId)
         }
     }

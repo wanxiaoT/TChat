@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.tchat.wanxiaot.BuildConfig
 import com.tchat.wanxiaot.R
 
 /**
@@ -88,7 +89,7 @@ fun AboutScreen(onBack: () -> Unit) {
                         shape = MaterialTheme.shapes.small
                     ) {
                         Text(
-                            text = "v1.0.0",
+                            text = "v${BuildConfig.VERSION_NAME}",
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSecondaryContainer

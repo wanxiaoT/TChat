@@ -101,6 +101,10 @@ class ChatRepositoryImpl(
         config: ChatConfig?
     ): Flow<Result<Message>> = flow {
         try {
+            println("=== sendMessage 开始 ===")
+            println("chatId: $chatId")
+            println("config tools: ${config?.tools?.size ?: 0}")
+
             // 添加用户消息
             val userMessage = Message(
                 id = UUID.randomUUID().toString(),
@@ -319,26 +323,46 @@ class ChatRepositoryImpl(
 
             // 执行每个工具并收集结果
             for (toolCall in toolCalls) {
+                println("=== 执行工具 ===")
+                println("工具名称: ${toolCall.name}")
+                println("工具ID: ${toolCall.id}")
+                println("参数: ${toolCall.arguments}")
+                
                 val tool = tools.find { it.name == toolCall.name }
+                val startTime = System.currentTimeMillis()
+                // 安全的参数字符串：空白时默认为 "{}"
+                val safeArgs = toolCall.arguments.ifBlank { "{}" }
                 val result = if (tool != null) {
                     try {
-                        val argsObject = JSONObject(toolCall.arguments)
+                        val argsObject = JSONObject(safeArgs)
+                        println("开始执行工具...")
                         val resultObject = tool.execute(argsObject)
+                        println("工具执行完成")
                         resultObject.toString()
                     } catch (e: Exception) {
+                        println("工具执行异常: ${e.message}")
+                        e.printStackTrace()
                         """{"error": "${e.message?.replace("\"", "\\\"") ?: "执行失败"}"}"""
                     }
                 } else {
+                    println("未找到工具: ${toolCall.name}")
                     """{"error": "未知工具: ${toolCall.name}"}"""
                 }
+                val executionTime = System.currentTimeMillis() - startTime
+                
+                println("工具结果: $result")
+                println("执行耗时: ${executionTime}ms")
 
-                // 记录工具结果用于显示
+                // 记录工具结果用于显示（包含参数和执行时间）
                 allToolResults.add(ToolResultData(
                     toolCallId = toolCall.id,
                     name = toolCall.name,
+                    arguments = safeArgs,
                     result = result,
-                    isError = result.contains("\"error\"")
+                    isError = result.contains("\"error\""),
+                    executionTimeMs = executionTime
                 ))
+                println("当前工具结果总数: ${allToolResults.size}")
 
                 // 添加工具结果到消息历史
                 messages.add(ChatMessage(
@@ -363,6 +387,12 @@ class ChatRepositoryImpl(
         }
 
         // 保存最终消息到数据库
+        println("=== 准备保存最终消息 ===")
+        println("allToolResults 数量: ${allToolResults.size}")
+        allToolResults.forEach { result ->
+            println("  工具: ${result.name}, ID: ${result.toolCallId}")
+        }
+        
         val finalMessage = Message(
             id = assistantId,
             chatId = chatId,
@@ -375,6 +405,8 @@ class ChatRepositoryImpl(
             firstTokenLatency = firstTokenLatency,
             toolResults = if (allToolResults.isNotEmpty()) allToolResults.toList() else null
         )
+        
+        println("finalMessage.toolResults 数量: ${finalMessage.toolResults?.size ?: 0}")
         saveMessageToDb(finalMessage)
         chatDao.updateChatTimestamp(chatId, System.currentTimeMillis())
 
@@ -539,9 +571,12 @@ class ChatRepositoryImpl(
 
             for (toolCall in toolCalls) {
                 val tool = tools.find { it.name == toolCall.name }
+                val startTime = System.currentTimeMillis()
+                // 安全的参数字符串：空白时默认为 "{}"
+                val safeArgs = toolCall.arguments.ifBlank { "{}" }
                 val result = if (tool != null) {
                     try {
-                        val argsObject = JSONObject(toolCall.arguments)
+                        val argsObject = JSONObject(safeArgs)
                         val resultObject = tool.execute(argsObject)
                         resultObject.toString()
                     } catch (e: Exception) {
@@ -550,12 +585,15 @@ class ChatRepositoryImpl(
                 } else {
                     """{"error": "未知工具: ${toolCall.name}"}"""
                 }
+                val executionTime = System.currentTimeMillis() - startTime
 
                 allToolResults.add(ToolResultData(
                     toolCallId = toolCall.id,
                     name = toolCall.name,
+                    arguments = safeArgs,
                     result = result,
-                    isError = result.contains("\"error\"")
+                    isError = result.contains("\"error\""),
+                    executionTimeMs = executionTime
                 ))
 
                 messages.add(ChatMessage(
@@ -631,6 +669,14 @@ class ChatRepositoryImpl(
     }
 
     private suspend fun saveMessageToDb(message: Message) {
+        println("=== 保存消息到数据库 ===")
+        println("消息ID: ${message.id}")
+        println("角色: ${message.role}")
+        println("工具结果数量: ${message.toolResults?.size ?: 0}")
+        message.toolResults?.forEach { result ->
+            println("  - 工具: ${result.name}, 是否错误: ${result.isError}")
+        }
+        
         val entity = MessageEntity(
             id = message.id,
             chatId = message.chatId,
@@ -648,7 +694,10 @@ class ChatRepositoryImpl(
             toolCallsJson = message.toolCalls?.let { toolCallsToJson(it) },
             toolResultsJson = message.toolResults?.let { toolResultsToJson(it) }
         )
+        
+        println("toolResultsJson: ${entity.toolResultsJson}")
         messageDao.insertMessage(entity)
+        println("=== 消息保存完成 ===")
     }
 
     /**
@@ -730,8 +779,10 @@ class ChatRepositoryImpl(
             val jsonObj = JSONObject()
             jsonObj.put("toolCallId", tr.toolCallId)
             jsonObj.put("name", tr.name)
+            jsonObj.put("arguments", tr.arguments)
             jsonObj.put("result", tr.result)
             jsonObj.put("isError", tr.isError)
+            jsonObj.put("executionTimeMs", tr.executionTimeMs)
             jsonArray.put(jsonObj)
         }
         return jsonArray.toString()
@@ -780,11 +831,25 @@ class ChatRepositoryImpl(
             val jsonArray = JSONArray(json)
             (0 until jsonArray.length()).map { i ->
                 val jsonObj = jsonArray.getJSONObject(i)
+                val rawResult = jsonObj.optString("result", "")
+                val rawArgs = jsonObj.optString("arguments", "{}")
+                
+                // 检测是否是旧版本因为空参数导致的错误
+                val isLegacyParseError = rawResult.contains("End of input at character 0")
+                
                 ToolResultData(
                     toolCallId = jsonObj.optString("toolCallId", ""),
                     name = jsonObj.optString("name", ""),
-                    result = jsonObj.optString("result", ""),
-                    isError = jsonObj.optBoolean("isError", false)
+                    // 确保参数不为空
+                    arguments = rawArgs.ifBlank { "{}" },
+                    // 如果是旧版本解析错误，提供更友好的提示
+                    result = if (isLegacyParseError) {
+                        """{"note": "此工具调用记录已损坏，请删除此对话后重新尝试"}"""
+                    } else {
+                        rawResult
+                    },
+                    isError = jsonObj.optBoolean("isError", false) || isLegacyParseError,
+                    executionTimeMs = jsonObj.optLong("executionTimeMs", 0)
                 )
             }
         } catch (e: Exception) {
@@ -807,6 +872,16 @@ class ChatRepositoryImpl(
             null
         }
 
+        val loadedToolResults = jsonToToolResults(toolResultsJson)
+        if (!loadedToolResults.isNullOrEmpty()) {
+            println("=== 加载消息工具结果 ===")
+            println("消息ID: $id")
+            println("工具结果数量: ${loadedToolResults.size}")
+            loadedToolResults.forEach { result ->
+                println("  - 工具: ${result.name}")
+            }
+        }
+
         return Message(
             id = id,
             chatId = chatId,
@@ -822,7 +897,7 @@ class ChatRepositoryImpl(
             selectedVariantIndex = selectedVariantIndex,
             toolCallId = toolCallId,
             toolCalls = jsonToToolCalls(toolCallsJson),
-            toolResults = jsonToToolResults(toolResultsJson)
+            toolResults = loadedToolResults
         )
     }
 }

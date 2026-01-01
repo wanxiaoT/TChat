@@ -67,6 +67,7 @@ class AssistantRepositoryImpl(
             contextMessageSize = contextMessageSize,
             streamOutput = streamOutput,
             localTools = toolOptions,
+            knowledgeBaseId = knowledgeBaseId,
             createdAt = createdAt,
             updatedAt = updatedAt
         )
@@ -91,6 +92,7 @@ class AssistantRepositoryImpl(
             contextMessageSize = contextMessageSize,
             streamOutput = streamOutput,
             localTools = toolsJson,
+            knowledgeBaseId = knowledgeBaseId,
             createdAt = createdAt,
             updatedAt = System.currentTimeMillis()
         )

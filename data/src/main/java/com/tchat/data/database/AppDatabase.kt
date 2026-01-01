@@ -35,7 +35,7 @@ import com.tchat.data.database.entity.LocalToolOptionConverter
         KnowledgeChunkEntity::class,
         AssistantEntity::class
     ],
-    version = 6,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(LocalToolOptionConverter::class)
@@ -155,6 +155,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // 迁移:添加知识条目状态字段
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE knowledge_items ADD COLUMN status TEXT NOT NULL DEFAULT 'PENDING'")
+                db.execSQL("ALTER TABLE knowledge_items ADD COLUMN errorMessage TEXT DEFAULT NULL")
+            }
+        }
+
+        // 迁移:为助手添加知识库关联字段
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE assistants ADD COLUMN knowledgeBaseId TEXT DEFAULT NULL")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -162,7 +177,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "tchat_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build()
                 INSTANCE = instance
                 instance

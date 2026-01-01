@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -39,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryScrollableTabRow
 import androidx.compose.material3.Slider
@@ -60,6 +62,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.composables.icons.lucide.BookOpen
+import com.composables.icons.lucide.Lucide
+import com.tchat.data.database.entity.KnowledgeBaseEntity
 import com.tchat.data.model.Assistant
 import com.tchat.data.model.LocalToolOption
 import com.tchat.data.model.LocalToolOption.Companion.description
@@ -80,8 +85,9 @@ fun AssistantDetailScreen(
     val scope = rememberCoroutineScope()
     val assistant by viewModel.assistant.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val knowledgeBases by viewModel.knowledgeBases.collectAsState()
 
-    val tabs = listOf("基本设置", "提示词", "本地工具")
+    val tabs = listOf("基本设置", "提示词", "本地工具", "知识库")
     val pagerState = rememberPagerState { tabs.size }
 
     Scaffold(
@@ -166,6 +172,11 @@ fun AssistantDetailScreen(
                         )
                         2 -> LocalToolsTab(
                             assistant = assistant!!,
+                            onUpdate = { viewModel.updateAssistant(it) }
+                        )
+                        3 -> KnowledgeBaseTab(
+                            assistant = assistant!!,
+                            knowledgeBases = knowledgeBases,
                             onUpdate = { viewModel.updateAssistant(it) }
                         )
                     }
@@ -586,5 +597,216 @@ private fun createManageStorageIntent(context: Context): Intent? {
         }
     } else {
         null
+    }
+}
+
+/**
+ * 知识库配置标签页
+ */
+@Composable
+private fun KnowledgeBaseTab(
+    assistant: Assistant,
+    knowledgeBases: List<KnowledgeBaseEntity>,
+    onUpdate: (Assistant) -> Unit
+) {
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // 说明文字
+        Card {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Lucide.BookOpen,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(
+                        text = "知识库配置",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "为助手绑定知识库后，AI 可以在对话中自动检索相关内容。知识库使用自己配置的 Embedding 服务商，与对话模型提供商独立。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // 知识库选择
+        Card {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "选择知识库",
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (knowledgeBases.isEmpty()) {
+                    // 没有知识库时的空状态
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Lucide.BookOpen,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Text(
+                            text = "暂无知识库",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "请先在设置中创建知识库",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
+                } else {
+                    // 不使用知识库选项
+                    KnowledgeBaseOption(
+                        title = "不使用知识库",
+                        description = "仅使用模型自身能力回答",
+                        isSelected = assistant.knowledgeBaseId == null,
+                        onClick = {
+                            onUpdate(assistant.copy(knowledgeBaseId = null))
+                            Toast.makeText(context, "已取消知识库绑定", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    // 知识库列表
+                    knowledgeBases.forEach { base ->
+                        KnowledgeBaseOption(
+                            title = base.name,
+                            description = base.description ?: "使用 ${base.embeddingModelId} 模型",
+                            isSelected = assistant.knowledgeBaseId == base.id,
+                            onClick = {
+                                onUpdate(assistant.copy(knowledgeBaseId = base.id))
+                                Toast.makeText(context, "已绑定「${base.name}」", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // 当前绑定状态
+        if (assistant.knowledgeBaseId != null) {
+            val boundBase = knowledgeBases.find { it.id == assistant.knowledgeBaseId }
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "已绑定知识库",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (boundBase != null) {
+                        Text(
+                            text = boundBase.name,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Embedding 模型: ${boundBase.embeddingModelId}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "知识库不存在（可能已被删除）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 知识库选项卡片
+ */
+@Composable
+private fun KnowledgeBaseOption(
+    title: String,
+    description: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+            else
+                MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        modifier = Modifier.padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            RadioButton(
+                selected = isSelected,
+                onClick = onClick
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (isSelected)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
     }
 }

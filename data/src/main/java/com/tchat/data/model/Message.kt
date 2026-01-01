@@ -23,12 +23,16 @@ data class ToolCallData(
 
 /**
  * 工具执行结果
+ * 
+ * 包含完整的工具调用信息：调用ID、工具名称、输入参数、执行结果、执行状态和耗时
  */
 data class ToolResultData(
     val toolCallId: String,
     val name: String,
+    val arguments: String = "{}",  // 工具调用参数（JSON格式）
     val result: String,
-    val isError: Boolean = false
+    val isError: Boolean = false,
+    val executionTimeMs: Long = 0  // 工具执行耗时（毫秒）
 )
 
 data class Message(

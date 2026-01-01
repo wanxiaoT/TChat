@@ -21,13 +21,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.composables.icons.lucide.BookOpen
+import com.composables.icons.lucide.Lucide
 import com.tchat.data.database.AppDatabase
 import com.tchat.data.repository.impl.AssistantRepositoryImpl
+import com.tchat.data.repository.impl.KnowledgeRepositoryImpl
+import com.tchat.data.service.KnowledgeService
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.assistant.AssistantDetailScreen
 import com.tchat.wanxiaot.ui.assistant.AssistantDetailViewModel
 import com.tchat.wanxiaot.ui.assistant.AssistantScreen
 import com.tchat.wanxiaot.ui.assistant.AssistantViewModel
+import com.tchat.wanxiaot.ui.knowledge.KnowledgeDetailScreen
+import com.tchat.wanxiaot.ui.knowledge.KnowledgeScreen
+import com.tchat.wanxiaot.ui.knowledge.KnowledgeViewModel
 
 /**
  * 设置子页面类型
@@ -39,6 +46,8 @@ private sealed class SettingsSubPage {
     data object LOGCAT : SettingsSubPage()
     data object ASSISTANTS : SettingsSubPage()
     data class ASSISTANT_DETAIL(val id: String) : SettingsSubPage()
+    data object KNOWLEDGE : SettingsSubPage()
+    data class KNOWLEDGE_DETAIL(val id: String) : SettingsSubPage()
 }
 
 /**
@@ -58,11 +67,24 @@ fun SettingsScreen(
         AssistantRepositoryImpl(database.assistantDao())
     }
 
+    // 创建知识库Repository和Service
+    val knowledgeRepository = remember(database) {
+        KnowledgeRepositoryImpl(
+            database.knowledgeBaseDao(),
+            database.knowledgeItemDao(),
+            database.knowledgeChunkDao()
+        )
+    }
+    val knowledgeService = remember(knowledgeRepository) {
+        KnowledgeService(knowledgeRepository)
+    }
+
     // 处理系统返回键
     BackHandler {
         when (currentSubPage) {
             is SettingsSubPage.MAIN -> onBack()
             is SettingsSubPage.ASSISTANT_DETAIL -> currentSubPage = SettingsSubPage.ASSISTANTS
+            is SettingsSubPage.KNOWLEDGE_DETAIL -> currentSubPage = SettingsSubPage.KNOWLEDGE
             else -> currentSubPage = SettingsSubPage.MAIN
         }
     }
@@ -100,7 +122,8 @@ fun SettingsScreen(
                     onProvidersClick = { currentSubPage = SettingsSubPage.PROVIDERS },
                     onAboutClick = { currentSubPage = SettingsSubPage.ABOUT },
                     onLogcatClick = { currentSubPage = SettingsSubPage.LOGCAT },
-                    onAssistantsClick = { currentSubPage = SettingsSubPage.ASSISTANTS }
+                    onAssistantsClick = { currentSubPage = SettingsSubPage.ASSISTANTS },
+                    onKnowledgeClick = { currentSubPage = SettingsSubPage.KNOWLEDGE }
                 )
             }
             is SettingsSubPage.PROVIDERS -> {
@@ -126,12 +149,32 @@ fun SettingsScreen(
                 )
             }
             is SettingsSubPage.ASSISTANT_DETAIL -> {
-                val viewModel = remember(assistantRepository, page.id) {
-                    AssistantDetailViewModel(assistantRepository, page.id)
+                val viewModel = remember(assistantRepository, knowledgeRepository, page.id) {
+                    AssistantDetailViewModel(assistantRepository, knowledgeRepository, page.id)
                 }
                 AssistantDetailScreen(
                     viewModel = viewModel,
                     onBack = { currentSubPage = SettingsSubPage.ASSISTANTS }
+                )
+            }
+            is SettingsSubPage.KNOWLEDGE -> {
+                val viewModel = remember(knowledgeRepository, knowledgeService, settingsManager) {
+                    KnowledgeViewModel(knowledgeRepository, knowledgeService, settingsManager)
+                }
+                KnowledgeScreen(
+                    viewModel = viewModel,
+                    onBack = { currentSubPage = SettingsSubPage.MAIN },
+                    onBaseClick = { id -> currentSubPage = SettingsSubPage.KNOWLEDGE_DETAIL(id) }
+                )
+            }
+            is SettingsSubPage.KNOWLEDGE_DETAIL -> {
+                val viewModel = remember(knowledgeRepository, knowledgeService, settingsManager) {
+                    KnowledgeViewModel(knowledgeRepository, knowledgeService, settingsManager)
+                }
+                KnowledgeDetailScreen(
+                    baseId = page.id,
+                    viewModel = viewModel,
+                    onBack = { currentSubPage = SettingsSubPage.KNOWLEDGE }
                 )
             }
         }
@@ -148,7 +191,8 @@ private fun SettingsMainContent(
     onProvidersClick: () -> Unit,
     onAboutClick: () -> Unit,
     onLogcatClick: () -> Unit,
-    onAssistantsClick: () -> Unit
+    onAssistantsClick: () -> Unit,
+    onKnowledgeClick: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -256,6 +300,48 @@ private fun SettingsMainContent(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "管理AI助手和本地工具",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // 知识库设置卡片
+            OutlinedCard(
+                onClick = onKnowledgeClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Lucide.BookOpen,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "知识库",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "管理RAG知识库和向量检索",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

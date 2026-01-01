@@ -23,6 +23,149 @@ TChat的作者是大陆人，交流最好用简体中文，如果不会使用那
 - 侧边栏聊天记录导航
 - 流式聊天回复
 - Material 3 UI 搭配 Jetpack Compose
+- 知识库（RAG）功能
+
+
+
+# v1.3
+
+### 新增功能
+
+- **知识库（RAG）功能**
+  - 支持创建和管理多个知识库
+  - 内容导入支持：文本笔记、URL网页抓取、文件上传（TXT/MD）
+  - 向量嵌入生成与相似度检索
+  - 支持 OpenAI 和 Gemini 的 Embedding API
+
+- **知识库管理**
+  - 创建/编辑/删除知识库
+  - 选择 Embedding 服务商和模型
+  - 批量处理待处理条目
+  - 处理状态显示（待处理/处理中/已完成/失败）
+
+- **知识条目管理**
+  - Tab 切换查看（全部/文件/笔记/URL）
+  - 添加/编辑/删除条目
+  - 单独处理或批量处理
+  - 语义搜索功能
+
+- **设置入口**
+  - 设置页面新增"知识库"入口
+  - 位于"通用"分组下
+
+- **工具调用参数保存**
+  - 保存完整的工具调用参数（JSON 格式）
+  - 记录工具执行耗时（毫秒级）
+  - 持久化存储到数据库，重载对话可查看历史调用
+
+- **工具调用 UI 改进**
+  - 全新的工具调用卡片设计
+  - 显示工具名称、参数摘要、执行时间
+  - 点击展开查看完整的输入参数和执行结果
+  - 格式化 JSON 显示，更易读
+  - 成功/失败状态图标区分
+
+- **错误处理优化**
+  - 安全处理无参数工具调用
+  - 兼容旧版本损坏数据，提供友好提示
+  - JSON 解析失败时显示友好错误信息
+
+---
+
+### 技术改进详情
+
+#### 1. Embedding API 支持
+
+**功能**：支持 OpenAI 和 Gemini 的向量嵌入 API
+
+**实现**：
+- `EmbeddingProvider` 接口定义嵌入操作
+- `OpenAIEmbeddingProvider` 调用 `/embeddings` 端点
+- `GeminiEmbeddingProvider` 调用 `embedContent` 端点
+- 支持批量嵌入处理
+
+---
+
+#### 2. 知识库数据层
+
+**功能**：完整的知识库数据管理
+
+**实现**：
+- `KnowledgeRepository` 接口和实现
+- `KnowledgeService` 处理内容加载、分块、向量化
+- 文档加载器：`TextLoader`、`UrlLoader`、`FileLoader`
+- 数据库版本 6 → 7 迁移，添加 status/errorMessage 字段
+
+---
+
+#### 3. 向量检索
+
+**功能**：基于余弦相似度的语义搜索
+
+**实现**：
+- 文本分块（按段落，支持重叠）
+- 向量存储为 JSON 格式
+- 余弦相似度计算
+- Top-K 结果返回，支持阈值过滤
+
+---
+
+#### 4. ToolResultData 模型扩展
+
+**修改**：
+- 新增 `arguments` 字段存储工具调用参数
+- 新增 `executionTimeMs` 字段记录执行耗时
+- JSON 序列化/反序列化支持新字段
+
+---
+
+#### 5. 无参数工具调用修复
+
+**问题**：Gemini 等 API 返回无参数工具调用时，arguments 为空字符串导致解析失败
+
+**修复**：
+- 执行前检查 `toolCall.arguments.ifBlank { "{}" }`
+- 确保空参数被转换为有效的空 JSON 对象
+
+---
+
+#### 6. 旧数据兼容处理
+
+**功能**：检测并处理之前保存的损坏数据
+
+**实现**：
+- 加载时检测 "End of input at character 0" 错误
+- 对损坏数据显示友好提示
+- 自动修正空参数字段
+
+---
+
+### 涉及文件
+
+| 模块 | 文件 | 修改 |
+|------|------|------|
+| network | EmbeddingProvider.kt | Embedding 接口定义 |
+| network | OpenAIEmbeddingProvider.kt | OpenAI Embedding 实现 |
+| network | GeminiEmbeddingProvider.kt | Gemini Embedding 实现 |
+| network | EmbeddingProviderFactory.kt | Embedding 工厂类 |
+| data | KnowledgeItemEntity.kt | 添加 status/errorMessage 字段 |
+| data | KnowledgeRepository.kt | 知识库 Repository 接口 |
+| data | KnowledgeRepositoryImpl.kt | Repository 实现 |
+| data | KnowledgeService.kt | 知识库核心服务 |
+| data | DocumentLoader.kt | 文档加载器接口 |
+| data | TextLoader.kt | 文本加载器 |
+| data | UrlLoader.kt | URL 网页加载器 |
+| data | FileLoader.kt | 文件加载器 |
+| data | AppDatabase.kt | 版本 7，status 字段迁移 |
+| data | Message.kt | ToolResultData 添加 arguments、executionTimeMs 字段 |
+| data | ChatRepositoryImpl.kt | 工具执行记录参数和耗时，旧数据兼容处理 |
+| app | KnowledgeViewModel.kt | 知识库 ViewModel |
+| app | KnowledgeScreen.kt | 知识库列表页面 |
+| app | KnowledgeDetailScreen.kt | 知识库详情页面 |
+| app | SettingsScreen.kt | 添加知识库入口 |
+| feature-chat | MessageItem.kt | 新工具卡片 UI，安全 JSON 解析 |
+
+---
 
 
 

@@ -22,6 +22,7 @@ data class AssistantEntity(
     val contextMessageSize: Int,
     val streamOutput: Boolean,
     val localTools: String, // JSON序列化的LocalToolOption列表
+    val knowledgeBaseId: String? = null, // 关联的知识库ID
     val createdAt: Long,
     val updatedAt: Long
 )
