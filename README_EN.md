@@ -27,6 +27,22 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
 
 [Voluntary Donation](https://tchat.153595.xyz/Donate/)
 
+# v1.5
+
+### New Features
+
+- **Assistant Parameter Enhancement**
+  - New Top-p parameter control with toggle and slider (0.0~1.0)
+  - Context message count changed to RadioButton selection:
+    - Unlimited (default): Keep all history messages
+    - Limited count: Quick slider adjustment (1~200) + manual input for any value
+
+- **UI/UX Improvements**
+  - RadioButton options support clicking entire row text, using Material You `selectable` interaction
+  - Message count input changed from outlined style to underline style (Material You TextField)
+  - Input text centered for better visual harmony
+
+---
 
 # v1.4
 

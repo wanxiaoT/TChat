@@ -22,9 +22,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -47,6 +49,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -58,7 +62,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -269,22 +276,140 @@ private fun BasicSettingsTab(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-                // 上下文消息数
+                // Top-p
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Top-p")
+                    Switch(
+                        checked = assistant.topP != null,
+                        onCheckedChange = { enabled ->
+                            onUpdate(assistant.copy(topP = if (enabled) 1.0f else null))
+                        }
+                    )
+                }
+                if (assistant.topP != null) {
+                    val topP = assistant.topP!!
+                    Slider(
+                        value = topP,
+                        onValueChange = { onUpdate(assistant.copy(topP = it)) },
+                        valueRange = 0f..1f,
+                        steps = 9,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "当前值: ${String.format("%.1f", topP)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                // 上下文消息数量
                 Text("上下文消息数量")
-                Slider(
-                    value = assistant.contextMessageSize.toFloat(),
-                    onValueChange = { onUpdate(assistant.copy(contextMessageSize = it.roundToInt())) },
-                    valueRange = 0f..128f,
-                    steps = 0,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    text = if (assistant.contextMessageSize > 0)
-                        "保留最近 ${assistant.contextMessageSize} 条消息"
-                    else "无限制",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 不限制选项 - Material You 风格可点击行
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = assistant.contextMessageSize <= 0,
+                            onClick = { onUpdate(assistant.copy(contextMessageSize = 0)) },
+                            role = Role.RadioButton
+                        )
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = assistant.contextMessageSize <= 0,
+                        onClick = null // 由 Row 的 selectable 处理点击
+                    )
+                    Text(
+                        text = "不限制（默认）",
+                        modifier = Modifier.padding(start = 12.dp),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+
+                // 限制选项 - Material You 风格可点击行
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = assistant.contextMessageSize > 0,
+                            onClick = {
+                                if (assistant.contextMessageSize <= 0) {
+                                    onUpdate(assistant.copy(contextMessageSize = 64))
+                                }
+                            },
+                            role = Role.RadioButton
+                        )
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = assistant.contextMessageSize > 0,
+                        onClick = null // 由 Row 的 selectable 处理点击
+                    )
+                    Text(
+                        text = "限制数量",
+                        modifier = Modifier.padding(start = 12.dp),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+
+                // 限制数量时显示调节控件
+                if (assistant.contextMessageSize > 0) {
+                    Column(
+                        modifier = Modifier.padding(start = 40.dp, top = 8.dp)
+                    ) {
+                        // 滑块
+                        Slider(
+                            value = assistant.contextMessageSize.toFloat().coerceIn(1f, 200f),
+                            onValueChange = { onUpdate(assistant.copy(contextMessageSize = it.roundToInt())) },
+                            valueRange = 1f..200f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // 手动输入 - 下划线样式输入框
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "保留最近",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            TextField(
+                                value = assistant.contextMessageSize.toString(),
+                                onValueChange = { text ->
+                                    val value = text.toIntOrNull()?.coerceAtLeast(1) ?: 1
+                                    onUpdate(assistant.copy(contextMessageSize = value))
+                                },
+                                modifier = Modifier.width(80.dp),
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                    textAlign = TextAlign.Center
+                                ),
+                                colors = TextFieldDefaults.colors(
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                                    focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                            Text(
+                                text = "条消息",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
