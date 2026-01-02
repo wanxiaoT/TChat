@@ -24,7 +24,8 @@
       "Bash(./gradlew :feature-chat:compileDebugKotlin:*)",
       "WebFetch(domain:cdn.jsdelivr.net)",
       "WebFetch(domain:github.com)",
-      "Bash(./gradlew :app:compileDebugKotlin:*)"
+      "Bash(./gradlew :app:compileDebugKotlin:*)",
+      "Bash(dir:*)"
     ]
   }
 }

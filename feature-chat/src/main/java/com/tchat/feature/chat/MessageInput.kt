@@ -27,9 +27,9 @@ fun MessageInput(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // 使用 TextField 而不是 OutlinedTextField，更符合 M3 风格
+            // 输入框
             TextField(
                 value = text,
                 onValueChange = onTextChange,
@@ -51,7 +51,7 @@ fun MessageInput(
                 )
             )
 
-            // 使用 FilledIconButton 替代普通 Button
+            // 发送按钮
             FilledIconButton(
                 onClick = onSend,
                 enabled = text.isNotBlank(),

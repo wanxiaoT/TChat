@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Sparkles
+import com.tchat.data.deepresearch.service.WebSearchProvider
 import java.util.UUID
 
 /**
@@ -21,14 +22,44 @@ data class ProviderConfig(
 )
 
 /**
+ * 深度研究设置
+ */
+data class DeepResearchSettings(
+    // AI 设置（可选，为空时使用默认服务商）
+    val aiProviderType: String = "openai",
+    val aiApiKey: String = "",
+    val aiApiBase: String = "",
+    val aiModel: String = "",
+
+    // 搜索设置
+    val webSearchProvider: WebSearchProvider = WebSearchProvider.TAVILY,
+    val webSearchApiKey: String = "",
+    val webSearchApiBase: String? = null,
+    val tavilyAdvancedSearch: Boolean = false,
+    val tavilySearchTopic: String = "general",
+
+    // 研究设置
+    val breadth: Int = 3,
+    val maxDepth: Int = 2,
+    val language: String = "zh",
+    val searchLanguage: String = "en",
+    val maxSearchResults: Int = 5,
+    val concurrencyLimit: Int = 2
+)
+
+/**
  * 应用设置
  */
 data class AppSettings(
     val currentProviderId: String = "",  // 当前使用的服务商 ID
     val currentModel: String = "",  // 当前使用的模型（可在聊天页面切换）
     val currentAssistantId: String = "",  // 当前使用的助手 ID
-    val providers: List<ProviderConfig> = emptyList()
+    val providers: List<ProviderConfig> = emptyList(),
+    val deepResearchSettings: DeepResearchSettings = DeepResearchSettings()
 ) {
+    // 兼容旧代码
+    val defaultProviderId: String get() = currentProviderId
+
     /**
      * 获取当前使用的服务商配置
      */

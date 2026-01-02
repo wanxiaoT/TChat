@@ -44,7 +44,15 @@ import com.tchat.wanxiaot.settings.AIProviderType
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.DrawerContent
 import com.tchat.wanxiaot.ui.settings.SettingsScreen
+import com.tchat.wanxiaot.ui.deepresearch.DeepResearchScreen
+import com.tchat.wanxiaot.ui.deepresearch.DeepResearchViewModel
 import com.tchat.wanxiaot.ui.theme.TChatTheme
+import com.tchat.data.deepresearch.DeepResearchManager
+import com.tchat.data.deepresearch.ResearchState
+import com.tchat.data.deepresearch.model.DeepResearchConfig
+import com.tchat.data.deepresearch.repository.DeepResearchHistoryRepository
+import com.tchat.data.deepresearch.repository.DeepResearchRepositoryFactory
+import com.tchat.data.deepresearch.service.WebSearchServiceFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -53,6 +61,13 @@ import kotlinx.coroutines.launch
 
 // 默认助手ID - 固定值，确保只创建一次
 const val DEFAULT_ASSISTANT_ID = "default_assistant"
+
+// 导航状态
+private enum class MainNavState {
+    CHAT,
+    SETTINGS,
+    DEEP_RESEARCH
+}
 
 class MainActivity : ComponentActivity() {
     // Application 级别的 CoroutineScope，不会因为 Activity 重建而取消
@@ -164,7 +179,7 @@ fun MainScreen(
     var currentChatId by remember { mutableStateOf<String?>(null) }
     var chatList by remember { mutableStateOf(emptyList<com.tchat.data.model.Chat>()) }
     var repository by remember { mutableStateOf<ChatRepositoryImpl?>(null) }
-    var showSettingsPage by remember { mutableStateOf(false) }
+    var currentNavState by remember { mutableStateOf(MainNavState.CHAT) }
     var isDrawerRequested by remember { mutableStateOf(false) }
 
     // 当前助手
@@ -172,6 +187,11 @@ fun MainScreen(
 
     // 启用的工具集合（运行时状态，每次启动都重置为助手配置）
     var enabledTools by remember { mutableStateOf<Set<LocalToolOption>>(emptySet()) }
+
+    // 深度研究状态
+    val deepResearchSession by DeepResearchManager.currentSession.collectAsState()
+    val isDeepResearching = deepResearchSession?.state is ResearchState.Researching ||
+            deepResearchSession?.state is ResearchState.GeneratingReport
 
     // 加载当前助手
     LaunchedEffect(settings.currentAssistantId) {
@@ -243,13 +263,13 @@ fun MainScreen(
         }
     }
 
-    // 主页面与设置页面切换动画
+    // 主页面切换动画
     AnimatedContent(
-        targetState = showSettingsPage,
+        targetState = currentNavState,
         transitionSpec = {
             val animationDuration = 200
-            if (targetState) {
-                // 进入设置页面：从右边滑入，主页面向左滑出
+            if (targetState != MainNavState.CHAT) {
+                // 进入其他页面：从右边滑入，主页面向左滑出
                 slideInHorizontally(
                     animationSpec = tween(animationDuration),
                     initialOffsetX = { it }
@@ -258,7 +278,7 @@ fun MainScreen(
                     targetOffsetX = { -it }
                 )
             } else {
-                // 返回主页面：从左边滑入，设置页面向右滑出
+                // 返回主页面：从左边滑入，其他页面向右滑出
                 slideInHorizontally(
                     animationSpec = tween(animationDuration),
                     initialOffsetX = { -it }
@@ -268,15 +288,41 @@ fun MainScreen(
                 )
             }
         },
-        label = "main_settings_transition"
-    ) { isSettingsPage ->
-        if (isSettingsPage) {
-            SettingsScreen(
-                settingsManager = settingsManager,
-                database = database,
-                onBack = { showSettingsPage = false }
-            )
-        } else {
+        label = "main_nav_transition"
+    ) { navState ->
+        when (navState) {
+            MainNavState.SETTINGS -> {
+                SettingsScreen(
+                    settingsManager = settingsManager,
+                    database = database,
+                    onBack = { currentNavState = MainNavState.CHAT }
+                )
+            }
+            MainNavState.DEEP_RESEARCH -> {
+                val historyRepository = remember(database) {
+                    DeepResearchHistoryRepository(database.deepResearchHistoryDao())
+                }
+                val deepResearchViewModel = remember(settingsManager, historyRepository) {
+                    DeepResearchViewModel(settingsManager, historyRepository)
+                }
+                DeepResearchScreen(
+                    viewModel = deepResearchViewModel,
+                    onBack = { currentNavState = MainNavState.CHAT },
+                    // 服务商和模型选择
+                    providers = settings.providers,
+                    currentProviderId = settings.currentProviderId,
+                    currentProviderName = currentProvider?.name ?: "未配置",
+                    availableModels = currentProvider?.availableModels ?: emptyList(),
+                    currentModel = settings.getActiveModel(),
+                    onProviderSelected = { providerId ->
+                        settingsManager.setCurrentProvider(providerId)
+                    },
+                    onModelSelected = { model ->
+                        settingsManager.setCurrentModel(model)
+                    }
+                )
+            }
+            MainNavState.CHAT -> {
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -312,7 +358,7 @@ fun MainScreen(
                     },
                     onSettingsClick = {
                         scope.launch { drawerState.close() }
-                        showSettingsPage = true
+                        currentNavState = MainNavState.SETTINGS
                     },
                     onProviderSelected = { providerId ->
                         settingsManager.setCurrentProvider(providerId)
@@ -454,7 +500,23 @@ fun MainScreen(
                                 },
                                 // 知识库搜索工具作为额外工具传递
                                 extraTools = allExtraTools,
-                                systemPrompt = currentAssistant?.systemPrompt
+                                systemPrompt = currentAssistant?.systemPrompt,
+                                // 深度研究支持
+                                onDeepResearch = { query ->
+                                    if (query != null) {
+                                        // 有输入内容，直接开始研究
+                                        startDeepResearch(
+                                            query = query,
+                                            settingsManager = settingsManager,
+                                            viewModel = viewModel,
+                                            chatId = currentChatId
+                                        )
+                                    } else {
+                                        // 没有输入，打开深度研究页面
+                                        currentNavState = MainNavState.DEEP_RESEARCH
+                                    }
+                                },
+                                isDeepResearching = isDeepResearching
                             )
                         }
                         repository == null -> {
@@ -464,7 +526,7 @@ fun MainScreen(
                             ) {
                                 Text("请先添加服务商配置")
                                 Spacer(modifier = Modifier.height(16.dp))
-                                Button(onClick = { showSettingsPage = true }) {
+                                Button(onClick = { currentNavState = MainNavState.SETTINGS }) {
                                     Text("打开设置")
                                 }
                             }
@@ -489,6 +551,7 @@ fun MainScreen(
             }
         }
     }
+        }
         }
     }
 }
@@ -559,4 +622,85 @@ private fun getEmbeddingProviderForKnowledgeBase(
         e.printStackTrace()
         null
     }
+}
+
+/**
+ * 启动深度研究并将结果发送到聊天
+ */
+private fun startDeepResearch(
+    query: String,
+    settingsManager: SettingsManager,
+    viewModel: ChatViewModel,
+    chatId: String?
+) {
+    val settings = settingsManager.settings.value
+    val deepResearchSettings = settings.deepResearchSettings
+
+    // 检查搜索 API Key
+    if (deepResearchSettings.webSearchApiKey.isBlank()) {
+        return
+    }
+
+    // 获取 AI Provider
+    val aiProvider = getAIProviderForDeepResearch(settingsManager) ?: return
+
+    // 创建搜索服务
+    val webSearchService = WebSearchServiceFactory.create(
+        provider = deepResearchSettings.webSearchProvider,
+        apiKey = deepResearchSettings.webSearchApiKey,
+        baseUrl = deepResearchSettings.webSearchApiBase,
+        advancedSearch = deepResearchSettings.tavilyAdvancedSearch,
+        searchTopic = deepResearchSettings.tavilySearchTopic
+    )
+
+    // 创建 Repository
+    val repository = DeepResearchRepositoryFactory.create(aiProvider, webSearchService)
+
+    // 创建配置
+    val config = DeepResearchConfig(
+        breadth = deepResearchSettings.breadth,
+        maxDepth = deepResearchSettings.maxDepth,
+        maxSearchResults = deepResearchSettings.maxSearchResults,
+        language = deepResearchSettings.language,
+        searchLanguage = deepResearchSettings.searchLanguage,
+        concurrencyLimit = deepResearchSettings.concurrencyLimit
+    )
+
+    // 启动研究
+    DeepResearchManager.startResearch(query, repository, config)
+}
+
+/**
+ * 获取深度研究使用的 AI Provider
+ */
+private fun getAIProviderForDeepResearch(
+    settingsManager: SettingsManager
+): com.tchat.network.provider.AIProvider? {
+    val settings = settingsManager.settings.value
+    val deepResearchSettings = settings.deepResearchSettings
+
+    // 如果深度研究有自己的配置，使用它
+    if (deepResearchSettings.aiApiKey.isNotBlank()) {
+        return AIProviderFactory.create(
+            providerType = deepResearchSettings.aiProviderType,
+            apiKey = deepResearchSettings.aiApiKey,
+            baseUrl = deepResearchSettings.aiApiBase,
+            model = deepResearchSettings.aiModel
+        )
+    }
+
+    // 否则使用默认服务商
+    val defaultProviderId = settings.defaultProviderId
+    val providerConfig = settings.providers.find { it.id == defaultProviderId }
+        ?: settings.providers.firstOrNull()
+        ?: return null
+
+    return AIProviderFactory.create(
+        providerType = providerConfig.providerType.name.lowercase(),
+        apiKey = providerConfig.apiKey,
+        baseUrl = providerConfig.endpoint.ifBlank { null },
+        model = providerConfig.selectedModel.ifEmpty {
+            providerConfig.availableModels.firstOrNull() ?: ""
+        }
+    )
 }

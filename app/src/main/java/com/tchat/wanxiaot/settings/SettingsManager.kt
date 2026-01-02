@@ -2,6 +2,7 @@ package com.tchat.wanxiaot.settings
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.tchat.data.deepresearch.service.WebSearchProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,19 +21,71 @@ class SettingsManager(context: Context) {
             val currentModel = prefs.getString("current_model", "") ?: ""
             val currentAssistantId = prefs.getString("current_assistant_id", "") ?: ""
             val providersJson = prefs.getString("providers", "[]") ?: "[]"
+            val deepResearchJson = prefs.getString("deep_research_settings", "{}") ?: "{}"
 
             val providers = parseProviders(providersJson)
+            val deepResearchSettings = parseDeepResearchSettings(deepResearchJson)
 
             AppSettings(
                 currentProviderId = currentProviderId,
                 currentModel = currentModel,
                 currentAssistantId = currentAssistantId,
-                providers = providers
+                providers = providers,
+                deepResearchSettings = deepResearchSettings
             )
         } catch (e: Exception) {
             e.printStackTrace()
             AppSettings()
         }
+    }
+
+    private fun parseDeepResearchSettings(json: String): DeepResearchSettings {
+        return try {
+            val obj = JSONObject(json)
+            DeepResearchSettings(
+                aiProviderType = obj.optString("aiProviderType", "openai"),
+                aiApiKey = obj.optString("aiApiKey", ""),
+                aiApiBase = obj.optString("aiApiBase", ""),
+                aiModel = obj.optString("aiModel", ""),
+                webSearchProvider = try {
+                    WebSearchProvider.valueOf(obj.optString("webSearchProvider", "TAVILY"))
+                } catch (e: Exception) {
+                    WebSearchProvider.TAVILY
+                },
+                webSearchApiKey = obj.optString("webSearchApiKey", ""),
+                webSearchApiBase = obj.optString("webSearchApiBase", "").takeIf { it.isNotEmpty() },
+                tavilyAdvancedSearch = obj.optBoolean("tavilyAdvancedSearch", false),
+                tavilySearchTopic = obj.optString("tavilySearchTopic", "general"),
+                breadth = obj.optInt("breadth", 3),
+                maxDepth = obj.optInt("maxDepth", 2),
+                language = obj.optString("language", "zh"),
+                searchLanguage = obj.optString("searchLanguage", "en"),
+                maxSearchResults = obj.optInt("maxSearchResults", 5),
+                concurrencyLimit = obj.optInt("concurrencyLimit", 2)
+            )
+        } catch (e: Exception) {
+            DeepResearchSettings()
+        }
+    }
+
+    private fun serializeDeepResearchSettings(settings: DeepResearchSettings): String {
+        val obj = JSONObject()
+        obj.put("aiProviderType", settings.aiProviderType)
+        obj.put("aiApiKey", settings.aiApiKey)
+        obj.put("aiApiBase", settings.aiApiBase)
+        obj.put("aiModel", settings.aiModel)
+        obj.put("webSearchProvider", settings.webSearchProvider.name)
+        obj.put("webSearchApiKey", settings.webSearchApiKey)
+        obj.put("webSearchApiBase", settings.webSearchApiBase ?: "")
+        obj.put("tavilyAdvancedSearch", settings.tavilyAdvancedSearch)
+        obj.put("tavilySearchTopic", settings.tavilySearchTopic)
+        obj.put("breadth", settings.breadth)
+        obj.put("maxDepth", settings.maxDepth)
+        obj.put("language", settings.language)
+        obj.put("searchLanguage", settings.searchLanguage)
+        obj.put("maxSearchResults", settings.maxSearchResults)
+        obj.put("concurrencyLimit", settings.concurrencyLimit)
+        return obj.toString()
     }
 
     private fun parseProviders(json: String): List<ProviderConfig> {
@@ -94,6 +147,7 @@ class SettingsManager(context: Context) {
             putString("current_model", settings.currentModel)
             putString("current_assistant_id", settings.currentAssistantId)
             putString("providers", serializeProviders(settings.providers))
+            putString("deep_research_settings", serializeDeepResearchSettings(settings.deepResearchSettings))
             apply()
         }
         _settings.value = settings
@@ -172,5 +226,13 @@ class SettingsManager(context: Context) {
     fun setCurrentAssistant(assistantId: String) {
         val currentSettings = _settings.value
         updateSettings(currentSettings.copy(currentAssistantId = assistantId))
+    }
+
+    /**
+     * 更新深度研究设置
+     */
+    fun updateDeepResearchSettings(settings: DeepResearchSettings) {
+        val currentSettings = _settings.value
+        updateSettings(currentSettings.copy(deepResearchSettings = settings))
     }
 }

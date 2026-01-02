@@ -1,8 +1,10 @@
 package com.tchat.feature.chat
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,7 +38,10 @@ fun ChatScreen(
     // 额外的工具（如知识库搜索工具）
     extraTools: List<Tool> = emptyList(),
     // 系统提示
-    systemPrompt: String? = null
+    systemPrompt: String? = null,
+    // 深度研究支持
+    onDeepResearch: ((String?) -> Unit)? = null,
+    isDeepResearching: Boolean = false
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val actualChatId by viewModel.actualChatId.collectAsState()
@@ -126,6 +131,11 @@ fun ChatScreen(
 
                     // 输入区域（工具栏 + 输入框）
                     Column {
+                        // 深度研究进度提示
+                        AnimatedVisibility(visible = isDeepResearching) {
+                            DeepResearchIndicator()
+                        }
+
                         // 工具栏
                         if (availableModels.isNotEmpty()) {
                             InputToolbar(
@@ -136,7 +146,18 @@ fun ChatScreen(
                                 onToolsClick = {
                                     showToolSheet = true
                                     scope.launch { toolSheetState.show() }
-                                }
+                                },
+                                onDeepResearch = onDeepResearch?.let { callback ->
+                                    {
+                                        // 传递输入框内容（可能为空）
+                                        val query = inputText.takeIf { it.isNotBlank() }
+                                        callback(query)
+                                        if (query != null) {
+                                            inputText = ""
+                                        }
+                                    }
+                                },
+                                isDeepResearching = isDeepResearching
                             )
                         }
 
@@ -176,7 +197,10 @@ private fun InputToolbar(
     currentModel: String,
     onModelSelected: (String) -> Unit,
     enabledToolsCount: Int = 0,
-    onToolsClick: () -> Unit = {}
+    onToolsClick: () -> Unit = {},
+    // 深度研究支持
+    onDeepResearch: (() -> Unit)? = null,
+    isDeepResearching: Boolean = false
 ) {
     var modelMenuExpanded by remember { mutableStateOf(false) }
 
@@ -269,6 +293,48 @@ private fun InputToolbar(
 
             Spacer(modifier = Modifier.weight(1f))
 
+            // 深度研究按钮
+            if (onDeepResearch != null) {
+                Surface(
+                    onClick = { if (!isDeepResearching) onDeepResearch() },
+                    color = if (isDeepResearching)
+                        MaterialTheme.colorScheme.tertiaryContainer
+                    else
+                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = MaterialTheme.shapes.small,
+                    tonalElevation = 0.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (isDeepResearching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Psychology,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                        Text(
+                            text = if (isDeepResearching) "研究中" else "深度研究",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isDeepResearching)
+                                MaterialTheme.colorScheme.onTertiaryContainer
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             // 工具按钮 - 点击打开抽屉
             Surface(
                 onClick = onToolsClick,
@@ -336,5 +402,41 @@ private fun getModelDisplayName(model: String): String {
     return when {
         model.length <= 20 -> model
         else -> model.take(18) + "..."
+    }
+}
+
+/**
+ * 深度研究进度指示器
+ */
+@Composable
+private fun DeepResearchIndicator() {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        tonalElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Icon(
+                imageVector = Icons.Default.Psychology,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = "深度研究进行中...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
     }
 }

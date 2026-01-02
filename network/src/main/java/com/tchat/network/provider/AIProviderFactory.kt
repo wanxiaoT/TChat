@@ -87,4 +87,28 @@ object AIProviderFactory {
     ): AIProvider {
         return GeminiProvider(apiKey, baseUrl, model)
     }
+
+    /**
+     * 根据字符串类型创建 Provider
+     * @param providerType 类型字符串: "openai", "anthropic", "gemini"
+     */
+    fun create(
+        providerType: String,
+        apiKey: String,
+        baseUrl: String? = null,
+        model: String
+    ): AIProvider {
+        val type = when (providerType.lowercase()) {
+            "openai" -> ProviderType.OPENAI
+            "anthropic" -> ProviderType.ANTHROPIC
+            "gemini" -> ProviderType.GEMINI
+            else -> ProviderType.OPENAI  // 默认使用 OpenAI 格式
+        }
+        return create(ProviderConfig(
+            type = type,
+            apiKey = apiKey,
+            baseUrl = baseUrl ?: "",
+            model = model
+        ))
+    }
 }

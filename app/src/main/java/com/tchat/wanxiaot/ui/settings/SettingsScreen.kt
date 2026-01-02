@@ -51,6 +51,9 @@ import com.tchat.wanxiaot.ui.knowledge.KnowledgeViewModel
 import com.tchat.wanxiaot.ui.mcp.McpScreen
 import com.tchat.wanxiaot.ui.mcp.McpViewModel
 import com.tchat.data.repository.impl.McpServerRepositoryImpl
+import com.tchat.wanxiaot.ui.deepresearch.DeepResearchScreen
+import com.tchat.wanxiaot.ui.deepresearch.DeepResearchViewModel
+import com.tchat.data.deepresearch.repository.DeepResearchHistoryRepository
 
 // 平板模式的最小宽度阈值
 private val TABLET_MIN_WIDTH = 840.dp
@@ -71,6 +74,7 @@ private sealed class SettingsSubPage {
     data class KNOWLEDGE_DETAIL(val id: String) : SettingsSubPage()
     data object MCP : SettingsSubPage()
     data object USAGE_STATS : SettingsSubPage()
+    data object DEEP_RESEARCH : SettingsSubPage()
 }
 
 /**
@@ -255,7 +259,8 @@ private fun TabletSettingsLayout(
                 onAssistantsClick = { onSubPageChange(SettingsSubPage.ASSISTANTS) },
                 onKnowledgeClick = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
                 onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
-                onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) }
+                onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) },
+                onDeepResearchClick = { onSubPageChange(SettingsSubPage.DEEP_RESEARCH) }
             )
         }
 
@@ -378,6 +383,19 @@ private fun TabletSettingsLayout(
                             showTopBar = false
                         )
                     }
+                    is SettingsSubPage.DEEP_RESEARCH -> {
+                        val historyRepository = remember(database) {
+                            DeepResearchHistoryRepository(database.deepResearchHistoryDao())
+                        }
+                        val viewModel = remember(settingsManager, historyRepository) {
+                            DeepResearchViewModel(settingsManager, historyRepository)
+                        }
+                        DeepResearchScreen(
+                            viewModel = viewModel,
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            showTopBar = false
+                        )
+                    }
                 }
             }
         }
@@ -454,7 +472,8 @@ private fun PhoneSettingsLayout(
                     onAssistantsClick = { onSubPageChange(SettingsSubPage.ASSISTANTS) },
                     onKnowledgeClick = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
                     onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
-                    onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) }
+                    onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) },
+                    onDeepResearchClick = { onSubPageChange(SettingsSubPage.DEEP_RESEARCH) }
                 )
             }
             is SettingsSubPage.PROVIDERS -> {
@@ -523,6 +542,18 @@ private fun PhoneSettingsLayout(
                     onBack = { onSubPageChange(SettingsSubPage.MAIN) }
                 )
             }
+            is SettingsSubPage.DEEP_RESEARCH -> {
+                val historyRepository = remember(database) {
+                    DeepResearchHistoryRepository(database.deepResearchHistoryDao())
+                }
+                val viewModel = remember(settingsManager, historyRepository) {
+                    DeepResearchViewModel(settingsManager, historyRepository)
+                }
+                DeepResearchScreen(
+                    viewModel = viewModel,
+                    onBack = { onSubPageChange(SettingsSubPage.MAIN) }
+                )
+            }
         }
     }
 }
@@ -540,7 +571,8 @@ private fun SettingsMainContent(
     onAssistantsClick: () -> Unit,
     onKnowledgeClick: () -> Unit,
     onMcpClick: () -> Unit,
-    onUsageStatsClick: () -> Unit
+    onUsageStatsClick: () -> Unit,
+    onDeepResearchClick: () -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -745,6 +777,48 @@ private fun SettingsMainContent(
                 }
             }
 
+            // 深度研究卡片
+            OutlinedCard(
+                onClick = onDeepResearchClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "深度研究",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "AI 驱动的迭代式深度研究",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
             // 其他分组标题
@@ -898,7 +972,8 @@ private fun SettingsListContent(
     onAssistantsClick: () -> Unit,
     onKnowledgeClick: () -> Unit,
     onMcpClick: () -> Unit,
-    onUsageStatsClick: () -> Unit
+    onUsageStatsClick: () -> Unit,
+    onDeepResearchClick: () -> Unit = {}
 ) {
     // 设置项数据（不使用 Composable lambda）
     data class SettingsItemData(
@@ -937,6 +1012,13 @@ private fun SettingsListContent(
             title = "MCP 服务器",
             subtitle = "管理 MCP 工具服务器连接",
             onClick = onMcpClick
+        ),
+        SettingsItemData(
+            id = "deep_research",
+            group = "通用",
+            title = "深度研究",
+            subtitle = "AI 驱动的迭代式深度研究",
+            onClick = onDeepResearchClick
         ),
         SettingsItemData(
             id = "usage_stats",
@@ -1014,6 +1096,7 @@ private fun SettingsListContent(
                         "providers" -> currentSubPage is SettingsSubPage.PROVIDERS
                         "knowledge" -> currentSubPage is SettingsSubPage.KNOWLEDGE || currentSubPage is SettingsSubPage.KNOWLEDGE_DETAIL
                         "mcp" -> currentSubPage is SettingsSubPage.MCP
+                        "deep_research" -> currentSubPage is SettingsSubPage.DEEP_RESEARCH
                         "usage_stats" -> currentSubPage is SettingsSubPage.USAGE_STATS
                         "logcat" -> currentSubPage is SettingsSubPage.LOGCAT
                         "about" -> currentSubPage is SettingsSubPage.ABOUT
@@ -1056,6 +1139,7 @@ private fun SettingsListContent(
                                 "assistants" -> Icons.Default.Person
                                 "providers" -> Icons.Default.Settings
                                 "mcp" -> Icons.Default.Cloud
+                                "deep_research" -> Icons.Default.Search
                                 "usage_stats" -> Icons.Default.BarChart
                                 "about" -> Icons.Default.Info
                                 else -> Icons.Default.Settings
