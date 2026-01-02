@@ -24,6 +24,7 @@ TChat嘅作者係大陸人，交流最好用簡體中文，如果唔識用就用
 - Material 3 UI 配合 Jetpack Compose
 - 知識庫（RAG）功能
 - MCP（Model Context Protocol）工具伺服器支援
+- 深度研究（Deep Research）功能
 
 [自願贊助](https://tchat.wanxiaot.com/donate.html)
 
@@ -31,6 +32,40 @@ TChat嘅作者係大陸人，交流最好用簡體中文，如果唔識用就用
 # v1.5
 
 ### 新增功能
+
+- **深度研究（Deep Research）功能**
+  - 透過多輪搜尋同 AI 分析，自動生成詳細嘅研究報告
+  - 迭代式深度研究，支援設定搜尋廣度（1-10）同深度（1-5）
+  - 即時顯示研究進度，包括查詢生成、搜尋、結果處理等步驟
+  - 自動提取關鍵資訊（Learnings）並生成引用來源
+  - 研究報告支援 Markdown 格式，包含編號引用
+
+- **搜尋 API 支援**
+  - 支援 Tavily 搜尋 API（推薦，支援進階搜尋模式）
+  - 支援 Firecrawl 搜尋 API
+  - 可設定自訂 API Base URL
+
+- **深度研究 AI 設定**
+  - 支援使用獨立嘅 AI 設定進行研究
+  - 可揀唔同嘅 AI 提供商（OpenAI、Anthropic、Gemini）
+  - 支援自訂 API Key、Base URL 同模型名稱
+  - 關閉獨立設定時使用預設服務商
+
+- **深度研究參數設定**
+  - 搜尋廣度：每層生成嘅搜尋查詢數量
+  - 搜尋深度：遞迴研究嘅層數
+  - 輸出語言：支援中文同英文
+  - 搜尋語言：可以同輸出語言唔同
+
+- **歷史記錄管理**
+  - 自動儲存研究歷史
+  - 睇歷史研究報告同來源
+  - 支援刪除單條或清空全部歷史
+
+- **研究進度視覺化**
+  - 樹狀結構展示研究節點
+  - 即時顯示每個節點嘅狀態（生成查詢/搜尋中/處理中/完成/錯誤）
+  - 顯示每個節點發現嘅資訊數量
 
 - **助手參數增強**
   - 新增 Top-p 參數調節，支援開關控制同滑桿調節（0.0~1.0）
@@ -50,6 +85,90 @@ TChat嘅作者係大陸人，交流最好用簡體中文，如果唔識用就用
   - 左邊顯示設定列表，右邊顯示詳情內容
   - 選中項高亮顯示，支援快速切換
   - 新增搜尋功能，可快速過濾設定項
+
+---
+
+### 技術改進詳情
+
+#### 1. 深度研究服務
+
+**功能**：實現迭代式深度研究演算法
+
+**實現**：
+- `DeepResearchService` 核心研究服務
+- 遞迴深度優先搜尋策略
+- 並發控制（Semaphore）限制同時請求數
+- 串流返回研究進度（ResearchStep）
+
+---
+
+#### 2. 網路搜尋服務
+
+**功能**：封裝搜尋 API 調用
+
+**實現**：
+- `WebSearchService` 搜尋服務介面
+- `TavilySearchService` Tavily API 實現
+- `FirecrawlSearchService` Firecrawl API 實現
+- 支援搜尋結果內容提取
+
+---
+
+#### 3. 深度研究資料層
+
+**功能**：研究歷史持久化
+
+**實現**：
+- `DeepResearchHistoryEntity` 資料庫實體
+- `DeepResearchHistoryDao` 資料存取物件
+- `DeepResearchHistoryRepository` 儲存庫實現
+- 支援按時間排序、搜尋、刪除
+
+---
+
+#### 4. 深度研究狀態管理
+
+**功能**：管理研究過程狀態
+
+**實現**：
+- `DeepResearchManager` 狀態管理器
+- `ResearchState` 研究狀態（空閒/研究中/生成報告/完成/錯誤）
+- `ResearchNode` 研究節點（查詢、狀態、結果）
+- `NodeStatus` 節點狀態列舉
+
+---
+
+#### 5. 深度研究資料模型
+
+**新增**：
+- `SearchQuery` 搜尋查詢（關鍵字、研究目標、節點ID）
+- `WebSearchResult` 網路搜尋結果
+- `Learning` 學習成果（URL、標題、關鍵資訊）
+- `ProcessedSearchResult` 處理後嘅結果（學習成果、後續問題）
+- `DeepResearchConfig` 研究設定
+- `DeepResearchResult` 研究結果
+- `ResearchStep` 研究進度步驟（sealed class）
+
+---
+
+### 涉及檔案
+
+| 模組 | 檔案 | 修改 |
+|------|------|------|
+| data | DeepResearchModels.kt | 深度研究資料模型定義 |
+| data | DeepResearchService.kt | 深度研究核心服務 |
+| data | WebSearchService.kt | 網路搜尋服務介面同實現 |
+| data | DeepResearchManager.kt | 研究狀態管理器 |
+| data | DeepResearchRepository.kt | 研究設定 Repository |
+| data | DeepResearchHistoryEntity.kt | 歷史記錄資料庫實體 |
+| data | DeepResearchHistoryDao.kt | 歷史記錄 DAO |
+| data | DeepResearchHistoryRepository.kt | 歷史記錄 Repository |
+| data | AppDatabase.kt | 添加深度研究歷史表 |
+| data | build.gradle.kts | 添加 Gson 依賴 |
+| app | DeepResearchViewModel.kt | 深度研究 ViewModel |
+| app | DeepResearchScreen.kt | 深度研究頁面 |
+| app | SettingsManager.kt | 添加深度研究設定 |
+| app | AppSettings.kt | 添加 DeepResearchSettings |
 
 ---
 
@@ -572,6 +691,15 @@ TChat嘅作者係大陸人，交流最好用簡體中文，如果唔識用就用
   - 持久化資料儲存（目前淨係支援API提供商嘅服務持久化儲存）
 
 
+
+## 鳴謝：
+### 多謝以下項目：
+   - [深度研究 - https://github.com/dzhng/deep-research](https://github.com/dzhng/deep-research)
+   - [深度研究 WEB UI - https://github.com/AnotiaWang/deep-research-web-ui](https://github.com/AnotiaWang/deep-research-web-ui)
+
+### 多謝以下提供幫助嘅人：
+   - 谁谓宋远：提供 深度研究 功能嘅建議
+   - ↗↘：提供 本地工具 - SLEEP 設計嘅建議
 
 ## 授權條款
 

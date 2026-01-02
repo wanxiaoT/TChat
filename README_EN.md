@@ -24,12 +24,47 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
 - Material 3 UI with Jetpack Compose
 - Knowledge Base (RAG) feature
 - MCP (Model Context Protocol) tool server support
+- Deep Research feature
 
 [Voluntary Donation](https://tchat.wanxiaot.com/donate.html)
 
 # v1.5
 
 ### New Features
+
+- **Deep Research Feature**
+  - Automatically generate detailed research reports through multi-round search and AI analysis
+  - Iterative deep research, supports configurable search breadth (1-10) and depth (1-5)
+  - Real-time display of research progress, including query generation, search, result processing steps
+  - Automatically extract key information (Learnings) and generate citation sources
+  - Research reports support Markdown format with numbered citations
+
+- **Search API Support**
+  - Support Tavily Search API (recommended, supports advanced search mode)
+  - Support Firecrawl Search API
+  - Configurable custom API Base URL
+
+- **Deep Research AI Configuration**
+  - Support using independent AI configuration for research
+  - Choose different AI providers (OpenAI, Anthropic, Gemini)
+  - Support custom API Key, Base URL and model name
+  - Use default provider when independent configuration is disabled
+
+- **Deep Research Parameter Configuration**
+  - Search breadth: Number of search queries generated per layer
+  - Search depth: Number of recursive research layers
+  - Output language: Support Chinese and English
+  - Search language: Can differ from output language
+
+- **History Management**
+  - Automatically save research history
+  - View historical research reports and sources
+  - Support deleting single or clearing all history
+
+- **Research Progress Visualization**
+  - Tree structure displays research nodes
+  - Real-time display of each node's status (generating query/searching/processing/completed/error)
+  - Display the number of information found per node
 
 - **Assistant Parameter Enhancement**
   - New Top-p parameter control with toggle and slider (0.0~1.0)
@@ -49,6 +84,90 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
   - Left side displays settings list, right side displays detail content
   - Selected item highlighted, supports quick switching
   - New search feature to quickly filter settings items
+
+---
+
+### Technical Improvements
+
+#### 1. Deep Research Service
+
+**Feature**: Implement iterative deep research algorithm
+
+**Implementation**:
+- `DeepResearchService` core research service
+- Recursive depth-first search strategy
+- Concurrency control (Semaphore) limits simultaneous requests
+- Stream return research progress (ResearchStep)
+
+---
+
+#### 2. Web Search Service
+
+**Feature**: Encapsulate search API calls
+
+**Implementation**:
+- `WebSearchService` search service interface
+- `TavilySearchService` Tavily API implementation
+- `FirecrawlSearchService` Firecrawl API implementation
+- Support search result content extraction
+
+---
+
+#### 3. Deep Research Data Layer
+
+**Feature**: Research history persistence
+
+**Implementation**:
+- `DeepResearchHistoryEntity` database entity
+- `DeepResearchHistoryDao` data access object
+- `DeepResearchHistoryRepository` repository implementation
+- Support sorting by time, searching, deleting
+
+---
+
+#### 4. Deep Research State Management
+
+**Feature**: Manage research process state
+
+**Implementation**:
+- `DeepResearchManager` state manager
+- `ResearchState` research state (idle/researching/generating report/completed/error)
+- `ResearchNode` research node (query, status, result)
+- `NodeStatus` node status enum
+
+---
+
+#### 5. Deep Research Data Models
+
+**New**:
+- `SearchQuery` search query (keywords, research goal, node ID)
+- `WebSearchResult` web search result
+- `Learning` learning outcome (URL, title, key information)
+- `ProcessedSearchResult` processed result (learnings, follow-up questions)
+- `DeepResearchConfig` research configuration
+- `DeepResearchResult` research result
+- `ResearchStep` research progress step (sealed class)
+
+---
+
+### Files Involved
+
+| Module | File | Changes |
+|------|------|------|
+| data | DeepResearchModels.kt | Deep research data model definitions |
+| data | DeepResearchService.kt | Deep research core service |
+| data | WebSearchService.kt | Web search service interface and implementation |
+| data | DeepResearchManager.kt | Research state manager |
+| data | DeepResearchRepository.kt | Research config Repository |
+| data | DeepResearchHistoryEntity.kt | History database entity |
+| data | DeepResearchHistoryDao.kt | History DAO |
+| data | DeepResearchHistoryRepository.kt | History Repository |
+| data | AppDatabase.kt | Add deep research history table |
+| data | build.gradle.kts | Add Gson dependency |
+| app | DeepResearchViewModel.kt | Deep research ViewModel |
+| app | DeepResearchScreen.kt | Deep research page |
+| app | SettingsManager.kt | Add deep research settings |
+| app | AppSettings.kt | Add DeepResearchSettings |
 
 ---
 
@@ -571,6 +690,15 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
   - Persistent data storage (currently only supports persistent storage for API provider services)
 
 
+
+## Acknowledgements:
+### Thanks to the following projects:
+   - [Deep Research - https://github.com/dzhng/deep-research](https://github.com/dzhng/deep-research)
+   - [Deep Research WEB UI - https://github.com/AnotiaWang/deep-research-web-ui](https://github.com/AnotiaWang/deep-research-web-ui)
+
+### Thanks to those who provided help:
+   - 谁谓宋远: Provided suggestions for the Deep Research feature
+   - ↗↘: Provided suggestions for Local Tools - SLEEP design
 
 ## License
 

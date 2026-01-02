@@ -691,13 +691,21 @@ TChat的作者是大陆人，交流最好用简体中文，如果不会使用那
   - 侧边栏聊天记录导航
   - 新建/删除/切换对话
 
-###还没实现的功能：
+### 还没实现的功能：
   - 流式信息输出
   - 输出内容TPS/token速度/tokens数量显示
   - 持久化数据存储（目前仅支持API提供商的服务持久化存储）
 
 
 
+## 鸣谢：
+### 感谢以下项目：
+   - [深度研究 - https://github.com/dzhng/deep-research](https://github.com/dzhng/deep-research)
+   - [深度研究 WEB UI - https://github.com/AnotiaWang/deep-research-web-ui](https://github.com/AnotiaWang/deep-research-web-ui)
+
+### 感谢以下提供帮助的人：
+   - 谁谓宋远：提供 深度研究 功能的建议
+   - ↗↘：提供 本地工具 - SLEEP 设计的建议
 
 ## 许可证
 
