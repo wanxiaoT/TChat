@@ -25,6 +25,7 @@ TChat的作者是大陆人，交流最好用简体中文，如果不会使用那
 - Material 3 UI 搭配 Jetpack Compose
 - 知识库（RAG）功能
 - MCP（Model Context Protocol）工具服务器支持
+- 深度研究（Deep Research）功能
 
 [自愿赞助](https://tchat.wanxiaot.com/donate.html)
 
@@ -33,24 +34,142 @@ TChat的作者是大陆人，交流最好用简体中文，如果不会使用那
 
 ### 新增功能
 
-- **1.助手参数增强**
+- **深度研究（Deep Research）功能**
+  - 通过多轮搜索和 AI 分析，自动生成详细的研究报告
+  - 迭代式深度研究，支持配置搜索广度（1-10）和深度（1-5）
+  - 实时显示研究进度，包括查询生成、搜索、结果处理等步骤
+  - 自动提取关键信息（Learnings）并生成引用来源
+  - 研究报告支持 Markdown 格式，包含编号引用
+
+- **搜索 API 支持**
+  - 支持 Tavily 搜索 API（推荐，支持高级搜索模式）
+  - 支持 Firecrawl 搜索 API
+  - 可配置自定义 API Base URL
+
+- **深度研究 AI 配置**
+  - 支持使用独立的 AI 配置进行研究
+  - 可选择不同的 AI 提供商（OpenAI、Anthropic、Gemini）
+  - 支持自定义 API Key、Base URL 和模型名称
+  - 关闭独立配置时使用默认服务商
+
+- **深度研究参数配置**
+  - 搜索广度：每层生成的搜索查询数量
+  - 搜索深度：递归研究的层数
+  - 输出语言：支持中文和英文
+  - 搜索语言：可与输出语言不同
+
+- **历史记录管理**
+  - 自动保存研究历史
+  - 查看历史研究报告和来源
+  - 支持删除单条或清空全部历史
+
+- **研究进度可视化**
+  - 树状结构展示研究节点
+  - 实时显示每个节点的状态（生成查询/搜索中/处理中/完成/错误）
+  - 显示每个节点发现的信息数量
+
+- **助手参数增强**
   - 新增 Top-p 参数调节，支持开关控制和滑块调节（0.0~1.0）
   - 上下文消息数量改为 RadioButton 选择：
     - 不限制（默认）：保留所有历史消息
     - 限制数量：滑块快速调节（1~200）+ 输入框手动填写任意值
 
-- **2.UI/UX 改进**
+- **UI/UX 改进**
   - RadioButton 选项支持点击整行文字选择，使用 Material You `selectable` 交互
   - 消息数量输入框从边框样式改为下划线样式（Material You TextField）
   - 输入框文字居中显示，视觉更和谐
   - 修复设置页面多级导航动画方向：从详情页返回列表页时正确使用返回动画（从左滑入）
 
-- **3.平板适配**
+- **平板适配**
   - 设置页面支持平板 List-Detail 双栏布局
   - 屏幕宽度 ≥ 840dp 时自动切换为左右分栏模式
   - 左侧显示设置列表，右侧显示详情内容
   - 选中项高亮显示，支持快速切换
   - 新增搜索功能，可快速过滤设置项
+
+---
+
+### 技术改进详情
+
+#### 1. 深度研究服务
+
+**功能**：实现迭代式深度研究算法
+
+**实现**：
+- `DeepResearchService` 核心研究服务
+- 递归深度优先搜索策略
+- 并发控制（Semaphore）限制同时请求数
+- 流式返回研究进度（ResearchStep）
+
+---
+
+#### 2. 网络搜索服务
+
+**功能**：封装搜索 API 调用
+
+**实现**：
+- `WebSearchService` 搜索服务接口
+- `TavilySearchService` Tavily API 实现
+- `FirecrawlSearchService` Firecrawl API 实现
+- 支持搜索结果内容提取
+
+---
+
+#### 3. 深度研究数据层
+
+**功能**：研究历史持久化
+
+**实现**：
+- `DeepResearchHistoryEntity` 数据库实体
+- `DeepResearchHistoryDao` 数据访问对象
+- `DeepResearchHistoryRepository` 仓库实现
+- 支持按时间排序、搜索、删除
+
+---
+
+#### 4. 深度研究状态管理
+
+**功能**：管理研究过程状态
+
+**实现**：
+- `DeepResearchManager` 状态管理器
+- `ResearchState` 研究状态（空闲/研究中/生成报告/完成/错误）
+- `ResearchNode` 研究节点（查询、状态、结果）
+- `NodeStatus` 节点状态枚举
+
+---
+
+#### 5. 深度研究数据模型
+
+**新增**：
+- `SearchQuery` 搜索查询（关键词、研究目标、节点ID）
+- `WebSearchResult` 网络搜索结果
+- `Learning` 学习成果（URL、标题、关键信息）
+- `ProcessedSearchResult` 处理后的结果（学习成果、后续问题）
+- `DeepResearchConfig` 研究配置
+- `DeepResearchResult` 研究结果
+- `ResearchStep` 研究进度步骤（sealed class）
+
+---
+
+### 涉及文件
+
+| 模块 | 文件 | 修改 |
+|------|------|------|
+| data | DeepResearchModels.kt | 深度研究数据模型定义 |
+| data | DeepResearchService.kt | 深度研究核心服务 |
+| data | WebSearchService.kt | 网络搜索服务接口和实现 |
+| data | DeepResearchManager.kt | 研究状态管理器 |
+| data | DeepResearchRepository.kt | 研究配置 Repository |
+| data | DeepResearchHistoryEntity.kt | 历史记录数据库实体 |
+| data | DeepResearchHistoryDao.kt | 历史记录 DAO |
+| data | DeepResearchHistoryRepository.kt | 历史记录 Repository |
+| data | AppDatabase.kt | 添加深度研究历史表 |
+| data | build.gradle.kts | 添加 Gson 依赖 |
+| app | DeepResearchViewModel.kt | 深度研究 ViewModel |
+| app | DeepResearchScreen.kt | 深度研究页面 |
+| app | SettingsManager.kt | 添加深度研究设置 |
+| app | AppSettings.kt | 添加 DeepResearchSettings |
 
 ---
 
