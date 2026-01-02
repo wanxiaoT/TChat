@@ -76,13 +76,13 @@ fun MarkdownText(
         ContentParser.parse(markdown)
     }
 
-    // 检查是否包含Mermaid
-    val hasMermaid = remember(contentBlocks) {
-        contentBlocks.any { it is ContentBlock.Mermaid }
+    // 检查是否包含特殊块（Mermaid 或 Thinking）
+    val hasSpecialBlocks = remember(contentBlocks) {
+        contentBlocks.any { it is ContentBlock.Mermaid || it is ContentBlock.Thinking }
     }
 
-    if (hasMermaid) {
-        // 包含Mermaid时使用Column布局
+    if (hasSpecialBlocks) {
+        // 包含特殊块时使用Column布局
         Column(
             modifier = modifier,
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -99,6 +99,9 @@ fun MarkdownText(
                         }
                         is ContentBlock.Mermaid -> {
                             MermaidView(code = block.code)
+                        }
+                        is ContentBlock.Thinking -> {
+                            ThinkingView(content = block.content)
                         }
                     }
                 }

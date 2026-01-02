@@ -176,6 +176,9 @@ class OpenAIProvider(
     ) {
         var savedInputTokens = 0
         var savedOutputTokens = 0
+        
+        // 用于跟踪是否在思考块中 (thinking models)
+        var isInThinkingBlock = false
 
         // 用于收集流式工具调用
         val toolCallsBuilder = mutableMapOf<Int, ToolCallBuilder>()
@@ -186,6 +189,10 @@ class OpenAIProvider(
                     val data = line.substring(6).trim()
 
                     if (data == "[DONE]") {
+                        // 如果还在思考块中，先关闭思考标签
+                        if (isInThinkingBlock) {
+                            onChunk(StreamChunk.Content("\n</thinking>\n\n"))
+                        }
                         // 如果有收集到的工具调用，先发送
                         if (toolCallsBuilder.isNotEmpty()) {
                             val toolCalls = toolCallsBuilder.values.mapNotNull { it.build() }
@@ -225,10 +232,31 @@ class OpenAIProvider(
                             val delta = choice.optJSONObject("delta")
 
                             if (delta != null) {
+                                // 处理思考内容 (thinking models like Kimi-K2-Thinking, DeepSeek-R1)
+                                // reasoning_content 字段包含模型的思考过程
+                                if (delta.has("reasoning_content") && !delta.isNull("reasoning_content")) {
+                                    val reasoningContent = delta.optString("reasoning_content", "")
+                                    if (reasoningContent.isNotEmpty()) {
+                                        // 判断是否需要添加 thinking 标签
+                                        // 首次收到 reasoning_content 时发送开始标签
+                                        if (!isInThinkingBlock) {
+                                            isInThinkingBlock = true
+                                            onChunk(StreamChunk.Content("<thinking>\n"))
+                                        }
+                                        onChunk(StreamChunk.Content(reasoningContent))
+                                    }
+                                }
+                                
                                 // 处理文本内容
-                                if (delta.has("content")) {
-                                    val content = delta.getString("content")
+                                // 使用 optString 避免 null 值被转换为 "null" 字符串
+                                if (delta.has("content") && !delta.isNull("content")) {
+                                    val content = delta.optString("content", "")
                                     if (content.isNotEmpty()) {
+                                        // 如果之前在思考块中，现在收到正式内容，先关闭思考标签
+                                        if (isInThinkingBlock) {
+                                            isInThinkingBlock = false
+                                            onChunk(StreamChunk.Content("\n</thinking>\n\n"))
+                                        }
                                         onChunk(StreamChunk.Content(content))
                                     }
                                 }
@@ -270,6 +298,11 @@ class OpenAIProvider(
                 }
             }
 
+            // 如果还在思考块中，先关闭思考标签
+            if (isInThinkingBlock) {
+                onChunk(StreamChunk.Content("\n</thinking>\n\n"))
+            }
+            
             // 如果有工具调用，发送它们
             if (toolCallsBuilder.isNotEmpty()) {
                 val toolCalls = toolCallsBuilder.values.mapNotNull { it.build() }
