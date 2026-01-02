@@ -28,8 +28,8 @@ interface MessageDao {
     @Update
     suspend fun updateMessage(message: MessageEntity)
 
-    @Query("UPDATE messages SET content = :content WHERE id = :messageId")
-    suspend fun updateMessageContent(messageId: String, content: String)
+    @Query("UPDATE messages SET partsJson = :partsJson WHERE id = :messageId")
+    suspend fun updateMessageParts(messageId: String, partsJson: String)
 
     @Query("UPDATE messages SET variantsJson = :variantsJson, selectedVariantIndex = :selectedIndex WHERE id = :messageId")
     suspend fun updateMessageVariants(messageId: String, variantsJson: String?, selectedIndex: Int)

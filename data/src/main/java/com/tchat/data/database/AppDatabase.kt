@@ -41,7 +41,7 @@ import com.tchat.data.database.entity.LocalToolOptionConverter
         McpServerEntity::class,
         DeepResearchHistoryEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 @TypeConverters(LocalToolOptionConverter::class)
@@ -224,6 +224,136 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // 迁移:采用 MessagePart 架构，将旧字段迁移到 partsJson
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. 创建新表结构
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS messages_new (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        chatId TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        partsJson TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        inputTokens INTEGER NOT NULL DEFAULT 0,
+                        outputTokens INTEGER NOT NULL DEFAULT 0,
+                        tokensPerSecond REAL NOT NULL DEFAULT 0.0,
+                        firstTokenLatency INTEGER NOT NULL DEFAULT 0,
+                        modelName TEXT DEFAULT NULL,
+                        variantsJson TEXT DEFAULT NULL,
+                        selectedVariantIndex INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY(chatId) REFERENCES chats(id) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+
+                // 2. 查询所有旧消息
+                val cursor = db.query("SELECT * FROM messages")
+
+                cursor.use {
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getString(cursor.getColumnIndexOrThrow("id"))
+                        val chatId = cursor.getString(cursor.getColumnIndexOrThrow("chatId"))
+                        val role = cursor.getString(cursor.getColumnIndexOrThrow("role"))
+                        val content = cursor.getString(cursor.getColumnIndexOrThrow("content"))
+                        val timestamp = cursor.getLong(cursor.getColumnIndexOrThrow("timestamp"))
+                        val inputTokens = cursor.getInt(cursor.getColumnIndexOrThrow("inputTokens"))
+                        val outputTokens = cursor.getInt(cursor.getColumnIndexOrThrow("outputTokens"))
+                        val tokensPerSecond = cursor.getDouble(cursor.getColumnIndexOrThrow("tokensPerSecond"))
+                        val firstTokenLatency = cursor.getLong(cursor.getColumnIndexOrThrow("firstTokenLatency"))
+                        val modelName = cursor.getString(cursor.getColumnIndexOrThrow("modelName"))
+                        val variantsJson = cursor.getString(cursor.getColumnIndexOrThrow("variantsJson"))
+                        val selectedVariantIndex = cursor.getInt(cursor.getColumnIndexOrThrow("selectedVariantIndex"))
+                        val toolCallsJson = cursor.getString(cursor.getColumnIndexOrThrow("toolCallsJson"))
+                        val toolResultsJson = cursor.getString(cursor.getColumnIndexOrThrow("toolResultsJson"))
+
+                        // 构建 partsJson
+                        val parts = mutableListOf<String>()
+
+                        // 添加文本内容
+                        if (content.isNotEmpty()) {
+                            val escapedContent = content
+                                .replace("\\", "\\\\")
+                                .replace("\"", "\\\"")
+                                .replace("\n", "\\n")
+                                .replace("\r", "\\r")
+                                .replace("\t", "\\t")
+                            parts.add("""{"type":"text","content":"$escapedContent"}""")
+                        }
+
+                        // 添加工具调用（如果有）
+                        if (!toolCallsJson.isNullOrEmpty() && toolCallsJson != "null") {
+                            try {
+                                // 解析旧的 toolCallsJson 并转换为新格式
+                                val toolCallsArray = org.json.JSONArray(toolCallsJson)
+                                for (i in 0 until toolCallsArray.length()) {
+                                    val tc = toolCallsArray.getJSONObject(i)
+                                    val toolCallPart = org.json.JSONObject()
+                                    toolCallPart.put("type", "tool_call")
+                                    toolCallPart.put("toolCallId", tc.optString("id", ""))
+                                    toolCallPart.put("toolName", tc.optString("name", ""))
+                                    toolCallPart.put("arguments", tc.optString("arguments", "{}"))
+                                    parts.add(toolCallPart.toString())
+                                }
+                            } catch (e: Exception) {
+                                // 忽略解析错误
+                            }
+                        }
+
+                        // 添加工具结果（如果有）
+                        if (!toolResultsJson.isNullOrEmpty() && toolResultsJson != "null") {
+                            try {
+                                // 解析旧的 toolResultsJson 并转换为新格式
+                                val toolResultsArray = org.json.JSONArray(toolResultsJson)
+                                for (i in 0 until toolResultsArray.length()) {
+                                    val tr = toolResultsArray.getJSONObject(i)
+                                    val toolResultPart = org.json.JSONObject()
+                                    toolResultPart.put("type", "tool_result")
+                                    toolResultPart.put("toolCallId", tr.optString("toolCallId", ""))
+                                    toolResultPart.put("toolName", tr.optString("name", ""))
+                                    toolResultPart.put("arguments", tr.optString("arguments", "{}"))
+                                    toolResultPart.put("result", tr.optString("result", ""))
+                                    toolResultPart.put("isError", tr.optBoolean("isError", false))
+                                    toolResultPart.put("executionTimeMs", tr.optLong("executionTimeMs", 0))
+                                    parts.add(toolResultPart.toString())
+                                }
+                            } catch (e: Exception) {
+                                // 忽略解析错误
+                            }
+                        }
+
+                        // 如果没有任何部分，添加空文本
+                        val partsJson = if (parts.isEmpty()) {
+                            """[{"type":"text","content":""}]"""
+                        } else {
+                            "[${parts.joinToString(",")}]"
+                        }
+
+                        // 插入到新表
+                        db.execSQL("""
+                            INSERT INTO messages_new (
+                                id, chatId, role, partsJson, timestamp,
+                                inputTokens, outputTokens, tokensPerSecond, firstTokenLatency,
+                                modelName, variantsJson, selectedVariantIndex
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """.trimIndent(), arrayOf(
+                            id, chatId, role, partsJson, timestamp,
+                            inputTokens, outputTokens, tokensPerSecond, firstTokenLatency,
+                            modelName, variantsJson, selectedVariantIndex
+                        ))
+                    }
+                }
+
+                // 3. 删除旧表
+                db.execSQL("DROP TABLE messages")
+
+                // 4. 重命名新表
+                db.execSQL("ALTER TABLE messages_new RENAME TO messages")
+
+                // 5. 重建索引
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_chatId ON messages(chatId)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -231,7 +361,11 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "tchat_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                    .addMigrations(
+                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+                        MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12
+                    )
                     .build()
                 INSTANCE = instance
                 instance

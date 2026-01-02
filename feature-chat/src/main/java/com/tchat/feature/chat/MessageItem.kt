@@ -24,8 +24,8 @@ import com.composables.icons.lucide.RefreshCw
 import com.composables.icons.lucide.X
 import com.composables.icons.lucide.Wrench
 import com.tchat.data.model.Message
+import com.tchat.data.model.MessagePart
 import com.tchat.data.model.MessageRole
-import com.tchat.data.model.ToolResultData
 import com.tchat.feature.chat.markdown.MarkdownText
 
 @Composable
@@ -54,7 +54,7 @@ fun MessageItem(
                 color = MaterialTheme.colorScheme.secondaryContainer
             ) {
                 Text(
-                    text = message.content,
+                    text = message.getTextContent(),  // 使用 getTextContent()
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
@@ -127,14 +127,16 @@ fun MessageItem(
             // 消息内容
             Column {
                 // 工具执行结果（如果有）
-                if (!message.toolResults.isNullOrEmpty()) {
-                    ToolResultsSection(toolResults = message.toolResults!!)
+                val toolResults = message.getToolResults()
+                if (toolResults.isNotEmpty()) {
+                    ToolResultsSection(toolResults = toolResults)
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                if (message.content.isNotEmpty()) {
+                val textContent = message.getTextContent()
+                if (textContent.isNotEmpty()) {
                     MarkdownText(
-                        markdown = message.content,
+                        markdown = textContent,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -187,7 +189,7 @@ fun MessageItem(
  * 每个工具调用显示为独立的可展开卡片
  */
 @Composable
-private fun ToolResultsSection(toolResults: List<ToolResultData>) {
+private fun ToolResultsSection(toolResults: List<MessagePart.ToolResult>) {
     Column(
         verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier.fillMaxWidth()
@@ -204,9 +206,9 @@ private fun ToolResultsSection(toolResults: List<ToolResultData>) {
  * 点击可展开/收起查看详细信息
  */
 @Composable
-private fun ToolCallCard(result: ToolResultData) {
+private fun ToolCallCard(result: MessagePart.ToolResult) {
     var expanded by remember { mutableStateOf(false) }
-    
+
     // 格式化参数显示（安全处理空字符串）
     val formattedArgs = remember(result.arguments) {
         val args = result.arguments.trim()
@@ -272,13 +274,13 @@ private fun ToolCallCard(result: ToolResultData) {
                         )
                     }
                 }
-                
+
                 // 工具名称和简要信息
                 Column(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = result.name,
+                        text = result.toolName,  // 改为 toolName
                         style = MaterialTheme.typography.labelLarge,
                         color = if (result.isError)
                             MaterialTheme.colorScheme.error

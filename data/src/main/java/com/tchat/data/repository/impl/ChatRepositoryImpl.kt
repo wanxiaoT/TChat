@@ -7,15 +7,15 @@ import com.tchat.data.database.entity.ChatEntity
 import com.tchat.data.database.entity.MessageEntity
 import com.tchat.data.model.Chat
 import com.tchat.data.model.Message
+import com.tchat.data.model.MessagePart
 import com.tchat.data.model.MessageRole
 import com.tchat.data.model.MessageVariant
-import com.tchat.data.model.ToolCallData
-import com.tchat.data.model.ToolResultData
 import com.tchat.data.repository.ChatConfig
 import com.tchat.data.repository.ChatRepository
 import com.tchat.data.repository.MessageResult
 import com.tchat.data.tool.InputSchema
 import com.tchat.data.tool.Tool
+import com.tchat.data.util.MessagePartSerializer
 import com.tchat.network.provider.AIProvider
 import com.tchat.network.provider.ChatMessage
 import com.tchat.network.provider.StreamChunk
@@ -106,11 +106,11 @@ class ChatRepositoryImpl(
             println("config tools: ${config?.tools?.size ?: 0}")
 
             // 添加用户消息
-            val userMessage = Message(
+            val userMessage = Message.createTextMessage(
                 id = UUID.randomUUID().toString(),
                 chatId = chatId,
-                content = content,
-                role = MessageRole.USER
+                role = MessageRole.USER,
+                content = content
             )
             addMessage(userMessage)
             emit(Result.Success(userMessage))
@@ -129,8 +129,8 @@ class ChatRepositoryImpl(
             val initialAssistantMessage = Message(
                 id = assistantId,
                 chatId = chatId,
-                content = "",
                 role = MessageRole.ASSISTANT,
+                parts = emptyList(),
                 isStreaming = true
             )
             emit(Result.Success(initialAssistantMessage))
@@ -183,11 +183,11 @@ class ChatRepositoryImpl(
             val chatId = chatEntity.id
 
             // 添加用户消息
-            val userMessage = Message(
+            val userMessage = Message.createTextMessage(
                 id = UUID.randomUUID().toString(),
                 chatId = chatId,
-                content = content,
-                role = MessageRole.USER
+                role = MessageRole.USER,
+                content = content
             )
             saveMessageToDb(userMessage)
             emit(Result.Success(MessageResult(chatId, userMessage)))
@@ -209,8 +209,8 @@ class ChatRepositoryImpl(
             val initialAssistantMessage = Message(
                 id = assistantId,
                 chatId = chatId,
-                content = "",
                 role = MessageRole.ASSISTANT,
+                parts = emptyList(),
                 isStreaming = true
             )
             emit(Result.Success(MessageResult(chatId, initialAssistantMessage)))
@@ -252,7 +252,7 @@ class ChatRepositoryImpl(
         var tokensPerSecond = 0.0
         var firstTokenLatency = 0L
         var pendingToolCalls: List<ToolCallInfo>? = null
-        val allToolResults = mutableListOf<ToolResultData>()
+        val allParts = mutableListOf<MessagePart>()  // 存储所有消息部分
 
         // 工具调用循环，最多执行10轮避免无限循环
         var iteration = 0
@@ -282,13 +282,19 @@ class ChatRepositoryImpl(
                 when (chunk) {
                     is StreamChunk.Content -> {
                         currentContent += chunk.text
+                        // 流式更新：显示文本内容和已执行的工具结果
+                        val streamingParts = mutableListOf<MessagePart>()
+                        if (currentContent.isNotEmpty()) {
+                            streamingParts.add(MessagePart.Text(currentContent))
+                        }
+                        streamingParts.addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
+
                         onStreamingUpdate(Message(
                             id = assistantId,
                             chatId = chatId,
-                            content = currentContent,
                             role = MessageRole.ASSISTANT,
-                            isStreaming = true,
-                            toolResults = if (allToolResults.isNotEmpty()) allToolResults.toList() else null
+                            parts = streamingParts,
+                            isStreaming = true
                         ))
                     }
                     is StreamChunk.ToolCall -> {
@@ -330,7 +336,14 @@ class ChatRepositoryImpl(
                 println("工具名称: ${toolCall.name}")
                 println("工具ID: ${toolCall.id}")
                 println("参数: ${toolCall.arguments}")
-                
+
+                // 添加 ToolCall Part
+                allParts.add(MessagePart.ToolCall(
+                    toolCallId = toolCall.id,
+                    toolName = toolCall.name,
+                    arguments = toolCall.arguments.ifBlank { "{}" }
+                ))
+
                 val tool = tools.find { it.name == toolCall.name }
                 val startTime = System.currentTimeMillis()
                 // 安全的参数字符串：空白时默认为 "{}"
@@ -352,20 +365,20 @@ class ChatRepositoryImpl(
                     """{"error": "未知工具: ${toolCall.name}"}"""
                 }
                 val executionTime = System.currentTimeMillis() - startTime
-                
+
                 println("工具结果: $result")
                 println("执行耗时: ${executionTime}ms")
 
-                // 记录工具结果用于显示（包含参数和执行时间）
-                allToolResults.add(ToolResultData(
+                // 添加 ToolResult Part
+                allParts.add(MessagePart.ToolResult(
                     toolCallId = toolCall.id,
-                    name = toolCall.name,
+                    toolName = toolCall.name,
                     arguments = safeArgs,
                     result = result,
                     isError = result.contains("\"error\""),
                     executionTimeMs = executionTime
                 ))
-                println("当前工具结果总数: ${allToolResults.size}")
+                println("当前 Parts 总数: ${allParts.size}")
 
                 // 添加工具结果到消息历史
                 messages.add(ChatMessage(
@@ -377,40 +390,56 @@ class ChatRepositoryImpl(
             }
 
             // 更新UI显示工具执行状态
+            val streamingParts = mutableListOf<MessagePart>()
+            if (currentContent.isNotEmpty()) {
+                streamingParts.add(MessagePart.Text(currentContent))
+            }
+            streamingParts.addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
+
             onStreamingUpdate(Message(
                 id = assistantId,
                 chatId = chatId,
-                content = currentContent,
                 role = MessageRole.ASSISTANT,
-                isStreaming = true,
-                toolResults = allToolResults.toList()
+                parts = streamingParts,
+                isStreaming = true
             ))
 
             pendingToolCalls = null
         }
 
+        // 构建最终的 parts 列表
+        val finalParts = mutableListOf<MessagePart>()
+        if (currentContent.isNotEmpty()) {
+            finalParts.add(MessagePart.Text(currentContent))
+        }
+        finalParts.addAll(allParts.filterIsInstance<MessagePart.ToolCall>())
+        finalParts.addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
+
         // 保存最终消息到数据库
         println("=== 准备保存最终消息 ===")
-        println("allToolResults 数量: ${allToolResults.size}")
-        allToolResults.forEach { result ->
-            println("  工具: ${result.name}, ID: ${result.toolCallId}")
+        println("Parts 数量: ${finalParts.size}")
+        finalParts.forEach { part ->
+            when (part) {
+                is MessagePart.Text -> println("  文本: ${part.content.take(50)}...")
+                is MessagePart.ToolCall -> println("  工具调用: ${part.toolName}")
+                is MessagePart.ToolResult -> println("  工具结果: ${part.toolName}, ID: ${part.toolCallId}")
+            }
         }
-        
+
         val finalMessage = Message(
             id = assistantId,
             chatId = chatId,
-            content = currentContent,
             role = MessageRole.ASSISTANT,
+            parts = finalParts,
             isStreaming = false,
             inputTokens = inputTokens,
             outputTokens = outputTokens,
             tokensPerSecond = tokensPerSecond,
             firstTokenLatency = firstTokenLatency,
-            modelName = modelName,
-            toolResults = if (allToolResults.isNotEmpty()) allToolResults.toList() else null
+            modelName = modelName
         )
-        
-        println("finalMessage.toolResults 数量: ${finalMessage.toolResults?.size ?: 0}")
+
+        println("finalMessage.parts 数量: ${finalMessage.parts.size}")
         saveMessageToDb(finalMessage)
         chatDao.updateChatTimestamp(chatId, System.currentTimeMillis())
 
@@ -440,47 +469,47 @@ class ChatRepositoryImpl(
                 }
             }
             messages.addAll(allMessages.take(userMessageIndex + 1).map {
+                val msg = it.toMessage()
                 ChatMessage(
                     role = when (it.role) {
                         "user" -> ProviderMessageRole.USER
                         "assistant" -> ProviderMessageRole.ASSISTANT
                         else -> ProviderMessageRole.SYSTEM
                     },
-                    content = it.content
+                    content = msg.getTextContent()
                 )
             })
 
-            val streamingMessage = originalMessage.copy(content = "", isStreaming = true)
+            val streamingMessage = originalMessage.copy(parts = emptyList(), isStreaming = true)
             emit(Result.Success(streamingMessage))
 
             // 转换工具定义
             val toolDefinitions = config?.tools?.map { it.toToolDefinition() } ?: emptyList()
 
             // 执行带工具调用的聊天流程
-            val finalContent = executeWithToolCallsForRegenerate(
+            val finalResult = executeWithToolCallsForRegenerate(
                 messages = messages,
                 tools = config?.tools ?: emptyList(),
                 toolDefinitions = toolDefinitions,
-                onStreamingUpdate = { content, toolResults ->
+                onStreamingUpdate = { parts ->
                     emit(Result.Success(originalMessage.copy(
-                        content = content,
-                        isStreaming = true,
-                        toolResults = toolResults
+                        parts = parts,
+                        isStreaming = true
                     )))
                 }
             )
 
             // 创建新变体
             val newVariant = MessageVariant(
-                content = finalContent.first,
-                inputTokens = finalContent.second,
-                outputTokens = finalContent.third
+                content = finalResult.first,
+                inputTokens = finalResult.second,
+                outputTokens = finalResult.third
             )
 
             val existingVariants = originalMessage.variants.toMutableList()
             if (existingVariants.isEmpty()) {
                 existingVariants.add(MessageVariant(
-                    content = originalMessage.content,
+                    content = originalMessage.getTextContent(),
                     inputTokens = originalMessage.inputTokens,
                     outputTokens = originalMessage.outputTokens,
                     tokensPerSecond = originalMessage.tokensPerSecond,
@@ -495,10 +524,10 @@ class ChatRepositoryImpl(
             messageDao.updateMessageVariants(aiMessageId, variantsJson, newSelectedIndex)
 
             val finalMessage = originalMessage.copy(
-                content = finalContent.first,
+                parts = finalResult.fourth,
                 isStreaming = false,
-                inputTokens = finalContent.second,
-                outputTokens = finalContent.third,
+                inputTokens = finalResult.second,
+                outputTokens = finalResult.third,
                 variants = existingVariants,
                 selectedVariantIndex = newSelectedIndex
             )
@@ -510,18 +539,19 @@ class ChatRepositoryImpl(
 
     /**
      * 为重新生成执行工具调用流程
+     * 返回: (文本内容, inputTokens, outputTokens, 完整的parts列表)
      */
     private suspend fun executeWithToolCallsForRegenerate(
         messages: MutableList<ChatMessage>,
         tools: List<Tool>,
         toolDefinitions: List<ToolDefinition>,
-        onStreamingUpdate: suspend (String, List<ToolResultData>?) -> Unit
-    ): Triple<String, Int, Int> {
+        onStreamingUpdate: suspend (List<MessagePart>) -> Unit
+    ): Quadruple<String, Int, Int, List<MessagePart>> {
         var currentContent = ""
         var inputTokens = 0
         var outputTokens = 0
         var pendingToolCalls: List<ToolCallInfo>? = null
-        val allToolResults = mutableListOf<ToolResultData>()
+        val allParts = mutableListOf<MessagePart>()
 
         var iteration = 0
         val maxIterations = 10
@@ -542,10 +572,13 @@ class ChatRepositoryImpl(
                 when (chunk) {
                     is StreamChunk.Content -> {
                         currentContent += chunk.text
-                        onStreamingUpdate(
-                            currentContent,
-                            if (allToolResults.isNotEmpty()) allToolResults.toList() else null
-                        )
+                        // 流式更新
+                        val streamingParts = mutableListOf<MessagePart>()
+                        if (currentContent.isNotEmpty()) {
+                            streamingParts.add(MessagePart.Text(currentContent))
+                        }
+                        streamingParts.addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
+                        onStreamingUpdate(streamingParts)
                     }
                     is StreamChunk.ToolCall -> {
                         hasToolCall = true
@@ -574,9 +607,15 @@ class ChatRepositoryImpl(
             ))
 
             for (toolCall in toolCalls) {
+                // 添加 ToolCall Part
+                allParts.add(MessagePart.ToolCall(
+                    toolCallId = toolCall.id,
+                    toolName = toolCall.name,
+                    arguments = toolCall.arguments.ifBlank { "{}" }
+                ))
+
                 val tool = tools.find { it.name == toolCall.name }
                 val startTime = System.currentTimeMillis()
-                // 安全的参数字符串：空白时默认为 "{}"
                 val safeArgs = toolCall.arguments.ifBlank { "{}" }
                 val result = if (tool != null) {
                     try {
@@ -591,9 +630,10 @@ class ChatRepositoryImpl(
                 }
                 val executionTime = System.currentTimeMillis() - startTime
 
-                allToolResults.add(ToolResultData(
+                // 添加 ToolResult Part
+                allParts.add(MessagePart.ToolResult(
                     toolCallId = toolCall.id,
-                    name = toolCall.name,
+                    toolName = toolCall.name,
                     arguments = safeArgs,
                     result = result,
                     isError = result.contains("\"error\""),
@@ -608,12 +648,30 @@ class ChatRepositoryImpl(
                 ))
             }
 
-            onStreamingUpdate(currentContent, allToolResults.toList())
+            // 流式更新
+            val streamingParts = mutableListOf<MessagePart>()
+            if (currentContent.isNotEmpty()) {
+                streamingParts.add(MessagePart.Text(currentContent))
+            }
+            streamingParts.addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
+            onStreamingUpdate(streamingParts)
+
             pendingToolCalls = null
         }
 
-        return Triple(currentContent, inputTokens, outputTokens)
+        // 构建最终 parts
+        val finalParts = mutableListOf<MessagePart>()
+        if (currentContent.isNotEmpty()) {
+            finalParts.add(MessagePart.Text(currentContent))
+        }
+        finalParts.addAll(allParts.filterIsInstance<MessagePart.ToolCall>())
+        finalParts.addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
+
+        return Quadruple(currentContent, inputTokens, outputTokens, finalParts)
     }
+
+    // 辅助数据类：四元组
+    private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
     override suspend fun selectVariant(messageId: String, variantIndex: Int): Result<Unit> {
         return try {
@@ -648,9 +706,9 @@ class ChatRepositoryImpl(
                     "tool" -> ProviderMessageRole.TOOL
                     else -> ProviderMessageRole.SYSTEM
                 },
-                content = message.getCurrentContent(),
-                toolCallId = entity.toolCallId,
-                name = entity.toolName
+                content = message.getTextContent(),  // 使用新的 getTextContent() 方法
+                toolCallId = null,  // 旧字段已移除
+                name = null  // 旧字段已移除
             )
         })
 
@@ -676,16 +734,20 @@ class ChatRepositoryImpl(
         println("=== 保存消息到数据库 ===")
         println("消息ID: ${message.id}")
         println("角色: ${message.role}")
-        println("工具结果数量: ${message.toolResults?.size ?: 0}")
-        message.toolResults?.forEach { result ->
-            println("  - 工具: ${result.name}, 是否错误: ${result.isError}")
+        println("Parts 数量: ${message.parts.size}")
+        message.parts.forEach { part ->
+            when (part) {
+                is MessagePart.Text -> println("  - 文本: ${part.content.take(50)}...")
+                is MessagePart.ToolCall -> println("  - 工具调用: ${part.toolName}")
+                is MessagePart.ToolResult -> println("  - 工具结果: ${part.toolName}, 错误: ${part.isError}")
+            }
         }
-        
+
         val entity = MessageEntity(
             id = message.id,
             chatId = message.chatId,
-            content = message.content,
             role = message.role.name.lowercase(),
+            partsJson = MessagePartSerializer.serializeParts(message.parts),
             timestamp = message.timestamp,
             inputTokens = message.inputTokens,
             outputTokens = message.outputTokens,
@@ -693,14 +755,10 @@ class ChatRepositoryImpl(
             firstTokenLatency = message.firstTokenLatency,
             modelName = message.modelName,
             variantsJson = if (message.variants.isNotEmpty()) variantsToJson(message.variants) else null,
-            selectedVariantIndex = message.selectedVariantIndex,
-            toolCallId = message.toolCallId,
-            toolName = if (message.role == MessageRole.TOOL) message.toolCallId else null,
-            toolCallsJson = message.toolCalls?.let { toolCallsToJson(it) },
-            toolResultsJson = message.toolResults?.let { toolResultsToJson(it) }
+            selectedVariantIndex = message.selectedVariantIndex
         )
-        
-        println("toolResultsJson: ${entity.toolResultsJson}")
+
+        println("partsJson 长度: ${entity.partsJson.length}")
         messageDao.insertMessage(entity)
         println("=== 消息保存完成 ===")
     }
@@ -766,33 +824,6 @@ class ChatRepositoryImpl(
         return jsonArray.toString()
     }
 
-    private fun toolCallsToJson(toolCalls: List<ToolCallData>): String {
-        val jsonArray = JSONArray()
-        toolCalls.forEach { tc ->
-            val jsonObj = JSONObject()
-            jsonObj.put("id", tc.id)
-            jsonObj.put("name", tc.name)
-            jsonObj.put("arguments", tc.arguments)
-            jsonArray.put(jsonObj)
-        }
-        return jsonArray.toString()
-    }
-
-    private fun toolResultsToJson(toolResults: List<ToolResultData>): String {
-        val jsonArray = JSONArray()
-        toolResults.forEach { tr ->
-            val jsonObj = JSONObject()
-            jsonObj.put("toolCallId", tr.toolCallId)
-            jsonObj.put("name", tr.name)
-            jsonObj.put("arguments", tr.arguments)
-            jsonObj.put("result", tr.result)
-            jsonObj.put("isError", tr.isError)
-            jsonObj.put("executionTimeMs", tr.executionTimeMs)
-            jsonArray.put(jsonObj)
-        }
-        return jsonArray.toString()
-    }
-
     private fun jsonToVariants(json: String?): List<MessageVariant> {
         if (json.isNullOrEmpty()) return emptyList()
         return try {
@@ -813,55 +844,6 @@ class ChatRepositoryImpl(
         }
     }
 
-    private fun jsonToToolCalls(json: String?): List<ToolCallData>? {
-        if (json.isNullOrEmpty()) return null
-        return try {
-            val jsonArray = JSONArray(json)
-            (0 until jsonArray.length()).map { i ->
-                val jsonObj = jsonArray.getJSONObject(i)
-                ToolCallData(
-                    id = jsonObj.optString("id", ""),
-                    name = jsonObj.optString("name", ""),
-                    arguments = jsonObj.optString("arguments", "{}")
-                )
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun jsonToToolResults(json: String?): List<ToolResultData>? {
-        if (json.isNullOrEmpty()) return null
-        return try {
-            val jsonArray = JSONArray(json)
-            (0 until jsonArray.length()).map { i ->
-                val jsonObj = jsonArray.getJSONObject(i)
-                val rawResult = jsonObj.optString("result", "")
-                val rawArgs = jsonObj.optString("arguments", "{}")
-                
-                // 检测是否是旧版本因为空参数导致的错误
-                val isLegacyParseError = rawResult.contains("End of input at character 0")
-                
-                ToolResultData(
-                    toolCallId = jsonObj.optString("toolCallId", ""),
-                    name = jsonObj.optString("name", ""),
-                    // 确保参数不为空
-                    arguments = rawArgs.ifBlank { "{}" },
-                    // 如果是旧版本解析错误，提供更友好的提示
-                    result = if (isLegacyParseError) {
-                        """{"note": "此工具调用记录已损坏，请删除此对话后重新尝试"}"""
-                    } else {
-                        rawResult
-                    },
-                    isError = jsonObj.optBoolean("isError", false) || isLegacyParseError,
-                    executionTimeMs = jsonObj.optLong("executionTimeMs", 0)
-                )
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
-
     private fun ChatEntity.toChat() = Chat(
         id = id,
         title = title,
@@ -877,21 +859,16 @@ class ChatRepositoryImpl(
             null
         }
 
-        val loadedToolResults = jsonToToolResults(toolResultsJson)
-        if (!loadedToolResults.isNullOrEmpty()) {
-            println("=== 加载消息工具结果 ===")
-            println("消息ID: $id")
-            println("工具结果数量: ${loadedToolResults.size}")
-            loadedToolResults.forEach { result ->
-                println("  - 工具: ${result.name}")
-            }
-        }
+        val parts = MessagePartSerializer.deserializeParts(partsJson)
+        println("=== 加载消息 ===")
+        println("消息ID: $id")
+        println("Parts 数量: ${parts.size}")
 
         return Message(
             id = id,
             chatId = chatId,
-            content = currentVariant?.content ?: content,
             role = MessageRole.valueOf(role.uppercase()),
+            parts = parts,
             timestamp = timestamp,
             isStreaming = false,
             inputTokens = currentVariant?.inputTokens ?: inputTokens,
@@ -900,10 +877,7 @@ class ChatRepositoryImpl(
             firstTokenLatency = currentVariant?.firstTokenLatency ?: firstTokenLatency,
             modelName = modelName,
             variants = variants,
-            selectedVariantIndex = selectedVariantIndex,
-            toolCallId = toolCallId,
-            toolCalls = jsonToToolCalls(toolCallsJson),
-            toolResults = loadedToolResults
+            selectedVariantIndex = selectedVariantIndex
         )
     }
 }

@@ -8,7 +8,8 @@ import androidx.room.PrimaryKey
 /**
  * 消息实体
  *
- * 支持工具调用存储
+ * 采用 MessagePart 架构：partsJson 字段存储序列化的消息部分列表
+ * 包含文本内容、工具调用、工具结果等
  */
 @Entity(
     tableName = "messages",
@@ -26,22 +27,17 @@ data class MessageEntity(
     @PrimaryKey
     val id: String,
     val chatId: String,
-    val content: String,
     val role: String,  // "user", "assistant", "system", "tool"
+    val partsJson: String,  // 序列化的 MessagePart 列表（核心字段）
     val timestamp: Long,
     // 统计信息
     val inputTokens: Int = 0,
     val outputTokens: Int = 0,
     val tokensPerSecond: Double = 0.0,
     val firstTokenLatency: Long = 0,
-    // 模型名称（用于统计）
+    // 模型名称
     val modelName: String? = null,
     // 变体支持（JSON 格式存储）
     val variantsJson: String? = null,
-    val selectedVariantIndex: Int = 0,
-    // 工具调用支持
-    val toolCallId: String? = null,      // 工具结果对应的调用ID
-    val toolName: String? = null,        // 工具名称（用于工具结果消息）
-    val toolCallsJson: String? = null,   // AI发起的工具调用（JSON数组）
-    val toolResultsJson: String? = null  // 工具执行结果（JSON数组，用于显示）
+    val selectedVariantIndex: Int = 0
 )
