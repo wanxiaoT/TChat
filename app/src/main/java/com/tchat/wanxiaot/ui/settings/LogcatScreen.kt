@@ -6,21 +6,27 @@ import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -56,11 +62,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -682,17 +694,117 @@ fun LogcatScreen(
                         )
                     }
                 } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    val density = LocalDensity.current
+                    var containerHeight by remember { mutableStateOf(0) }
+                    val scrollbarHeight = 48.dp
+                    val scrollbarHeightPx = with(density) { scrollbarHeight.toPx() }
+                    val paddingPx = with(density) { 8.dp.toPx() }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .onSizeChanged { containerHeight = it.height }
                     ) {
-                        items(filteredLogs) { entry ->
-                            LogEntryItem(
-                                entry = entry,
-                                onLongClick = { copySingleLog(entry) }
-                            )
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(end = 12.dp), // 为滚动条留出空间
+                            contentPadding = PaddingValues(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            items(filteredLogs) { entry ->
+                                LogEntryItem(
+                                    entry = entry,
+                                    onLongClick = { copySingleLog(entry) }
+                                )
+                            }
+                        }
+
+                        // 快速滚动条
+                        if (filteredLogs.size > 20 && containerHeight > 0) {
+                            val trackHeight = containerHeight - paddingPx
+                            val maxOffset = (trackHeight - scrollbarHeightPx).coerceAtLeast(0f)
+                            val itemCount = filteredLogs.size
+
+                            // 使用 derivedStateOf 精确计算滚动进度
+                            val scrollProgress by remember {
+                                derivedStateOf {
+                                    if (itemCount <= 1) 0f
+                                    else {
+                                        val layoutInfo = listState.layoutInfo
+                                        val visibleItems = layoutInfo.visibleItemsInfo
+                                        
+                                        // 如果无法继续向下滚动，说明已经到达底部
+                                        if (!listState.canScrollForward) {
+                                            1f
+                                        } else if (!listState.canScrollBackward) {
+                                            // 如果无法向上滚动，说明在顶部
+                                            0f
+                                        } else {
+                                            // 计算 content 总高度和可视区域
+                                            val totalItemsHeight = layoutInfo.totalItemsCount
+                                            val firstIndex = listState.firstVisibleItemIndex
+                                            val firstOffset = listState.firstVisibleItemScrollOffset
+                                            val firstItemHeight = visibleItems.firstOrNull()?.size ?: 1
+                                            
+                                            // 计算精确进度：当前索引 + 当前 item 内的滚动比例
+                                            val indexProgress = firstIndex + (firstOffset.toFloat() / firstItemHeight.coerceAtLeast(1))
+                                            (indexProgress / (itemCount - 1)).coerceIn(0f, 1f)
+                                        }
+                                    }
+                                }
+                            }
+                            val scrollbarOffset = (scrollProgress * maxOffset).toInt()
+
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(end = 2.dp, top = 4.dp, bottom = 4.dp)
+                                    .width(8.dp)
+                                    .fillMaxHeight()
+                                    .pointerInput(itemCount, maxOffset) {
+                                        detectVerticalDragGestures { change, dragAmount ->
+                                            change.consume()
+                                            // 从 listState 实时获取当前位置
+                                            val currentIndex = listState.firstVisibleItemIndex
+                                            val currentItemOffset = listState.firstVisibleItemScrollOffset
+                                            val visibleItems = listState.layoutInfo.visibleItemsInfo
+                                            val firstItemHeight = visibleItems.firstOrNull()?.size ?: 1
+                                            val currentProgress = if (itemCount <= 1) 0f else {
+                                                (currentIndex + currentItemOffset.toFloat() / firstItemHeight.coerceAtLeast(1)) / (itemCount - 1)
+                                            }
+                                            val currentOffset = currentProgress * maxOffset
+                                            // 计算新位置
+                                            val newOffset = (currentOffset + dragAmount).coerceIn(0f, maxOffset)
+                                            // 计算目标索引
+                                            val progress = if (maxOffset > 0) newOffset / maxOffset else 0f
+                                            val targetIndex = (progress * (itemCount - 1)).toInt()
+                                                .coerceIn(0, itemCount - 1)
+                                            scope.launch {
+                                                listState.scrollToItem(targetIndex)
+                                            }
+                                        }
+                                    }
+                            ) {
+                                // 滚动条轨道
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                )
+
+                                // 滚动条滑块
+                                Box(
+                                    modifier = Modifier
+                                        .offset { IntOffset(0, scrollbarOffset) }
+                                        .width(8.dp)
+                                        .size(8.dp, scrollbarHeight)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+                                )
+                            }
                         }
                     }
                 }
