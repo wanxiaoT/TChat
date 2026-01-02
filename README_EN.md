@@ -43,6 +43,13 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
   - Input text centered for better visual harmony
   - Fixed settings page multi-level navigation animation direction: correctly use back animation (slide in from left) when returning from detail page to list page
 
+- **Tablet Adaptation**
+  - Settings page supports tablet List-Detail dual-pane layout
+  - Automatically switches to left-right split mode when screen width ≥ 840dp
+  - Left side displays settings list, right side displays detail content
+  - Selected item highlighted, supports quick switching
+  - New search feature to quickly filter settings items
+
 ---
 
 # v1.4
