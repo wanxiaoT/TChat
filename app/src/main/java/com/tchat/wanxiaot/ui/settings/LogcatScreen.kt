@@ -501,6 +501,140 @@ fun LogcatScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            // 平板模式下显示工具栏
+            if (!showTopBar) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "日志查看",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    // 过滤按钮
+                    Box {
+                        IconButton(
+                            onClick = { showFilterMenu = true },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.FilterList,
+                                contentDescription = "过滤",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showFilterMenu,
+                            onDismissRequest = { showFilterMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("全部") },
+                                onClick = {
+                                    selectedLevel = null
+                                    showFilterMenu = false
+                                }
+                            )
+                            LogLevel.entries.forEach { level ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = level.name,
+                                            color = level.color
+                                        )
+                                    },
+                                    onClick = {
+                                        selectedLevel = level
+                                        showFilterMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // 实时保存按钮
+                    IconButton(
+                        onClick = {
+                            if (isStreamSaving) {
+                                stopStreamSave()
+                            } else {
+                                showSaveDialog = true
+                            }
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Save,
+                            contentDescription = if (isStreamSaving) "停止保存" else "开始保存",
+                            tint = if (isStreamSaving) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // 刷新按钮
+                    IconButton(
+                        onClick = { loadLogs() },
+                        enabled = !isStreamSaving,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "刷新",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // 复制按钮
+                    IconButton(
+                        onClick = { copyLogs() },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "复制",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // 清除按钮
+                    IconButton(
+                        onClick = { clearLogs() },
+                        enabled = !isStreamSaving,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "清除",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // 滚动到底部按钮
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                if (logEntries.isNotEmpty()) {
+                                    listState.animateScrollToItem(logEntries.size - 1)
+                                }
+                            }
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowDownward,
+                            contentDescription = "滚动到底部",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                HorizontalDivider()
+            }
+
             // 过滤器标签
             if (selectedLevel != null) {
                 Row(

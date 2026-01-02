@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
@@ -27,6 +28,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.BookOpen
 import com.composables.icons.lucide.Lucide
@@ -154,219 +158,225 @@ private fun TabletSettingsLayout(
     knowledgeService: KnowledgeService,
     mcpRepository: McpServerRepositoryImpl
 ) {
+    // 搜索状态
+    var showSearchBar by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+
     // 处理系统返回键
     BackHandler {
-        when (currentSubPage) {
-            is SettingsSubPage.MAIN -> onBack()
-            is SettingsSubPage.ASSISTANT_DETAIL -> onSubPageChange(SettingsSubPage.ASSISTANTS)
-            is SettingsSubPage.KNOWLEDGE_DETAIL -> onSubPageChange(SettingsSubPage.KNOWLEDGE)
+        when {
+            showSearchBar -> {
+                showSearchBar = false
+                searchQuery = ""
+            }
+            currentSubPage is SettingsSubPage.MAIN -> onBack()
+            currentSubPage is SettingsSubPage.ASSISTANT_DETAIL -> onSubPageChange(SettingsSubPage.ASSISTANTS)
+            currentSubPage is SettingsSubPage.KNOWLEDGE_DETAIL -> onSubPageChange(SettingsSubPage.KNOWLEDGE)
             else -> onSubPageChange(SettingsSubPage.MAIN)
         }
     }
 
-    // 搜索状态
-    var showSearchBar by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
+    // 搜索框展开时自动获取焦点
+    LaunchedEffect(showSearchBar) {
+        if (showSearchBar) {
+            focusRequester.requestFocus()
+        }
+    }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("设置") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showSearchBar = !showSearchBar }) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "搜索"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.surface
-    ) { innerPadding ->
-        Row(
+    Row(modifier = Modifier.fillMaxSize()) {
+        // 左侧：设置列表（带自己的 TopAppBar）
+        Scaffold(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
+                .width(TABLET_LIST_WIDTH)
+                .fillMaxHeight(),
+            topBar = {
+                TopAppBar(
+                    title = {
+                        if (showSearchBar) {
+                            TextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(focusRequester),
+                                placeholder = { Text("搜索设置...") },
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent
+                                )
+                            )
+                        } else {
+                            Text("设置")
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            if (showSearchBar) {
+                                showSearchBar = false
+                                searchQuery = ""
+                            } else {
+                                onBack()
+                            }
+                        }) {
+                            Icon(
+                                imageVector = if (showSearchBar) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = if (showSearchBar) "关闭搜索" else "返回"
+                            )
+                        }
+                    },
+                    actions = {
+                        if (!showSearchBar) {
+                            IconButton(onClick = { showSearchBar = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "搜索"
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                )
+            },
+            containerColor = MaterialTheme.colorScheme.surface
+        ) { innerPadding ->
+            SettingsListContent(
+                modifier = Modifier.padding(innerPadding),
+                currentSubPage = currentSubPage,
+                searchQuery = searchQuery,
+                onProvidersClick = { onSubPageChange(SettingsSubPage.PROVIDERS) },
+                onAboutClick = { onSubPageChange(SettingsSubPage.ABOUT) },
+                onLogcatClick = { onSubPageChange(SettingsSubPage.LOGCAT) },
+                onAssistantsClick = { onSubPageChange(SettingsSubPage.ASSISTANTS) },
+                onKnowledgeClick = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
+                onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
+                onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) }
+            )
+        }
+
+        // 右侧：详情内容
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
         ) {
-            // 左侧：设置列表
-            Surface(
-                modifier = Modifier
-                    .width(TABLET_LIST_WIDTH)
-                    .fillMaxHeight(),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 0.dp
-            ) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    // 搜索栏
-                    AnimatedVisibility(visible = showSearchBar) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            placeholder = { Text("搜索设置...") },
-                            leadingIcon = {
-                                Icon(Icons.Default.Search, contentDescription = null)
-                            },
-                            singleLine = true,
-                            shape = MaterialTheme.shapes.medium
+            AnimatedContent(
+                targetState = currentSubPage,
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(150)) togetherWith fadeOut(animationSpec = tween(150))
+                },
+                label = "tablet_detail_transition"
+            ) { page ->
+                when (page) {
+                    is SettingsSubPage.MAIN -> {
+                        // 主页面显示欢迎提示
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Lucide.Settings2,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(64.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "请从左侧选择设置项",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    is SettingsSubPage.PROVIDERS -> {
+                        ProvidersScreen(
+                            settingsManager = settingsManager,
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            showTopBar = false
                         )
                     }
-
-                    SettingsListContent(
-                        currentSubPage = currentSubPage,
-                        searchQuery = searchQuery,
-                        onProvidersClick = { onSubPageChange(SettingsSubPage.PROVIDERS) },
-                        onAboutClick = { onSubPageChange(SettingsSubPage.ABOUT) },
-                        onLogcatClick = { onSubPageChange(SettingsSubPage.LOGCAT) },
-                        onAssistantsClick = { onSubPageChange(SettingsSubPage.ASSISTANTS) },
-                        onKnowledgeClick = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
-                        onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
-                        onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) }
-                    )
-                }
-            }
-
-            // 分隔线
-            HorizontalDivider(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(1.dp),
-                color = MaterialTheme.colorScheme.outlineVariant
-            )
-
-            // 右侧：详情内容
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            ) {
-                AnimatedContent(
-                    targetState = currentSubPage,
-                    transitionSpec = {
-                        fadeIn(animationSpec = tween(150)) togetherWith fadeOut(animationSpec = tween(150))
-                    },
-                    label = "tablet_detail_transition"
-                ) { page ->
-                    when (page) {
-                        is SettingsSubPage.MAIN -> {
-                            // 主页面显示欢迎提示
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Lucide.Settings2,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(64.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                    )
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Text(
-                                        text = "请从左侧选择设置项",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+                    is SettingsSubPage.ABOUT -> {
+                        AboutScreen(
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            showTopBar = false
+                        )
+                    }
+                    is SettingsSubPage.LOGCAT -> {
+                        LogcatScreen(
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            showTopBar = false
+                        )
+                    }
+                    is SettingsSubPage.ASSISTANTS -> {
+                        val viewModel = remember(assistantRepository) {
+                            AssistantViewModel(assistantRepository)
                         }
-                        is SettingsSubPage.PROVIDERS -> {
-                            ProvidersScreen(
-                                settingsManager = settingsManager,
-                                onBack = { onSubPageChange(SettingsSubPage.MAIN) },
-                                showTopBar = false
-                            )
+                        AssistantScreen(
+                            viewModel = viewModel,
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            onAssistantClick = { id -> onSubPageChange(SettingsSubPage.ASSISTANT_DETAIL(id)) },
+                            showTopBar = false
+                        )
+                    }
+                    is SettingsSubPage.ASSISTANT_DETAIL -> {
+                        val viewModel = remember(assistantRepository, knowledgeRepository, mcpRepository, page.id) {
+                            AssistantDetailViewModel(assistantRepository, knowledgeRepository, mcpRepository, page.id)
                         }
-                        is SettingsSubPage.ABOUT -> {
-                            AboutScreen(
-                                onBack = { onSubPageChange(SettingsSubPage.MAIN) },
-                                showTopBar = false
-                            )
+                        AssistantDetailScreen(
+                            viewModel = viewModel,
+                            onBack = { onSubPageChange(SettingsSubPage.ASSISTANTS) },
+                            showTopBar = false
+                        )
+                    }
+                    is SettingsSubPage.KNOWLEDGE -> {
+                        val viewModel = remember(knowledgeRepository, knowledgeService, settingsManager) {
+                            KnowledgeViewModel(knowledgeRepository, knowledgeService, settingsManager)
                         }
-                        is SettingsSubPage.LOGCAT -> {
-                            LogcatScreen(
-                                onBack = { onSubPageChange(SettingsSubPage.MAIN) },
-                                showTopBar = false
-                            )
+                        KnowledgeScreen(
+                            viewModel = viewModel,
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            onBaseClick = { id -> onSubPageChange(SettingsSubPage.KNOWLEDGE_DETAIL(id)) },
+                            showTopBar = false
+                        )
+                    }
+                    is SettingsSubPage.KNOWLEDGE_DETAIL -> {
+                        val viewModel = remember(knowledgeRepository, knowledgeService, settingsManager) {
+                            KnowledgeViewModel(knowledgeRepository, knowledgeService, settingsManager)
                         }
-                        is SettingsSubPage.ASSISTANTS -> {
-                            val viewModel = remember(assistantRepository) {
-                                AssistantViewModel(assistantRepository)
-                            }
-                            AssistantScreen(
-                                viewModel = viewModel,
-                                onBack = { onSubPageChange(SettingsSubPage.MAIN) },
-                                onAssistantClick = { id -> onSubPageChange(SettingsSubPage.ASSISTANT_DETAIL(id)) },
-                                showTopBar = false
-                            )
+                        KnowledgeDetailScreen(
+                            baseId = page.id,
+                            viewModel = viewModel,
+                            onBack = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
+                            showTopBar = false
+                        )
+                    }
+                    is SettingsSubPage.MCP -> {
+                        val viewModel = remember(mcpRepository) {
+                            McpViewModel(mcpRepository)
                         }
-                        is SettingsSubPage.ASSISTANT_DETAIL -> {
-                            val viewModel = remember(assistantRepository, knowledgeRepository, mcpRepository, page.id) {
-                                AssistantDetailViewModel(assistantRepository, knowledgeRepository, mcpRepository, page.id)
-                            }
-                            AssistantDetailScreen(
-                                viewModel = viewModel,
-                                onBack = { onSubPageChange(SettingsSubPage.ASSISTANTS) },
-                                showTopBar = false
-                            )
-                        }
-                        is SettingsSubPage.KNOWLEDGE -> {
-                            val viewModel = remember(knowledgeRepository, knowledgeService, settingsManager) {
-                                KnowledgeViewModel(knowledgeRepository, knowledgeService, settingsManager)
-                            }
-                            KnowledgeScreen(
-                                viewModel = viewModel,
-                                onBack = { onSubPageChange(SettingsSubPage.MAIN) },
-                                onBaseClick = { id -> onSubPageChange(SettingsSubPage.KNOWLEDGE_DETAIL(id)) },
-                                showTopBar = false
-                            )
-                        }
-                        is SettingsSubPage.KNOWLEDGE_DETAIL -> {
-                            val viewModel = remember(knowledgeRepository, knowledgeService, settingsManager) {
-                                KnowledgeViewModel(knowledgeRepository, knowledgeService, settingsManager)
-                            }
-                            KnowledgeDetailScreen(
-                                baseId = page.id,
-                                viewModel = viewModel,
-                                onBack = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
-                                showTopBar = false
-                            )
-                        }
-                        is SettingsSubPage.MCP -> {
-                            val viewModel = remember(mcpRepository) {
-                                McpViewModel(mcpRepository)
-                            }
-                            McpScreen(
-                                viewModel = viewModel,
-                                onBack = { onSubPageChange(SettingsSubPage.MAIN) },
-                                showTopBar = false
-                            )
-                        }
-                        is SettingsSubPage.USAGE_STATS -> {
-                            UsageStatsScreen(
-                                messageDao = database.messageDao(),
-                                onBack = { onSubPageChange(SettingsSubPage.MAIN) },
-                                showTopBar = false
-                            )
-                        }
+                        McpScreen(
+                            viewModel = viewModel,
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            showTopBar = false
+                        )
+                    }
+                    is SettingsSubPage.USAGE_STATS -> {
+                        UsageStatsScreen(
+                            messageDao = database.messageDao(),
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            showTopBar = false
+                        )
                     }
                 }
             }
@@ -879,6 +889,7 @@ private fun SettingsMainContent(
  */
 @Composable
 private fun SettingsListContent(
+    modifier: Modifier = Modifier,
     currentSubPage: SettingsSubPage,
     searchQuery: String = "",
     onProvidersClick: () -> Unit,
@@ -965,7 +976,7 @@ private fun SettingsListContent(
     val groupedItems = filteredItems.groupBy { it.group }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(16.dp)
             .verticalScroll(rememberScrollState()),
