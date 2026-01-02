@@ -30,13 +30,18 @@ class LocalTools(private val context: Context) {
     val fileReadTool by lazy {
         Tool(
             name = "read_file",
-            description = "读取指定文件的内容",
+            description = """读取指定文件的内容。
+【重要】安卓目录规范：
+- 基本目录为 /storage/emulated/0（用户主存储空间）
+- 除非用户明确指定其他路径，否则所有文件操作都应在此目录下进行
+- 常用目录：Documents、Download、Pictures、Music、Movies 等
+- 示例：/storage/emulated/0/Documents/notes.txt""",
             parameters = {
                 InputSchema.Obj(
                     properties = mapOf(
                         "path" to PropertyDef(
                             type = "string",
-                            description = "文件的绝对路径"
+                            description = "文件的绝对路径，默认基于 /storage/emulated/0"
                         ),
                         "encoding" to PropertyDef(
                             type = "string",
@@ -93,13 +98,19 @@ class LocalTools(private val context: Context) {
     val fileWriteTool by lazy {
         Tool(
             name = "write_file",
-            description = "将内容写入指定文件",
+            description = """将内容写入指定文件。
+【重要】安卓目录规范：
+- 基本目录为 /storage/emulated/0（用户主存储空间）
+- 除非用户明确指定其他路径，否则所有文件操作都应在此目录下进行
+- 常用目录：Documents（文档）、Download（下载）、Pictures（图片）等
+- 示例：/storage/emulated/0/Documents/notes.txt
+- 如果目标目录不存在，会自动创建""",
             parameters = {
                 InputSchema.Obj(
                     properties = mapOf(
                         "path" to PropertyDef(
                             type = "string",
-                            description = "文件的绝对路径"
+                            description = "文件的绝对路径，默认基于 /storage/emulated/0"
                         ),
                         "content" to PropertyDef(
                             type = "string",
@@ -150,13 +161,18 @@ class LocalTools(private val context: Context) {
     val listDirectoryTool by lazy {
         Tool(
             name = "list_directory",
-            description = "列出指定目录下的文件和子目录",
+            description = """列出指定目录下的文件和子目录。
+【重要】安卓目录规范：
+- 基本目录为 /storage/emulated/0（用户主存储空间）
+- 除非用户明确指定其他路径，否则应在此目录下操作
+- 常用目录：Documents、Download、Pictures、Music、Movies、DCIM 等
+- 示例：/storage/emulated/0 或 /storage/emulated/0/Download""",
             parameters = {
                 InputSchema.Obj(
                     properties = mapOf(
                         "path" to PropertyDef(
                             type = "string",
-                            description = "目录的绝对路径"
+                            description = "目录的绝对路径，默认基于 /storage/emulated/0"
                         )
                     ),
                     required = listOf("path")
