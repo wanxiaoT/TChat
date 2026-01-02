@@ -230,13 +230,17 @@ class LocalTools(private val context: Context) {
     val deleteFileTool by lazy {
         Tool(
             name = "delete_file",
-            description = "删除指定文件或空目录",
+            description = """删除指定文件或空目录。
+【重要】安卓目录规范：
+- 基本目录为 /storage/emulated/0（用户主存储空间）
+- 除非用户明确指定其他路径，否则应在此目录下操作
+- 删除操作不可恢复，请谨慎使用""",
             parameters = {
                 InputSchema.Obj(
                     properties = mapOf(
                         "path" to PropertyDef(
                             type = "string",
-                            description = "文件或目录的绝对路径"
+                            description = "文件或目录的绝对路径，默认基于 /storage/emulated/0"
                         )
                     ),
                     required = listOf("path")
@@ -278,13 +282,17 @@ class LocalTools(private val context: Context) {
     val createDirectoryTool by lazy {
         Tool(
             name = "create_directory",
-            description = "创建目录，包括所有必要的父目录",
+            description = """创建目录，包括所有必要的父目录。
+【重要】安卓目录规范：
+- 基本目录为 /storage/emulated/0（用户主存储空间）
+- 除非用户明确指定其他路径，否则应在此目录下创建
+- 示例：/storage/emulated/0/Documents/MyApp""",
             parameters = {
                 InputSchema.Obj(
                     properties = mapOf(
                         "path" to PropertyDef(
                             type = "string",
-                            description = "目录的绝对路径"
+                            description = "目录的绝对路径，默认基于 /storage/emulated/0"
                         )
                     ),
                     required = listOf("path")
