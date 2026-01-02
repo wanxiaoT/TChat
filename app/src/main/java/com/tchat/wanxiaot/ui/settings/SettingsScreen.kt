@@ -68,6 +68,7 @@ private sealed class SettingsSubPage {
     data object PROVIDERS : SettingsSubPage()
     data object ABOUT : SettingsSubPage()
     data object LOGCAT : SettingsSubPage()
+    data object NETWORK_LOG : SettingsSubPage()
     data object ASSISTANTS : SettingsSubPage()
     data class ASSISTANT_DETAIL(val id: String) : SettingsSubPage()
     data object KNOWLEDGE : SettingsSubPage()
@@ -256,6 +257,7 @@ private fun TabletSettingsLayout(
                 onProvidersClick = { onSubPageChange(SettingsSubPage.PROVIDERS) },
                 onAboutClick = { onSubPageChange(SettingsSubPage.ABOUT) },
                 onLogcatClick = { onSubPageChange(SettingsSubPage.LOGCAT) },
+                onNetworkLogClick = { onSubPageChange(SettingsSubPage.NETWORK_LOG) },
                 onAssistantsClick = { onSubPageChange(SettingsSubPage.ASSISTANTS) },
                 onKnowledgeClick = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
                 onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
@@ -321,6 +323,11 @@ private fun TabletSettingsLayout(
                         LogcatScreen(
                             onBack = { onSubPageChange(SettingsSubPage.MAIN) },
                             showTopBar = false
+                        )
+                    }
+                    is SettingsSubPage.NETWORK_LOG -> {
+                        NetworkLogScreen(
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) }
                         )
                     }
                     is SettingsSubPage.ASSISTANTS -> {
@@ -469,6 +476,7 @@ private fun PhoneSettingsLayout(
                     onProvidersClick = { onSubPageChange(SettingsSubPage.PROVIDERS) },
                     onAboutClick = { onSubPageChange(SettingsSubPage.ABOUT) },
                     onLogcatClick = { onSubPageChange(SettingsSubPage.LOGCAT) },
+                    onNetworkLogClick = { onSubPageChange(SettingsSubPage.NETWORK_LOG) },
                     onAssistantsClick = { onSubPageChange(SettingsSubPage.ASSISTANTS) },
                     onKnowledgeClick = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
                     onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
@@ -487,6 +495,9 @@ private fun PhoneSettingsLayout(
             }
             is SettingsSubPage.LOGCAT -> {
                 LogcatScreen(onBack = { onSubPageChange(SettingsSubPage.MAIN) })
+            }
+            is SettingsSubPage.NETWORK_LOG -> {
+                NetworkLogScreen(onBack = { onSubPageChange(SettingsSubPage.MAIN) })
             }
             is SettingsSubPage.ASSISTANTS -> {
                 val viewModel = remember(assistantRepository) {
@@ -568,6 +579,7 @@ private fun SettingsMainContent(
     onProvidersClick: () -> Unit,
     onAboutClick: () -> Unit,
     onLogcatClick: () -> Unit,
+    onNetworkLogClick: () -> Unit,
     onAssistantsClick: () -> Unit,
     onKnowledgeClick: () -> Unit,
     onMcpClick: () -> Unit,
@@ -913,6 +925,48 @@ private fun SettingsMainContent(
                 }
             }
 
+            // 网络日志卡片
+            OutlinedCard(
+                onClick = onNetworkLogClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Cloud,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "网络日志",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "查看 API 请求和响应信息",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             // 关于卡片
             OutlinedCard(
                 onClick = onAboutClick,
@@ -969,6 +1023,7 @@ private fun SettingsListContent(
     onProvidersClick: () -> Unit,
     onAboutClick: () -> Unit,
     onLogcatClick: () -> Unit,
+    onNetworkLogClick: () -> Unit,
     onAssistantsClick: () -> Unit,
     onKnowledgeClick: () -> Unit,
     onMcpClick: () -> Unit,
@@ -1035,6 +1090,13 @@ private fun SettingsListContent(
             onClick = onLogcatClick
         ),
         SettingsItemData(
+            id = "network_log",
+            group = "其他",
+            title = "网络日志",
+            subtitle = "查看 API 请求和响应信息",
+            onClick = onNetworkLogClick
+        ),
+        SettingsItemData(
             id = "about",
             group = "其他",
             title = "关于",
@@ -1099,6 +1161,7 @@ private fun SettingsListContent(
                         "deep_research" -> currentSubPage is SettingsSubPage.DEEP_RESEARCH
                         "usage_stats" -> currentSubPage is SettingsSubPage.USAGE_STATS
                         "logcat" -> currentSubPage is SettingsSubPage.LOGCAT
+                        "network_log" -> currentSubPage is SettingsSubPage.NETWORK_LOG
                         "about" -> currentSubPage is SettingsSubPage.ABOUT
                         else -> false
                     }
@@ -1141,6 +1204,7 @@ private fun SettingsListContent(
                                 "mcp" -> Icons.Default.Cloud
                                 "deep_research" -> Icons.Default.Search
                                 "usage_stats" -> Icons.Default.BarChart
+                                "network_log" -> Icons.Default.Cloud
                                 "about" -> Icons.Default.Info
                                 else -> Icons.Default.Settings
                             }

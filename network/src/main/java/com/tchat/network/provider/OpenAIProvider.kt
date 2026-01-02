@@ -1,5 +1,6 @@
 package com.tchat.network.provider
 
+import com.tchat.network.log.NetworkLogger
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -47,6 +48,18 @@ class OpenAIProvider(
         val jsonBody = buildRequestBody(messages, tools)
         val request = buildRequest(jsonBody)
 
+        // 记录请求日志
+        val requestId = NetworkLogger.logRequest(
+            provider = "OpenAI",
+            model = model,
+            url = "$normalizedBaseUrl/chat/completions",
+            headers = mapOf(
+                "Authorization" to "Bearer ${apiKey.take(8)}...",
+                "Content-Type" to "application/json"
+            ),
+            body = jsonBody
+        )
+
         // 统计信息
         val startTime = System.currentTimeMillis()
         var firstTokenTime: Long? = null
@@ -54,9 +67,15 @@ class OpenAIProvider(
         var inputTokens = 0
         var outputTokens = 0
 
+        // 收集完整响应
+        val responseContent = StringBuilder()
+
         currentCall = client.newCall(request)
         currentCall?.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
+                val duration = System.currentTimeMillis() - startTime
+                NetworkLogger.logError(requestId, "网络连接失败: ${e.message}", duration)
+
                 trySend(StreamChunk.Error(AIProviderException.NetworkError(
                     detail = "网络连接失败: ${e.message}",
                     originalError = e
@@ -66,8 +85,18 @@ class OpenAIProvider(
 
             override fun onResponse(call: Call, response: Response) {
                 try {
+                    val duration = System.currentTimeMillis() - startTime
+
                     if (!response.isSuccessful) {
-                        val error = handleErrorResponse(response)
+                        val errorBody = response.body?.string() ?: ""
+                        NetworkLogger.logResponse(
+                            requestId = requestId,
+                            responseCode = response.code,
+                            responseBody = errorBody,
+                            durationMs = duration
+                        )
+
+                        val error = handleErrorResponse(response.code, errorBody)
                         trySend(StreamChunk.Error(error))
                         close()
                         return
@@ -81,6 +110,7 @@ class OpenAIProvider(
                                     firstTokenTime = System.currentTimeMillis()
                                 }
                                 outputTokenCount += (chunk.text.length * 0.5).toInt()
+                                responseContent.append(chunk.text)
                             }
                             is StreamChunk.Done -> {
                                 val finalInputTokens = if (chunk.inputTokens > 0) chunk.inputTokens else inputTokens
@@ -90,6 +120,14 @@ class OpenAIProvider(
                                 val totalDuration = (endTime - startTime) / 1000.0
                                 val tps = if (totalDuration > 0) finalOutputTokens / totalDuration else 0.0
                                 val latency = firstTokenTime?.let { it - startTime } ?: 0L
+
+                                // 记录响应日志
+                                NetworkLogger.logResponse(
+                                    requestId = requestId,
+                                    responseCode = 200,
+                                    responseBody = responseContent.toString(),
+                                    durationMs = endTime - startTime
+                                )
 
                                 trySend(StreamChunk.Done(
                                     inputTokens = finalInputTokens,
@@ -106,6 +144,9 @@ class OpenAIProvider(
                         chunk is StreamChunk.Done || chunk is StreamChunk.Error
                     }
                 } catch (e: Exception) {
+                    val duration = System.currentTimeMillis() - startTime
+                    NetworkLogger.logError(requestId, "处理响应时出错: ${e.message}", duration)
+
                     trySend(StreamChunk.Error(AIProviderException.UnknownError(
                         detail = "处理响应时出错: ${e.message}",
                         originalError = e
@@ -324,9 +365,7 @@ class OpenAIProvider(
             .build()
     }
 
-    private fun handleErrorResponse(response: Response): AIProviderException {
-        val errorBody = response.body?.string() ?: ""
-
+    private fun handleErrorResponse(responseCode: Int, errorBody: String): AIProviderException {
         val detailedMessage = try {
             val json = JSONObject(errorBody)
             val error = json.optJSONObject("error")
@@ -335,14 +374,14 @@ class OpenAIProvider(
             errorBody
         }
 
-        return when (response.code) {
+        return when (responseCode) {
             401 -> AIProviderException.AuthenticationError("API Key 无效或已过期\n$detailedMessage")
             403 -> AIProviderException.AuthenticationError("API 访问被拒绝\n$detailedMessage")
             429 -> AIProviderException.RateLimitError("请求过于频繁，请稍后再试\n$detailedMessage")
             400 -> AIProviderException.InvalidRequestError("无效的请求参数\n$detailedMessage")
             404 -> AIProviderException.InvalidRequestError("模型不存在或 API 端点错误\n$detailedMessage")
             500, 502, 503, 504 -> AIProviderException.ServiceUnavailableError("API 服务暂时不可用\n$detailedMessage")
-            else -> AIProviderException.UnknownError("API 错误 (${response.code}): ${response.message}\n$detailedMessage")
+            else -> AIProviderException.UnknownError("API 错误 ($responseCode)\n$detailedMessage")
         }
     }
 

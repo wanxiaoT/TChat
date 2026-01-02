@@ -25,7 +25,8 @@
       "WebFetch(domain:cdn.jsdelivr.net)",
       "WebFetch(domain:github.com)",
       "Bash(./gradlew :app:compileDebugKotlin:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(cmd /c:*)"
     ]
   }
 }
