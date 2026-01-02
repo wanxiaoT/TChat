@@ -57,7 +57,8 @@ import com.tchat.data.model.Assistant
 fun AssistantScreen(
     viewModel: AssistantViewModel,
     onBack: () -> Unit,
-    onAssistantClick: (String) -> Unit
+    onAssistantClick: (String) -> Unit,
+    showTopBar: Boolean = true
 ) {
     val context = LocalContext.current
     val assistants by viewModel.assistants.collectAsState()
@@ -68,20 +69,22 @@ fun AssistantScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("助手") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+            if (showTopBar) {
+                TopAppBar(
+                    title = { Text("助手") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回"
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+            }
         },
         floatingActionButton = {
             FloatingActionButton(

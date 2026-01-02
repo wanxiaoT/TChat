@@ -92,7 +92,10 @@ enum class LogLevel(val label: String, val color: Color) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LogcatScreen(onBack: () -> Unit) {
+fun LogcatScreen(
+    onBack: () -> Unit,
+    showTopBar: Boolean = true
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -358,20 +361,21 @@ fun LogcatScreen(onBack: () -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("日志查看") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                actions = {
+            if (showTopBar) {
+                TopAppBar(
+                    title = { Text("日志查看") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回"
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    actions = {
                     // 过滤按钮
                     Box {
                         IconButton(
@@ -488,6 +492,7 @@ fun LogcatScreen(onBack: () -> Unit) {
                     }
                 }
             )
+            }
         },
         containerColor = MaterialTheme.colorScheme.surface
     ) { innerPadding ->

@@ -26,7 +26,8 @@ import com.tchat.data.model.McpServerType
 @Composable
 fun McpScreen(
     viewModel: McpViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    showTopBar: Boolean = true
 ) {
     val context = LocalContext.current
     val servers by viewModel.servers.collectAsState()
@@ -57,17 +58,19 @@ fun McpScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("MCP 服务器") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+            if (showTopBar) {
+                TopAppBar(
+                    title = { Text("MCP 服务器") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+            }
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddDialog = true }) {

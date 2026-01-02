@@ -42,7 +42,8 @@ private sealed class ProvidersPageState {
 @Composable
 fun ProvidersScreen(
     settingsManager: SettingsManager,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    showTopBar: Boolean = true
 ) {
     val settings by settingsManager.settings.collectAsState()
     var pageState by remember { mutableStateOf<ProvidersPageState>(ProvidersPageState.List) }
@@ -88,7 +89,8 @@ fun ProvidersScreen(
                     onBack = onBack,
                     onAddNew = { pageState = ProvidersPageState.Edit(null) },
                     onScan = { pageState = ProvidersPageState.Scan },
-                    onEditProvider = { provider -> pageState = ProvidersPageState.Edit(provider) }
+                    onEditProvider = { provider -> pageState = ProvidersPageState.Edit(provider) },
+                    showTopBar = showTopBar
                 )
             }
             is ProvidersPageState.Edit -> {
@@ -133,23 +135,26 @@ private fun ProvidersListContent(
     onBack: () -> Unit,
     onAddNew: () -> Unit,
     onScan: () -> Unit,
-    onEditProvider: (ProviderConfig) -> Unit
+    onEditProvider: (ProviderConfig) -> Unit,
+    showTopBar: Boolean = true
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("服务商") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+            if (showTopBar) {
+                TopAppBar(
+                    title = { Text("服务商") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onScan) {
+                            Icon(Icons.Outlined.QrCodeScanner, contentDescription = "扫码导入")
+                        }
                     }
-                },
-                actions = {
-                    IconButton(onClick = onScan) {
-                        Icon(Icons.Outlined.QrCodeScanner, contentDescription = "扫码导入")
-                    }
-                }
-            )
+                )
+            }
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(

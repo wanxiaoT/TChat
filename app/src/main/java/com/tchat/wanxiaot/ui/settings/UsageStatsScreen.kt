@@ -33,7 +33,8 @@ data class UsageStats(
 @Composable
 fun UsageStatsScreen(
     messageDao: MessageDao,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    showTopBar: Boolean = true
 ) {
     val scope = rememberCoroutineScope()
     var stats by remember { mutableStateOf(UsageStats()) }
@@ -59,20 +60,22 @@ fun UsageStatsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("使用统计") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+            if (showTopBar) {
+                TopAppBar(
+                    title = { Text("使用统计") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回"
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+            }
         },
         containerColor = MaterialTheme.colorScheme.surface
     ) { innerPadding ->

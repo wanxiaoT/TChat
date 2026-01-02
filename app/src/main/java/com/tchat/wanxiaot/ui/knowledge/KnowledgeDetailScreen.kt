@@ -86,7 +86,8 @@ import java.io.File
 fun KnowledgeDetailScreen(
     baseId: String,
     viewModel: KnowledgeViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    showTopBar: Boolean = true
 ) {
     val context = LocalContext.current
     val knowledgeBases by viewModel.knowledgeBases.collectAsState()
@@ -159,57 +160,59 @@ fun KnowledgeDetailScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = base.name,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (items.isNotEmpty()) {
+            if (showTopBar) {
+                TopAppBar(
+                    title = {
+                        Column {
                             Text(
-                                text = "${items.size} 个条目",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = base.name,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (items.isNotEmpty()) {
+                                Text(
+                                    text = "${items.size} 个条目",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回"
                             )
                         }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showSearchSheet = true }) {
-                        Icon(Icons.Default.Search, contentDescription = "搜索")
-                    }
-                    if (pendingCount > 0) {
-                        TextButton(
-                            onClick = { viewModel.processAllPending(baseId) },
-                            enabled = !isProcessing
-                        ) {
-                            if (isProcessing) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(16.dp))
-                            }
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("处理 ($pendingCount)")
+                    },
+                    actions = {
+                        IconButton(onClick = { showSearchSheet = true }) {
+                            Icon(Icons.Default.Search, contentDescription = "搜索")
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                        if (pendingCount > 0) {
+                            TextButton(
+                                onClick = { viewModel.processAllPending(baseId) },
+                                enabled = !isProcessing
+                            ) {
+                                if (isProcessing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(16.dp))
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("处理 ($pendingCount)")
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+            }
         },
         floatingActionButton = {
             Box {

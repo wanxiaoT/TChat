@@ -67,7 +67,8 @@ import java.time.format.DateTimeFormatter
 fun KnowledgeScreen(
     viewModel: KnowledgeViewModel,
     onBack: () -> Unit,
-    onBaseClick: (String) -> Unit
+    onBaseClick: (String) -> Unit,
+    showTopBar: Boolean = true
 ) {
     val context = LocalContext.current
     val knowledgeBases by viewModel.knowledgeBases.collectAsState()
@@ -81,20 +82,22 @@ fun KnowledgeScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("知识库") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+            if (showTopBar) {
+                TopAppBar(
+                    title = { Text("知识库") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回"
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+            }
         },
         floatingActionButton = {
             FloatingActionButton(
