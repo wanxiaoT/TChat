@@ -26,7 +26,7 @@ TChat的作者是大陆人，交流最好用简体中文，如果不会使用那
 - 知识库（RAG）功能
 - MCP（Model Context Protocol）工具服务器支持
 
-[自愿赞助](https://tchat.153595.xyz/Donate/)
+[自愿赞助](https://tchat.wanxiaot.com/donate.html)
 
 
 # v1.5

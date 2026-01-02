@@ -25,7 +25,7 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
 - Knowledge Base (RAG) feature
 - MCP (Model Context Protocol) tool server support
 
-[Voluntary Donation](https://tchat.153595.xyz/Donate/)
+[Voluntary Donation](https://tchat.wanxiaot.com/donate.html)
 
 # v1.5
 
@@ -87,6 +87,116 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
 
 ---
 
+### Technical Improvements
+
+#### 1. Chat Interface Optimization
+
+**Feature**: Improved chat message display layout
+
+**Implementation**:
+- Removed `LinkifyPlugin`, disabled automatic link parsing
+- TopAppBar added subtitle showing `Provider > Model`
+- AI message layout changed to vertical structure: avatar+model name on top, content below
+
+---
+
+#### 2. Usage Statistics Feature
+
+**Feature**: Statistics for Token usage and model call counts
+
+**Implementation**:
+- `MessageEntity` added `modelName` field
+- `MessageDao` added statistics query methods
+- `UsageStatsScreen` usage statistics page
+- Database version 9 → 10 migration
+
+---
+
+#### 3. MCP Client Implementation
+
+**Feature**: SSE client supporting MCP protocol
+
+**Implementation**:
+- `McpClient` interface defines connection, tool list, tool call operations
+- `McpSseClient` implements SSE transport protocol
+- JSON-RPC 2.0 message format
+- Session management support
+
+---
+
+#### 4. MCP Data Layer
+
+**Feature**: MCP server configuration persistence
+
+**Implementation**:
+- `McpServerEntity` database entity
+- `McpServerDao` data access object
+- `McpServerRepository` repository interface and implementation
+- Database version 8 → 9 migration
+
+---
+
+#### 5. MCP Tool Service
+
+**Feature**: Convert MCP tools to local Tool objects
+
+**Implementation**:
+- `McpToolService` tool conversion service
+- Tool caching mechanism to avoid repeated requests
+- Automatic handling of tool calls and result returns
+
+---
+
+#### 6. Assistant Model Extension
+
+**Changes**:
+- `Assistant` added `mcpServerIds` field
+- `AssistantEntity` added `mcpServerIds` field
+- Support configuring different MCP servers for each assistant
+
+---
+
+### Files Involved
+
+| Module | File | Changes |
+|------|------|------|
+| feature-chat | MarkdownText.kt | Removed LinkifyPlugin |
+| feature-chat | MessageItem.kt | AI avatar moved above, display model name |
+| feature-chat | MessageList.kt | Pass modelName parameter |
+| feature-chat | ChatScreen.kt | Pass modelName to ViewModel |
+| feature-chat | ChatViewModel.kt | setTools supports modelName |
+| data | MessageEntity.kt | Added modelName field |
+| data | MessageDao.kt | Added statistics query methods |
+| data | Message.kt | Added modelName field |
+| data | ChatRepository.kt | ChatConfig added modelName |
+| data | ChatRepositoryImpl.kt | Record model name when saving messages |
+| data | AppDatabase.kt | Version 10, modelName migration |
+| data | McpServer.kt | MCP server model definition |
+| data | McpServerEntity.kt | MCP server database entity |
+| data | McpServerDao.kt | MCP server DAO |
+| data | McpClient.kt | MCP client interface |
+| data | McpSseClient.kt | SSE client implementation |
+| data | McpClientFactory.kt | Client factory |
+| data | McpServerRepository.kt | Repository interface |
+| data | McpServerRepositoryImpl.kt | Repository implementation |
+| data | McpToolService.kt | MCP tool service |
+| data | Assistant.kt | Added mcpServerIds field |
+| data | AssistantEntity.kt | Added mcpServerIds field |
+| data | AssistantRepositoryImpl.kt | Update conversion logic |
+| data | AppDatabase.kt | Version 9, MCP table migration |
+| data | build.gradle.kts | Added OkHttp SSE dependency |
+| app | McpViewModel.kt | MCP management ViewModel |
+| app | McpScreen.kt | MCP server management page |
+| app | SettingsScreen.kt | Added MCP settings entry |
+| app | AssistantDetailScreen.kt | Added MCP tools tab |
+| app | AssistantDetailViewModel.kt | Added MCP server support |
+| app | MainActivity.kt | Integrate MCP tools into chat, added subtitle |
+| app | UsageStatsScreen.kt | Usage statistics page (new) |
+| app | SettingsScreen.kt | Added usage statistics entry |
+| feature-chat | ToolSelectorSheet.kt | Hide permission status when authorized |
+
+---
+
 <img width="544" height="945" alt="image" src="https://github.com/user-attachments/assets/f45d79d0-07fd-4a1e-91cf-5620cfa9136f" />
 
 
@@ -135,6 +245,101 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
 
 ---
 
+### Technical Improvements
+
+#### 1. Embedding API Support
+
+**Feature**: Support for OpenAI and Gemini vector embedding APIs
+
+**Implementation**:
+- `EmbeddingProvider` interface defines embedding operations
+- `OpenAIEmbeddingProvider` calls `/embeddings` endpoint
+- `GeminiEmbeddingProvider` calls `embedContent` endpoint
+- Support batch embedding processing
+
+---
+
+#### 2. Knowledge Base Data Layer
+
+**Feature**: Complete knowledge base data management
+
+**Implementation**:
+- `KnowledgeRepository` interface and implementation
+- `KnowledgeService` handles content loading, chunking, vectorization
+- Document loaders: `TextLoader`, `UrlLoader`, `FileLoader`
+- Database version 6 → 7 migration, added status/errorMessage fields
+
+---
+
+#### 3. Vector Retrieval
+
+**Feature**: Semantic search based on cosine similarity
+
+**Implementation**:
+- Text chunking (by paragraph, with overlap support)
+- Vectors stored as JSON format
+- Cosine similarity calculation
+- Top-K results return with threshold filtering support
+
+---
+
+#### 4. ToolResultData Model Extension
+
+**Changes**:
+- Added `arguments` field to store tool call parameters
+- Added `executionTimeMs` field to record execution time
+- JSON serialization/deserialization supports new fields
+
+---
+
+#### 5. Parameterless Tool Call Fix
+
+**Issue**: When APIs like Gemini return parameterless tool calls, empty arguments string causes parsing failure
+
+**Fix**:
+- Check `toolCall.arguments.ifBlank { "{}" }` before execution
+- Ensure empty parameters are converted to valid empty JSON object
+
+---
+
+#### 6. Legacy Data Compatibility Handling
+
+**Feature**: Detect and handle previously saved corrupted data
+
+**Implementation**:
+- Detect "End of input at character 0" error on load
+- Display friendly prompt for corrupted data
+- Auto-correct empty parameter fields
+
+---
+
+### Files Involved
+
+| Module | File | Changes |
+|------|------|------|
+| network | EmbeddingProvider.kt | Embedding interface definition |
+| network | OpenAIEmbeddingProvider.kt | OpenAI Embedding implementation |
+| network | GeminiEmbeddingProvider.kt | Gemini Embedding implementation |
+| network | EmbeddingProviderFactory.kt | Embedding factory class |
+| data | KnowledgeItemEntity.kt | Added status/errorMessage fields |
+| data | KnowledgeRepository.kt | Knowledge base Repository interface |
+| data | KnowledgeRepositoryImpl.kt | Repository implementation |
+| data | KnowledgeService.kt | Knowledge base core service |
+| data | DocumentLoader.kt | Document loader interface |
+| data | TextLoader.kt | Text loader |
+| data | UrlLoader.kt | URL web page loader |
+| data | FileLoader.kt | File loader |
+| data | AppDatabase.kt | Version 7, status field migration |
+| data | Message.kt | ToolResultData added arguments, executionTimeMs fields |
+| data | ChatRepositoryImpl.kt | Tool execution records parameters and time, legacy data compatibility |
+| app | KnowledgeViewModel.kt | Knowledge base ViewModel |
+| app | KnowledgeScreen.kt | Knowledge base list page |
+| app | KnowledgeDetailScreen.kt | Knowledge base detail page |
+| app | SettingsScreen.kt | Added knowledge base entry |
+| feature-chat | MessageItem.kt | New tool card UI, safe JSON parsing |
+
+---
+
 # v1.2
 
 ### New Features
@@ -180,15 +385,156 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
 
 ---
 
+### Technical Improvements
+
+#### 1. Tool Call Loop Mechanism
+
+**Feature**: AI can continuously call multiple tools to complete complex tasks
+
+**Implementation**:
+- Send message with tool definitions to AI
+- Auto-execute when AI returns tool call request
+- Send execution result back to AI to continue conversation
+- Maximum 10 rounds of tool calls to avoid infinite loops
+
+---
+
+#### 2. Tool Result Visualization
+
+**Feature**: Display tool execution details in chat interface
+
+**Implementation**:
+- Each tool call displayed as independent clickable card
+- Shows "Call xxx", click to expand and view detailed execution results
+- Success uses theme color, failure uses error color
+
+---
+
+#### 3. Database Tool Data Support
+
+**Changes**:
+- MessageEntity added `toolCallId`, `toolName`, `toolCallsJson`, `toolResultsJson` fields
+- Database version 5 → 6 migration
+
+---
+
+#### 4. Parameterless Tool Compatibility Fix
+
+**Issue**: `get_system_info` and other parameterless tools cannot be called in some APIs (like Anthropic)
+
+**Cause**: Parameterless tool's `parameters` returns `null`, but Anthropic and other APIs require a valid `input_schema`
+
+**Fix**: Parameterless tools now return empty object `InputSchema.Obj(emptyMap(), emptyList())`
+
+---
+
+### Files Involved
+
+| Module | File | Changes |
+|------|------|------|
+| network | AIProvider.kt | Added tool call related data classes |
+| network | OpenAIProvider.kt | Support Function Calling |
+| network | AnthropicProvider.kt | Support Tool Use |
+| network | GeminiProvider.kt | Support Function Calling |
+| data | Tool.kt | Tool definition and execution interface |
+| data | LocalTools.kt | Local tool implementation |
+| data | Message.kt | Added ToolCallData, ToolResultData |
+| data | MessageEntity.kt | Added tool related fields |
+| data | ChatRepository.kt | Added ChatConfig configuration |
+| data | ChatRepositoryImpl.kt | Tool call loop implementation |
+| data | AppDatabase.kt | Version 6, tool field migration |
+| feature-chat | ChatScreen.kt | Tool toggle button |
+| feature-chat | MessageItem.kt | Tool result display UI |
+| app | MainActivity.kt | LocalTools integration |
+
+---
+
 # v1.1
 
-### New Features:
-  - Streaming message output
-  - Output content token upload/download/TPS (tokens per second)/first token latency display
-  - Persistent data storage (now supports both API provider persistent storage and local conversation persistent storage)
-  - Multi-conversation data reception optimization
-  - Optimized conversation page display, supports model selection on conversation page instead of provider settings page
-  - Provider multi-model support
+### New Features
+
+- Streaming message output
+- Output content Token upstream/downstream/TPS (tokens per second)/first token latency display
+- Persistent data storage (supports both API provider configuration and local conversation persistence)
+- Multi-conversation data reception optimization
+- Optimized conversation page display, supports model selection directly on conversation page
+- Support single provider with multiple models
+
+---
+
+### Technical Improvements
+
+#### 1. Continue Receiving AI Messages When Switching Chats
+
+**Issue**: Previously, switching chats would cancel the ongoing AI streaming response
+
+**Solution**: Application-level Scope + MessageSender singleton
+- MessageSender singleton manages send tasks for all chats
+- Uses `Map<chatId, Job>` to independently manage each chat
+- Switching chats only cancels database subscription, not send tasks
+
+---
+
+#### 2. Token Statistics Persistence
+
+**Issue**: Database did not store Token statistics information
+
+**Fix**:
+- MessageEntity added `inputTokens`, `outputTokens`, `tokensPerSecond`, `firstTokenLatency`
+- Database version 1 → 2 migration
+
+---
+
+#### 3. AI Reply Regeneration Feature
+
+**Feature**: Users can have AI regenerate replies, new and old replies coexist as variants
+
+**Implementation**:
+- 🔄 Refresh button displayed below user messages
+- AI regenerates reply after click
+- New reply added as variant, doesn't overwrite old reply
+
+---
+
+#### 4. Multi-variant Switching Feature
+
+**Feature**: When AI message has multiple variants, can switch between them
+
+**Implementation**:
+- AI message shows `< 1/3 >` variant selector below
+- Click `<` `>` to cycle through different versions
+- Variants stored in JSON format in database
+
+---
+
+#### 5. OpenAI Streaming Response Fix
+
+**Issue**: Some APIs return usage early, causing exit with empty content
+
+**Fix**:
+- Process content (choices) first, then save usage
+- Wait for `[DONE]` marker before sending Done
+- Avoid premature exit caused by usage
+
+---
+
+### Files Involved
+
+| Module | File | Changes |
+|------|------|------|
+| data | Message.kt | Added MessageVariant, variant fields |
+| data | MessageEntity.kt | Added statistics and variant fields |
+| data | AppDatabase.kt | Version 3, two migrations |
+| data | MessageDao.kt | Variant update methods |
+| data | ChatRepository.kt | regenerateMessage, selectVariant interfaces |
+| data | ChatRepositoryImpl.kt | Regeneration, variant selection implementation |
+| data | MessageSender.kt | Application Scope singleton |
+| feature-chat | ChatViewModel.kt | Regeneration, variant selection methods |
+| feature-chat | MessageItem.kt | Refresh button, variant selector UI |
+| feature-chat | MessageList.kt | Pass callbacks |
+| feature-chat | ChatScreen.kt | Connect callbacks |
+| network | OpenAIProvider.kt | Fix streaming response |
+| app | MainActivity.kt | MessageSender initialization |
 
 ---
 
