@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.FileText
 import com.composables.icons.lucide.Globe
 import com.composables.icons.lucide.HardDrive
+import com.composables.icons.lucide.Hourglass
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.ShieldCheck
 import com.tchat.data.model.LocalToolOption
@@ -289,6 +289,7 @@ private fun getToolIcon(tool: LocalToolOption): ImageVector = when (tool) {
     is LocalToolOption.FileSystem -> Lucide.FileText
     is LocalToolOption.WebFetch -> Lucide.Globe
     is LocalToolOption.SystemInfo -> Lucide.HardDrive
+    is LocalToolOption.Sleep -> Lucide.Hourglass
 }
 
 // ========== 权限帮助函数 ==========

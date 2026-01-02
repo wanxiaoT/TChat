@@ -5,11 +5,14 @@ import android.content.Context
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 /**
  * 本地工具集合
@@ -426,6 +429,90 @@ class LocalTools(private val context: Context) {
     }
 
     /**
+     * 延迟回复工具（SLEEP）
+     *
+     * AI可以调用此工具来延迟一段时间后再继续回复。
+     * 适用场景：
+     * - 用户请求"几分钟后提醒我"
+     * - AI需要等待某个操作完成
+     * - 定时回复场景
+     */
+    val sleepTool by lazy {
+        Tool(
+            name = "sleep",
+            description = """延迟指定时间后继续回复。当用户说「几分钟后提醒我」「等一下再回复」「5分钟后告诉我」「明天提醒我」等需要延迟回复的场景时调用此工具。
+注意事项：
+1. 延迟时间最短10秒，最长24小时
+2. 延迟期间用户可以发送新消息
+3. 延迟结束后你可以继续回复""",
+            parameters = {
+                InputSchema.Obj(
+                    properties = mapOf(
+                        "duration_seconds" to PropertyDef(
+                            type = "integer",
+                            description = "延迟时间（秒）。范围：10-86400秒（10秒到24小时）"
+                        ),
+                        "reason" to PropertyDef(
+                            type = "string",
+                            description = "延迟的原因，用于记录和向用户说明"
+                        )
+                    ),
+                    required = listOf("duration_seconds")
+                )
+            },
+            execute = { args ->
+                val durationSeconds = args.optInt("duration_seconds", 60)
+                val reason = args.optString("reason", "用户请求延迟")
+
+                // 限制延迟时间范围：10秒 - 86400秒（24小时）
+                val actualDuration = durationSeconds.coerceIn(10, 86400)
+
+                JSONObject().apply {
+                    try {
+                        val startTime = LocalDateTime.now()
+                        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+
+                        put("status", "sleeping")
+                        put("startTime", startTime.format(formatter))
+                        put("durationSeconds", actualDuration)
+                        put("reason", reason)
+
+                        // 执行延迟
+                        delay(actualDuration * 1000L)
+
+                        val endTime = LocalDateTime.now()
+                        put("status", "completed")
+                        put("success", true)
+                        put("endTime", endTime.format(formatter))
+                        put("message", "已等待 ${formatDuration(actualDuration)}，现在可以继续回复")
+
+                    } catch (e: Exception) {
+                        put("success", false)
+                        put("status", "interrupted")
+                        put("error", "延迟被中断: ${e.message}")
+                    }
+                }
+            }
+        )
+    }
+
+    /**
+     * 格式化时长显示
+     */
+    private fun formatDuration(seconds: Int): String {
+        val hours = seconds / 3600
+        val minutes = (seconds % 3600) / 60
+        val secs = seconds % 60
+
+        return buildString {
+            if (hours > 0) append("${hours}小时")
+            if (minutes > 0) append("${minutes}分钟")
+            if (secs > 0 && hours == 0) append("${secs}秒")
+            if (isEmpty()) append("0秒")
+        }
+    }
+
+    /**
      * 获取文件系统相关的所有工具
      */
     fun getFileSystemTools(): List<Tool> = listOf(
@@ -447,6 +534,11 @@ class LocalTools(private val context: Context) {
     fun getSystemInfoTools(): List<Tool> = listOf(systemInfoTool)
 
     /**
+     * 获取延迟回复工具
+     */
+    fun getSleepTools(): List<Tool> = listOf(sleepTool)
+
+    /**
      * 根据 LocalToolOption 列表获取对应的工具
      */
     fun getToolsForOptions(options: List<com.tchat.data.model.LocalToolOption>): List<Tool> {
@@ -455,6 +547,7 @@ class LocalTools(private val context: Context) {
                 is com.tchat.data.model.LocalToolOption.FileSystem -> getFileSystemTools()
                 is com.tchat.data.model.LocalToolOption.WebFetch -> getWebFetchTools()
                 is com.tchat.data.model.LocalToolOption.SystemInfo -> getSystemInfoTools()
+                is com.tchat.data.model.LocalToolOption.Sleep -> getSleepTools()
             }
         }
     }
@@ -462,7 +555,7 @@ class LocalTools(private val context: Context) {
     /**
      * 获取所有可用的工具
      */
-    fun getAllTools(): List<Tool> = getFileSystemTools() + getWebFetchTools() + getSystemInfoTools()
+    fun getAllTools(): List<Tool> = getFileSystemTools() + getWebFetchTools() + getSystemInfoTools() + getSleepTools()
 
     /**
      * 根据工具名称执行工具
@@ -476,6 +569,7 @@ class LocalTools(private val context: Context) {
             "create_directory" -> createDirectoryTool
             "web_fetch" -> webFetchTool
             "get_system_info" -> systemInfoTool
+            "sleep" -> sleepTool
             else -> return JSONObject().apply {
                 put("success", false)
                 put("error", "未知工具: $name")

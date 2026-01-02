@@ -19,6 +19,11 @@ sealed class LocalToolOption(val id: String) {
      */
     data object SystemInfo : LocalToolOption("system_info")
 
+    /**
+     * 延迟回复工具 - AI可以延迟一段时间后再继续回复
+     */
+    data object Sleep : LocalToolOption("sleep")
+
     companion object {
         /**
          * 获取所有可用的工具选项
@@ -26,7 +31,8 @@ sealed class LocalToolOption(val id: String) {
         fun allOptions(): List<LocalToolOption> = listOf(
             FileSystem,
             WebFetch,
-            SystemInfo
+            SystemInfo,
+            Sleep
         )
 
         /**
@@ -36,6 +42,7 @@ sealed class LocalToolOption(val id: String) {
             "file_system" -> FileSystem
             "web_fetch" -> WebFetch
             "system_info" -> SystemInfo
+            "sleep" -> Sleep
             else -> null
         }
 
@@ -46,6 +53,7 @@ sealed class LocalToolOption(val id: String) {
             is FileSystem -> "文件系统"
             is WebFetch -> "网页抓取"
             is SystemInfo -> "系统信息"
+            is Sleep -> "延迟回复"
         }
 
         /**
@@ -55,6 +63,7 @@ sealed class LocalToolOption(val id: String) {
             is FileSystem -> "读写文件、目录操作、文件搜索等"
             is WebFetch -> "获取网页内容和数据"
             is SystemInfo -> "获取设备信息和存储状态"
+            is Sleep -> "延迟指定时间后继续回复"
         }
     }
 }
