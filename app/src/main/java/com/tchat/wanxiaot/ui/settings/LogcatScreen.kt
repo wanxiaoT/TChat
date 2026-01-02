@@ -700,28 +700,38 @@ fun LogcatScreen(
                     val scrollbarHeightPx = with(density) { scrollbarHeight.toPx() }
                     val paddingPx = with(density) { 8.dp.toPx() }
 
-                    Box(
+                    // 添加水平滚动状态，让日志内容区域可水平滚动
+                    val horizontalScrollState = rememberScrollState()
+
+                    // 使用 Row 将日志内容和滚动条分开，滚动条固定在右侧
+                    Row(
                         modifier = Modifier
                             .fillMaxSize()
                             .onSizeChanged { containerHeight = it.height }
                     ) {
-                        LazyColumn(
-                            state = listState,
+                        // 日志内容区域（可水平滚动）
+                        Box(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .padding(end = 12.dp), // 为滚动条留出空间
-                            contentPadding = PaddingValues(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .horizontalScroll(horizontalScrollState)
                         ) {
-                            items(filteredLogs) { entry ->
-                                LogEntryItem(
-                                    entry = entry,
-                                    onLongClick = { copySingleLog(entry) }
-                                )
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxHeight(),
+                                contentPadding = PaddingValues(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                items(filteredLogs) { entry ->
+                                    LogEntryItem(
+                                        entry = entry,
+                                        onLongClick = { copySingleLog(entry) }
+                                    )
+                                }
                             }
                         }
 
-                        // 快速滚动条
+                        // 快速滚动条（固定在右侧）
                         if (filteredLogs.size > 20 && containerHeight > 0) {
                             val trackHeight = containerHeight - paddingPx
                             val maxOffset = (trackHeight - scrollbarHeightPx).coerceAtLeast(0f)
@@ -735,22 +745,21 @@ fun LogcatScreen(
                                         val layoutInfo = listState.layoutInfo
                                         val visibleItems = layoutInfo.visibleItemsInfo
                                         
-                                        // 如果无法继续向下滚动，说明已经到达底部
-                                        if (!listState.canScrollForward) {
-                                            1f
-                                        } else if (!listState.canScrollBackward) {
-                                            // 如果无法向上滚动，说明在顶部
-                                            0f
-                                        } else {
-                                            // 计算 content 总高度和可视区域
-                                            val totalItemsHeight = layoutInfo.totalItemsCount
+                                        if (visibleItems.isEmpty()) 0f
+                                        else {
                                             val firstIndex = listState.firstVisibleItemIndex
                                             val firstOffset = listState.firstVisibleItemScrollOffset
                                             val firstItemHeight = visibleItems.firstOrNull()?.size ?: 1
                                             
-                                            // 计算精确进度：当前索引 + 当前 item 内的滚动比例
+                                            // 计算精确进度
                                             val indexProgress = firstIndex + (firstOffset.toFloat() / firstItemHeight.coerceAtLeast(1))
-                                            (indexProgress / (itemCount - 1)).coerceIn(0f, 1f)
+                                            
+                                            // 计算可见的item数量
+                                            val visibleItemCount = visibleItems.size
+                                            // 总的可滚动范围 = 总item数 - 可见item数
+                                            val scrollableItems = (itemCount - visibleItemCount).coerceAtLeast(1)
+                                            
+                                            (indexProgress / scrollableItems).coerceIn(0f, 1f)
                                         }
                                     }
                                 }
@@ -759,7 +768,6 @@ fun LogcatScreen(
 
                             Box(
                                 modifier = Modifier
-                                    .align(Alignment.TopEnd)
                                     .padding(end = 2.dp, top = 4.dp, bottom = 4.dp)
                                     .width(8.dp)
                                     .fillMaxHeight()
@@ -831,12 +839,10 @@ private fun LogEntryItem(
 
     Row(
         modifier = Modifier
-            .fillMaxWidth()
             .combinedClickable(
                 onClick = {},
                 onLongClick = onLongClick
             )
-            .horizontalScroll(rememberScrollState())
             .padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
