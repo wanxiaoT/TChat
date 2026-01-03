@@ -4,6 +4,7 @@ import com.tchat.core.util.Result
 import com.tchat.data.model.Chat
 import com.tchat.data.model.Message
 import com.tchat.data.tool.Tool
+import com.tchat.data.util.RegexRuleData
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -23,7 +24,8 @@ data class ChatConfig(
     val temperature: Float? = null,
     val topP: Float? = null,
     val maxTokens: Int? = null,
-    val modelName: String? = null  // 模型名称（用于统计）
+    val modelName: String? = null,  // 模型名称（用于统计）
+    val regexRules: List<RegexRuleData> = emptyList()  // 正则规则（用于流式处理）
 )
 
 interface ChatRepository {

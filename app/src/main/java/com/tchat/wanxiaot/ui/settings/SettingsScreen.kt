@@ -76,6 +76,7 @@ private sealed class SettingsSubPage {
     data object MCP : SettingsSubPage()
     data object USAGE_STATS : SettingsSubPage()
     data object DEEP_RESEARCH : SettingsSubPage()
+    data object REGEX_RULES : SettingsSubPage()
 }
 
 /**
@@ -262,7 +263,8 @@ private fun TabletSettingsLayout(
                 onKnowledgeClick = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
                 onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
                 onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) },
-                onDeepResearchClick = { onSubPageChange(SettingsSubPage.DEEP_RESEARCH) }
+                onDeepResearchClick = { onSubPageChange(SettingsSubPage.DEEP_RESEARCH) },
+                onRegexRulesClick = { onSubPageChange(SettingsSubPage.REGEX_RULES) }
             )
         }
 
@@ -342,8 +344,8 @@ private fun TabletSettingsLayout(
                         )
                     }
                     is SettingsSubPage.ASSISTANT_DETAIL -> {
-                        val viewModel = remember(assistantRepository, knowledgeRepository, mcpRepository, page.id) {
-                            AssistantDetailViewModel(assistantRepository, knowledgeRepository, mcpRepository, page.id)
+                        val viewModel = remember(assistantRepository, knowledgeRepository, mcpRepository, settingsManager, page.id) {
+                            AssistantDetailViewModel(assistantRepository, knowledgeRepository, mcpRepository, page.id, settingsManager)
                         }
                         AssistantDetailScreen(
                             viewModel = viewModel,
@@ -399,6 +401,13 @@ private fun TabletSettingsLayout(
                         }
                         DeepResearchScreen(
                             viewModel = viewModel,
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            showTopBar = false
+                        )
+                    }
+                    is SettingsSubPage.REGEX_RULES -> {
+                        RegexRulesScreen(
+                            settingsManager = settingsManager,
                             onBack = { onSubPageChange(SettingsSubPage.MAIN) },
                             showTopBar = false
                         )
@@ -481,7 +490,8 @@ private fun PhoneSettingsLayout(
                     onKnowledgeClick = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
                     onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
                     onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) },
-                    onDeepResearchClick = { onSubPageChange(SettingsSubPage.DEEP_RESEARCH) }
+                    onDeepResearchClick = { onSubPageChange(SettingsSubPage.DEEP_RESEARCH) },
+                    onRegexRulesClick = { onSubPageChange(SettingsSubPage.REGEX_RULES) }
                 )
             }
             is SettingsSubPage.PROVIDERS -> {
@@ -510,8 +520,8 @@ private fun PhoneSettingsLayout(
                 )
             }
             is SettingsSubPage.ASSISTANT_DETAIL -> {
-                val viewModel = remember(assistantRepository, knowledgeRepository, mcpRepository, page.id) {
-                    AssistantDetailViewModel(assistantRepository, knowledgeRepository, mcpRepository, page.id)
+                val viewModel = remember(assistantRepository, knowledgeRepository, mcpRepository, settingsManager, page.id) {
+                    AssistantDetailViewModel(assistantRepository, knowledgeRepository, mcpRepository, page.id, settingsManager)
                 }
                 AssistantDetailScreen(
                     viewModel = viewModel,
@@ -565,6 +575,12 @@ private fun PhoneSettingsLayout(
                     onBack = { onSubPageChange(SettingsSubPage.MAIN) }
                 )
             }
+            is SettingsSubPage.REGEX_RULES -> {
+                RegexRulesScreen(
+                    settingsManager = settingsManager,
+                    onBack = { onSubPageChange(SettingsSubPage.MAIN) }
+                )
+            }
         }
     }
 }
@@ -584,7 +600,8 @@ private fun SettingsMainContent(
     onKnowledgeClick: () -> Unit,
     onMcpClick: () -> Unit,
     onUsageStatsClick: () -> Unit,
-    onDeepResearchClick: () -> Unit = {}
+    onDeepResearchClick: () -> Unit = {},
+    onRegexRulesClick: () -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -831,6 +848,48 @@ private fun SettingsMainContent(
                 }
             }
 
+            // 正则表达式卡片
+            OutlinedCard(
+                onClick = onRegexRulesClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.BugReport,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "正则表达式",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "管理 AI 输出内容清理规则",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
             // 其他分组标题
@@ -1028,7 +1087,8 @@ private fun SettingsListContent(
     onKnowledgeClick: () -> Unit,
     onMcpClick: () -> Unit,
     onUsageStatsClick: () -> Unit,
-    onDeepResearchClick: () -> Unit = {}
+    onDeepResearchClick: () -> Unit = {},
+    onRegexRulesClick: () -> Unit = {}
 ) {
     // 设置项数据（不使用 Composable lambda）
     data class SettingsItemData(
@@ -1074,6 +1134,13 @@ private fun SettingsListContent(
             title = "深度研究",
             subtitle = "AI 驱动的迭代式深度研究",
             onClick = onDeepResearchClick
+        ),
+        SettingsItemData(
+            id = "regex_rules",
+            group = "通用",
+            title = "正则表达式",
+            subtitle = "管理 AI 输出内容清理规则",
+            onClick = onRegexRulesClick
         ),
         SettingsItemData(
             id = "usage_stats",
@@ -1159,6 +1226,7 @@ private fun SettingsListContent(
                         "knowledge" -> currentSubPage is SettingsSubPage.KNOWLEDGE || currentSubPage is SettingsSubPage.KNOWLEDGE_DETAIL
                         "mcp" -> currentSubPage is SettingsSubPage.MCP
                         "deep_research" -> currentSubPage is SettingsSubPage.DEEP_RESEARCH
+                        "regex_rules" -> currentSubPage is SettingsSubPage.REGEX_RULES
                         "usage_stats" -> currentSubPage is SettingsSubPage.USAGE_STATS
                         "logcat" -> currentSubPage is SettingsSubPage.LOGCAT
                         "network_log" -> currentSubPage is SettingsSubPage.NETWORK_LOG

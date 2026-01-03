@@ -23,9 +23,11 @@ class SettingsManager(context: Context) {
             val providersJson = prefs.getString("providers", "[]") ?: "[]"
             val deepResearchJson = prefs.getString("deep_research_settings", "{}") ?: "{}"
             val providerGridColumnCount = prefs.getInt("provider_grid_column_count", 1)
+            val regexRulesJson = prefs.getString("regex_rules", "[]") ?: "[]"
 
             val providers = parseProviders(providersJson)
             val deepResearchSettings = parseDeepResearchSettings(deepResearchJson)
+            val regexRules = parseRegexRules(regexRulesJson)
 
             AppSettings(
                 currentProviderId = currentProviderId,
@@ -33,7 +35,8 @@ class SettingsManager(context: Context) {
                 currentAssistantId = currentAssistantId,
                 providers = providers,
                 deepResearchSettings = deepResearchSettings,
-                providerGridColumnCount = providerGridColumnCount
+                providerGridColumnCount = providerGridColumnCount,
+                regexRules = regexRules
             )
         } catch (e: Exception) {
             e.printStackTrace()
@@ -108,7 +111,8 @@ class SettingsManager(context: Context) {
                         apiKey = obj.optString("apiKey", ""),
                         endpoint = obj.optString("endpoint", ""),
                         selectedModel = obj.optString("selectedModel", ""),
-                        availableModels = parseStringList(obj.optJSONArray("availableModels"))
+                        availableModels = parseStringList(obj.optJSONArray("availableModels")),
+                        modelCustomParams = parseModelCustomParams(obj.optJSONObject("modelCustomParams"))
                     )
                 )
             }
@@ -116,6 +120,32 @@ class SettingsManager(context: Context) {
             e.printStackTrace()
         }
         return providers
+    }
+
+    private fun parseModelCustomParams(jsonObj: JSONObject?): Map<String, ModelCustomParams> {
+        if (jsonObj == null) return emptyMap()
+        val result = mutableMapOf<String, ModelCustomParams>()
+        try {
+            val keys = jsonObj.keys()
+            while (keys.hasNext()) {
+                val modelName = keys.next()
+                val paramsObj = jsonObj.optJSONObject(modelName) ?: continue
+                result[modelName] = ModelCustomParams(
+                    modelName = modelName,
+                    temperature = if (paramsObj.has("temperature")) paramsObj.optDouble("temperature").toFloat() else null,
+                    topP = if (paramsObj.has("topP")) paramsObj.optDouble("topP").toFloat() else null,
+                    topK = if (paramsObj.has("topK")) paramsObj.optInt("topK") else null,
+                    presencePenalty = if (paramsObj.has("presencePenalty")) paramsObj.optDouble("presencePenalty").toFloat() else null,
+                    frequencyPenalty = if (paramsObj.has("frequencyPenalty")) paramsObj.optDouble("frequencyPenalty").toFloat() else null,
+                    repetitionPenalty = if (paramsObj.has("repetitionPenalty")) paramsObj.optDouble("repetitionPenalty").toFloat() else null,
+                    maxTokens = if (paramsObj.has("maxTokens")) paramsObj.optInt("maxTokens") else null,
+                    extraParams = paramsObj.optString("extraParams", "{}")
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return result
     }
 
     private fun parseStringList(jsonArray: JSONArray?): List<String> {
@@ -138,6 +168,66 @@ class SettingsManager(context: Context) {
             obj.put("endpoint", provider.endpoint)
             obj.put("selectedModel", provider.selectedModel)
             obj.put("availableModels", JSONArray(provider.availableModels))
+            obj.put("modelCustomParams", serializeModelCustomParams(provider.modelCustomParams))
+            jsonArray.put(obj)
+        }
+        return jsonArray.toString()
+    }
+
+    private fun serializeModelCustomParams(params: Map<String, ModelCustomParams>): JSONObject {
+        val result = JSONObject()
+        params.forEach { (modelName, customParams) ->
+            val paramsObj = JSONObject()
+            customParams.temperature?.let { paramsObj.put("temperature", it.toDouble()) }
+            customParams.topP?.let { paramsObj.put("topP", it.toDouble()) }
+            customParams.topK?.let { paramsObj.put("topK", it) }
+            customParams.presencePenalty?.let { paramsObj.put("presencePenalty", it.toDouble()) }
+            customParams.frequencyPenalty?.let { paramsObj.put("frequencyPenalty", it.toDouble()) }
+            customParams.repetitionPenalty?.let { paramsObj.put("repetitionPenalty", it.toDouble()) }
+            customParams.maxTokens?.let { paramsObj.put("maxTokens", it) }
+            if (customParams.extraParams.isNotEmpty() && customParams.extraParams != "{}") {
+                paramsObj.put("extraParams", customParams.extraParams)
+            }
+            result.put(modelName, paramsObj)
+        }
+        return result
+    }
+
+    private fun parseRegexRules(json: String): List<RegexRule> {
+        val rules = mutableListOf<RegexRule>()
+        try {
+            val jsonArray = JSONArray(json)
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                rules.add(
+                    RegexRule(
+                        id = obj.optString("id", ""),
+                        name = obj.optString("name", ""),
+                        pattern = obj.optString("pattern", ""),
+                        replacement = obj.optString("replacement", ""),
+                        isEnabled = obj.optBoolean("isEnabled", true),
+                        description = obj.optString("description", ""),
+                        order = obj.optInt("order", 0)
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return rules.sortedBy { it.order }
+    }
+
+    private fun serializeRegexRules(rules: List<RegexRule>): String {
+        val jsonArray = JSONArray()
+        rules.forEach { rule ->
+            val obj = JSONObject()
+            obj.put("id", rule.id)
+            obj.put("name", rule.name)
+            obj.put("pattern", rule.pattern)
+            obj.put("replacement", rule.replacement)
+            obj.put("isEnabled", rule.isEnabled)
+            obj.put("description", rule.description)
+            obj.put("order", rule.order)
             jsonArray.put(obj)
         }
         return jsonArray.toString()
@@ -150,6 +240,7 @@ class SettingsManager(context: Context) {
             putString("current_assistant_id", settings.currentAssistantId)
             putString("providers", serializeProviders(settings.providers))
             putString("deep_research_settings", serializeDeepResearchSettings(settings.deepResearchSettings))
+            putString("regex_rules", serializeRegexRules(settings.regexRules))
             apply()
         }
         _settings.value = settings
@@ -246,5 +337,95 @@ class SettingsManager(context: Context) {
         val validColumnCount = columnCount.coerceIn(1, 3)
         prefs.edit().putInt("provider_grid_column_count", validColumnCount).apply()
         updateSettings(currentSettings.copy(providerGridColumnCount = validColumnCount))
+    }
+
+    // ==================== 正则规则管理 ====================
+
+    /**
+     * 添加正则规则
+     */
+    fun addRegexRule(rule: RegexRule) {
+        val currentSettings = _settings.value
+        val newRules = currentSettings.regexRules + rule
+        updateSettings(currentSettings.copy(regexRules = newRules))
+    }
+
+    /**
+     * 更新正则规则
+     */
+    fun updateRegexRule(rule: RegexRule) {
+        val currentSettings = _settings.value
+        val newRules = currentSettings.regexRules.map {
+            if (it.id == rule.id) rule else it
+        }
+        updateSettings(currentSettings.copy(regexRules = newRules))
+    }
+
+    /**
+     * 删除正则规则
+     */
+    fun deleteRegexRule(ruleId: String) {
+        val currentSettings = _settings.value
+        val newRules = currentSettings.regexRules.filter { it.id != ruleId }
+        updateSettings(currentSettings.copy(regexRules = newRules))
+    }
+
+    /**
+     * 更新正则规则启用状态
+     */
+    fun setRegexRuleEnabled(ruleId: String, enabled: Boolean) {
+        val currentSettings = _settings.value
+        val newRules = currentSettings.regexRules.map {
+            if (it.id == ruleId) it.copy(isEnabled = enabled) else it
+        }
+        updateSettings(currentSettings.copy(regexRules = newRules))
+    }
+
+    /**
+     * 批量添加正则规则（用于添加预设规则）
+     */
+    fun addRegexRules(rules: List<RegexRule>) {
+        val currentSettings = _settings.value
+        val existingIds = currentSettings.regexRules.map { it.id }.toSet()
+        val newRules = rules.filter { it.id !in existingIds }
+        if (newRules.isNotEmpty()) {
+            updateSettings(currentSettings.copy(regexRules = currentSettings.regexRules + newRules))
+        }
+    }
+
+    // ==================== 模型自定义参数管理 ====================
+
+    /**
+     * 更新模型自定义参数
+     */
+    fun updateModelCustomParams(providerId: String, modelName: String, params: ModelCustomParams) {
+        val currentSettings = _settings.value
+        val newProviders = currentSettings.providers.map { provider ->
+            if (provider.id == providerId) {
+                val newParams = provider.modelCustomParams.toMutableMap()
+                newParams[modelName] = params
+                provider.copy(modelCustomParams = newParams)
+            } else {
+                provider
+            }
+        }
+        updateSettings(currentSettings.copy(providers = newProviders))
+    }
+
+    /**
+     * 删除模型自定义参数
+     */
+    fun deleteModelCustomParams(providerId: String, modelName: String) {
+        val currentSettings = _settings.value
+        val newProviders = currentSettings.providers.map { provider ->
+            if (provider.id == providerId) {
+                val newParams = provider.modelCustomParams.toMutableMap()
+                newParams.remove(modelName)
+                provider.copy(modelCustomParams = newParams)
+            } else {
+                provider
+            }
+        }
+        updateSettings(currentSettings.copy(providers = newProviders))
     }
 }

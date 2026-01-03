@@ -42,6 +42,7 @@ import com.tchat.network.provider.AIProviderFactory
 import com.tchat.network.provider.EmbeddingProviderFactory
 import com.tchat.wanxiaot.settings.AIProviderType
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.data.util.RegexRuleData
 import com.tchat.wanxiaot.ui.DrawerContent
 import com.tchat.wanxiaot.ui.settings.SettingsScreen
 import com.tchat.wanxiaot.ui.deepresearch.DeepResearchScreen
@@ -475,6 +476,26 @@ fun MainScreen(
                                 knowledgeTools + mcpTools
                             }
 
+                            // 计算启用的正则规则
+                            val enabledRegexRules = remember(currentAssistant?.enabledRegexRuleIds, settings.regexRules) {
+                                val enabledIds = currentAssistant?.enabledRegexRuleIds ?: emptyList()
+                                if (enabledIds.isEmpty()) {
+                                    emptyList()
+                                } else {
+                                    settings.regexRules
+                                        .filter { it.id in enabledIds && it.isEnabled }
+                                        .sortedBy { it.order }
+                                        .map { rule ->
+                                            RegexRuleData(
+                                                pattern = rule.pattern,
+                                                replacement = rule.replacement,
+                                                isEnabled = true,
+                                                order = rule.order
+                                            )
+                                        }
+                                }
+                            }
+
                             ChatScreen(
                                 viewModel = viewModel,
                                 chatId = currentChatId,
@@ -501,6 +522,8 @@ fun MainScreen(
                                 // 知识库搜索工具作为额外工具传递
                                 extraTools = allExtraTools,
                                 systemPrompt = currentAssistant?.systemPrompt,
+                                // 正则规则
+                                regexRules = enabledRegexRules,
                                 // 深度研究支持
                                 onDeepResearch = { query ->
                                     if (query != null) {
@@ -569,6 +592,24 @@ private fun entityToAssistant(entity: AssistantEntity): Assistant {
         emptyList()
     }
 
+    val mcpIds: List<String> = try {
+        val jsonArray = org.json.JSONArray(entity.mcpServerIds)
+        (0 until jsonArray.length()).map { i ->
+            jsonArray.getString(i)
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    val regexRuleIds: List<String> = try {
+        val jsonArray = org.json.JSONArray(entity.enabledRegexRuleIds)
+        (0 until jsonArray.length()).map { i ->
+            jsonArray.getString(i)
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
     return Assistant(
         id = entity.id,
         name = entity.name,
@@ -581,6 +622,8 @@ private fun entityToAssistant(entity: AssistantEntity): Assistant {
         streamOutput = entity.streamOutput,
         localTools = toolOptions,
         knowledgeBaseId = entity.knowledgeBaseId,
+        mcpServerIds = mcpIds,
+        enabledRegexRuleIds = regexRuleIds,
         createdAt = entity.createdAt,
         updatedAt = entity.updatedAt
     )

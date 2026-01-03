@@ -65,6 +65,15 @@ class AssistantRepositoryImpl(
             emptyList()
         }
 
+        val regexRuleIds: List<String> = try {
+            val jsonArray = JSONArray(enabledRegexRuleIds)
+            (0 until jsonArray.length()).map { i ->
+                jsonArray.getString(i)
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+
         return Assistant(
             id = id,
             name = name,
@@ -78,6 +87,7 @@ class AssistantRepositoryImpl(
             localTools = toolOptions,
             knowledgeBaseId = knowledgeBaseId,
             mcpServerIds = mcpIds,
+            enabledRegexRuleIds = regexRuleIds,
             createdAt = createdAt,
             updatedAt = updatedAt
         )
@@ -95,6 +105,10 @@ class AssistantRepositoryImpl(
             mcpServerIds.forEach { put(it) }
         }.toString()
 
+        val regexRuleIdsJson = JSONArray().apply {
+            enabledRegexRuleIds.forEach { put(it) }
+        }.toString()
+
         return AssistantEntity(
             id = id,
             name = name,
@@ -108,6 +122,7 @@ class AssistantRepositoryImpl(
             localTools = toolsJson,
             knowledgeBaseId = knowledgeBaseId,
             mcpServerIds = mcpIdsJson,
+            enabledRegexRuleIds = regexRuleIdsJson,
             createdAt = createdAt,
             updatedAt = System.currentTimeMillis()
         )

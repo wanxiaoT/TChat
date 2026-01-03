@@ -18,6 +18,7 @@ import com.composables.icons.lucide.Sparkles
 import com.composables.icons.lucide.Wrench
 import com.tchat.data.model.LocalToolOption
 import com.tchat.data.tool.Tool
+import com.tchat.data.util.RegexRuleData
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,6 +40,8 @@ fun ChatScreen(
     extraTools: List<Tool> = emptyList(),
     // 系统提示
     systemPrompt: String? = null,
+    // 正则规则
+    regexRules: List<RegexRuleData> = emptyList(),
     // 深度研究支持
     onDeepResearch: ((String?) -> Unit)? = null,
     isDeepResearching: Boolean = false
@@ -73,16 +76,16 @@ fun ChatScreen(
     }
 
     // 当工具状态变化时更新ViewModel的配置
-    LaunchedEffect(enabledTools, currentTools, systemPrompt, currentModel) {
+    LaunchedEffect(enabledTools, currentTools, systemPrompt, currentModel, regexRules) {
         // 只要有工具或系统提示，就设置配置
         val hasTools = currentTools.isNotEmpty()
         val hasSystemPrompt = !systemPrompt.isNullOrEmpty()
-        
+
         if (hasTools || hasSystemPrompt) {
-            viewModel.setTools(currentTools, systemPrompt, currentModel)
+            viewModel.setTools(currentTools, systemPrompt, currentModel, regexRules)
         } else {
             // 即使没有工具和系统提示，也设置一个空配置，确保消息可以正常发送
-            viewModel.setTools(emptyList(), null, currentModel)
+            viewModel.setTools(emptyList(), null, currentModel, regexRules)
         }
     }
 

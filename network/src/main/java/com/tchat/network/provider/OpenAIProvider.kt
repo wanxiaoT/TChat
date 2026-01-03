@@ -21,7 +21,8 @@ import java.util.concurrent.TimeUnit
 class OpenAIProvider(
     private val apiKey: String,
     baseUrl: String = "https://api.openai.com/v1",
-    private val model: String = "gpt-3.5-turbo"
+    private val model: String = "gpt-3.5-turbo",
+    private val customParams: CustomParams? = null
 ) : AIProvider {
 
     // 规范化 baseUrl：移除末尾斜杠
@@ -326,6 +327,31 @@ class OpenAIProvider(
         val streamOptions = JSONObject()
         streamOptions.put("include_usage", true)
         jsonObject.put("stream_options", streamOptions)
+
+        // 添加自定义参数
+        customParams?.let { params ->
+            params.temperature?.let { jsonObject.put("temperature", it.toDouble()) }
+            params.topP?.let { jsonObject.put("top_p", it.toDouble()) }
+            params.topK?.let { jsonObject.put("top_k", it) }
+            params.presencePenalty?.let { jsonObject.put("presence_penalty", it.toDouble()) }
+            params.frequencyPenalty?.let { jsonObject.put("frequency_penalty", it.toDouble()) }
+            params.repetitionPenalty?.let { jsonObject.put("repetition_penalty", it.toDouble()) }
+            params.maxTokens?.let { jsonObject.put("max_tokens", it) }
+
+            // 合并额外的 JSON 参数
+            if (params.extraParams.isNotEmpty() && params.extraParams != "{}") {
+                try {
+                    val extraJson = JSONObject(params.extraParams)
+                    val keys = extraJson.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        jsonObject.put(key, extraJson.get(key))
+                    }
+                } catch (e: Exception) {
+                    // 忽略无效的 JSON
+                }
+            }
+        }
 
         // 构建消息数组
         val messagesArray = JSONArray()

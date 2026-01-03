@@ -26,7 +26,8 @@ class AnthropicProvider(
     private val baseUrl: String = "https://api.anthropic.com",
     private val model: String = "claude-sonnet-4-20250514",
     private val maxTokens: Int = 8192,
-    private val apiVersion: String = "2023-06-01"
+    private val apiVersion: String = "2023-06-01",
+    private val customParams: CustomParams? = null
 ) : AIProvider {
 
     companion object {
@@ -517,7 +518,33 @@ class AnthropicProvider(
         val jsonObject = JSONObject()
         jsonObject.put("model", model)
         jsonObject.put("stream", true)
-        jsonObject.put("max_tokens", maxTokens)
+
+        // 使用自定义参数中的 maxTokens，如果没有则使用默认值
+        val effectiveMaxTokens = customParams?.maxTokens ?: maxTokens
+        jsonObject.put("max_tokens", effectiveMaxTokens)
+
+        // 添加自定义参数 (Anthropic 使用 top_p, top_k, temperature)
+        customParams?.let { params ->
+            params.temperature?.let { jsonObject.put("temperature", it.toDouble()) }
+            params.topP?.let { jsonObject.put("top_p", it.toDouble()) }
+            params.topK?.let { jsonObject.put("top_k", it) }
+            // Anthropic 不支持 presence_penalty 和 frequency_penalty，但某些兼容 API 可能支持
+            // 通过 extraParams 传递
+
+            // 合并额外的 JSON 参数
+            if (params.extraParams.isNotEmpty() && params.extraParams != "{}") {
+                try {
+                    val extraJson = JSONObject(params.extraParams)
+                    val keys = extraJson.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        jsonObject.put(key, extraJson.get(key))
+                    }
+                } catch (e: Exception) {
+                    // 忽略无效的 JSON
+                }
+            }
+        }
 
         // 分离 system 消息和其他消息
         val systemMessages = messages.filter { it.role == MessageRole.SYSTEM }

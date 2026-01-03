@@ -16,6 +16,8 @@ import com.tchat.data.repository.MessageResult
 import com.tchat.data.tool.InputSchema
 import com.tchat.data.tool.Tool
 import com.tchat.data.util.MessagePartSerializer
+import com.tchat.data.util.RegexRuleData
+import com.tchat.data.util.RegexStreamProcessor
 import com.tchat.network.provider.AIProvider
 import com.tchat.network.provider.ChatMessage
 import com.tchat.network.provider.StreamChunk
@@ -143,6 +145,7 @@ class ChatRepositoryImpl(
                 tools = config?.tools ?: emptyList(),
                 toolDefinitions = toolDefinitions,
                 modelName = config?.modelName,
+                regexRules = config?.regexRules ?: emptyList(),
                 onStreamingUpdate = { msg -> emit(Result.Success(msg)) }
             )
 
@@ -223,6 +226,7 @@ class ChatRepositoryImpl(
                 tools = config?.tools ?: emptyList(),
                 toolDefinitions = toolDefinitions,
                 modelName = config?.modelName,
+                regexRules = config?.regexRules ?: emptyList(),
                 onStreamingUpdate = { msg -> emit(Result.Success(MessageResult(chatId, msg))) }
             )
 
@@ -244,15 +248,24 @@ class ChatRepositoryImpl(
         tools: List<Tool>,
         toolDefinitions: List<ToolDefinition>,
         modelName: String? = null,
+        regexRules: List<RegexRuleData> = emptyList(),
         onStreamingUpdate: suspend (Message) -> Unit
     ): Message {
         var currentContent = ""
+        var rawContent = ""  // 原始内容（未经正则处理）
         var inputTokens = 0
         var outputTokens = 0
         var tokensPerSecond = 0.0
         var firstTokenLatency = 0L
         var pendingToolCalls: List<ToolCallInfo>? = null
         val allParts = mutableListOf<MessagePart>()  // 存储所有消息部分
+
+        // 创建正则流处理器
+        val regexProcessor = if (regexRules.isNotEmpty()) {
+            RegexStreamProcessor(regexRules)
+        } else {
+            null
+        }
 
         // 工具调用循环，最多执行10轮避免无限循环
         var iteration = 0
@@ -277,11 +290,20 @@ class ChatRepositoryImpl(
 
             var hasToolCall = false
             currentContent = ""
+            rawContent = ""
 
             flow.collect { chunk ->
                 when (chunk) {
                     is StreamChunk.Content -> {
-                        currentContent += chunk.text
+                        rawContent += chunk.text
+                        // 使用正则处理器处理流式内容
+                        val processedText = if (regexProcessor != null) {
+                            regexProcessor.processChunk(chunk.text)
+                        } else {
+                            chunk.text
+                        }
+                        currentContent += processedText
+
                         // 流式更新：显示文本内容和已执行的工具结果
                         val streamingParts = mutableListOf<MessagePart>()
                         if (currentContent.isNotEmpty()) {
@@ -407,6 +429,14 @@ class ChatRepositoryImpl(
             pendingToolCalls = null
         }
 
+        // 流结束时，刷新正则处理器的剩余缓冲区
+        if (regexProcessor != null) {
+            val remainingContent = regexProcessor.flush()
+            if (remainingContent.isNotEmpty()) {
+                currentContent += remainingContent
+            }
+        }
+
         // 构建最终的 parts 列表
         val finalParts = mutableListOf<MessagePart>()
         if (currentContent.isNotEmpty()) {
@@ -491,6 +521,7 @@ class ChatRepositoryImpl(
                 messages = messages,
                 tools = config?.tools ?: emptyList(),
                 toolDefinitions = toolDefinitions,
+                regexRules = config?.regexRules ?: emptyList(),
                 onStreamingUpdate = { parts ->
                     emit(Result.Success(originalMessage.copy(
                         parts = parts,
@@ -545,13 +576,22 @@ class ChatRepositoryImpl(
         messages: MutableList<ChatMessage>,
         tools: List<Tool>,
         toolDefinitions: List<ToolDefinition>,
+        regexRules: List<RegexRuleData> = emptyList(),
         onStreamingUpdate: suspend (List<MessagePart>) -> Unit
     ): Quadruple<String, Int, Int, List<MessagePart>> {
         var currentContent = ""
+        var rawContent = ""  // 原始内容（未经正则处理）
         var inputTokens = 0
         var outputTokens = 0
         var pendingToolCalls: List<ToolCallInfo>? = null
         val allParts = mutableListOf<MessagePart>()
+
+        // 创建正则流处理器
+        val regexProcessor = if (regexRules.isNotEmpty()) {
+            RegexStreamProcessor(regexRules)
+        } else {
+            null
+        }
 
         var iteration = 0
         val maxIterations = 10
@@ -567,11 +607,20 @@ class ChatRepositoryImpl(
 
             var hasToolCall = false
             currentContent = ""
+            rawContent = ""
 
             flow.collect { chunk ->
                 when (chunk) {
                     is StreamChunk.Content -> {
-                        currentContent += chunk.text
+                        rawContent += chunk.text
+                        // 使用正则处理器处理流式内容
+                        val processedText = if (regexProcessor != null) {
+                            regexProcessor.processChunk(chunk.text)
+                        } else {
+                            chunk.text
+                        }
+                        currentContent += processedText
+
                         // 流式更新
                         val streamingParts = mutableListOf<MessagePart>()
                         if (currentContent.isNotEmpty()) {
@@ -657,6 +706,14 @@ class ChatRepositoryImpl(
             onStreamingUpdate(streamingParts)
 
             pendingToolCalls = null
+        }
+
+        // 流结束时，刷新正则处理器的剩余缓冲区
+        if (regexProcessor != null) {
+            val remainingContent = regexProcessor.flush()
+            if (remainingContent.isNotEmpty()) {
+                currentContent += remainingContent
+            }
         }
 
         // 构建最终 parts

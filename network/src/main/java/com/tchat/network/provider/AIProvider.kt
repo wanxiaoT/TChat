@@ -32,6 +32,21 @@ interface AIProvider {
 }
 
 /**
+ * 自定义请求参数
+ * 用于配置 AI 请求体中的额外参数
+ */
+data class CustomParams(
+    val temperature: Float? = null,
+    val topP: Float? = null,
+    val topK: Int? = null,
+    val presencePenalty: Float? = null,
+    val frequencyPenalty: Float? = null,
+    val repetitionPenalty: Float? = null,
+    val maxTokens: Int? = null,
+    val extraParams: String = "{}"  // 自定义 JSON 参数，直接合并到请求体
+)
+
+/**
  * 工具定义
  */
 data class ToolDefinition(

@@ -8,6 +8,8 @@ import com.tchat.data.model.McpServer
 import com.tchat.data.repository.AssistantRepository
 import com.tchat.data.repository.KnowledgeRepository
 import com.tchat.data.repository.McpServerRepository
+import com.tchat.wanxiaot.settings.RegexRule
+import com.tchat.wanxiaot.settings.SettingsManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,7 +22,8 @@ class AssistantDetailViewModel(
     private val repository: AssistantRepository,
     private val knowledgeRepository: KnowledgeRepository,
     private val mcpRepository: McpServerRepository,
-    private val assistantId: String
+    private val assistantId: String,
+    private val settingsManager: SettingsManager? = null
 ) : ViewModel() {
 
     private val _assistant = MutableStateFlow<Assistant?>(null)
@@ -35,10 +38,14 @@ class AssistantDetailViewModel(
     private val _mcpServers = MutableStateFlow<List<McpServer>>(emptyList())
     val mcpServers: StateFlow<List<McpServer>> = _mcpServers.asStateFlow()
 
+    private val _regexRules = MutableStateFlow<List<RegexRule>>(emptyList())
+    val regexRules: StateFlow<List<RegexRule>> = _regexRules.asStateFlow()
+
     init {
         loadAssistant()
         loadKnowledgeBases()
         loadMcpServers()
+        loadRegexRules()
     }
 
     /**
@@ -72,6 +79,17 @@ class AssistantDetailViewModel(
         viewModelScope.launch {
             mcpRepository.getAllServers().collect { servers ->
                 _mcpServers.value = servers
+            }
+        }
+    }
+
+    /**
+     * 加载正则规则列表
+     */
+    private fun loadRegexRules() {
+        viewModelScope.launch {
+            settingsManager?.settings?.collect { settings ->
+                _regexRules.value = settings.regexRules
             }
         }
     }

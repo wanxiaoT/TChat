@@ -41,7 +41,7 @@ import com.tchat.data.database.entity.LocalToolOptionConverter
         McpServerEntity::class,
         DeepResearchHistoryEntity::class
     ],
-    version = 12,
+    version = 14,
     exportSchema = false
 )
 @TypeConverters(LocalToolOptionConverter::class)
@@ -224,6 +224,50 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // 迁移:为助手添加正则规则ID列表字段
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 检查列是否已存在，避免重复添加导致崩溃
+                val cursor = db.query("PRAGMA table_info(assistants)")
+                var columnExists = false
+                cursor.use {
+                    val nameIndex = cursor.getColumnIndex("name")
+                    while (cursor.moveToNext()) {
+                        val columnName = cursor.getString(nameIndex)
+                        if (columnName == "enabledRegexRuleIds") {
+                            columnExists = true
+                            break
+                        }
+                    }
+                }
+                if (!columnExists) {
+                    db.execSQL("ALTER TABLE assistants ADD COLUMN enabledRegexRuleIds TEXT NOT NULL DEFAULT '[]'")
+                }
+            }
+        }
+
+        // 迁移:为聊天添加标题手动编辑标记字段
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 检查列是否已存在，避免重复添加导致崩溃
+                val cursor = db.query("PRAGMA table_info(chats)")
+                var columnExists = false
+                cursor.use {
+                    val nameIndex = cursor.getColumnIndex("name")
+                    while (cursor.moveToNext()) {
+                        val columnName = cursor.getString(nameIndex)
+                        if (columnName == "isNameManuallyEdited") {
+                            columnExists = true
+                            break
+                        }
+                    }
+                }
+                if (!columnExists) {
+                    db.execSQL("ALTER TABLE chats ADD COLUMN isNameManuallyEdited INTEGER NOT NULL DEFAULT 0")
+                }
+            }
+        }
+
         // 迁移:采用 MessagePart 架构，将旧字段迁移到 partsJson
         private val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -364,7 +408,8 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
-                        MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12
+                        MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
+                        MIGRATION_13_14
                     )
                     .build()
                 INSTANCE = instance

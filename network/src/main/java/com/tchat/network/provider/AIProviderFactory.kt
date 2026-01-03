@@ -22,7 +22,8 @@ object AIProviderFactory {
         val type: ProviderType,
         val apiKey: String,
         val baseUrl: String = "",
-        val model: String = ""
+        val model: String = "",
+        val customParams: CustomParams? = null
     )
 
     /**
@@ -33,18 +34,21 @@ object AIProviderFactory {
             ProviderType.OPENAI -> createOpenAI(
                 apiKey = config.apiKey,
                 baseUrl = config.baseUrl.ifEmpty { "https://api.openai.com/v1" },
-                model = config.model.ifEmpty { "gpt-3.5-turbo" }
+                model = config.model.ifEmpty { "gpt-3.5-turbo" },
+                customParams = config.customParams
             )
             ProviderType.ANTHROPIC -> createAnthropic(
                 apiKey = config.apiKey,
                 // AnthropicProvider 内部会自动处理 /v1 路径
                 baseUrl = config.baseUrl.ifEmpty { "https://api.anthropic.com" },
-                model = config.model.ifEmpty { "claude-sonnet-4-20250514" }
+                model = config.model.ifEmpty { "claude-sonnet-4-20250514" },
+                customParams = config.customParams
             )
             ProviderType.GEMINI -> createGemini(
                 apiKey = config.apiKey,
                 baseUrl = config.baseUrl.ifEmpty { "https://generativelanguage.googleapis.com/v1beta" },
-                model = config.model.ifEmpty { "gemini-pro" }
+                model = config.model.ifEmpty { "gemini-pro" },
+                customParams = config.customParams
             )
         }
     }
@@ -55,9 +59,10 @@ object AIProviderFactory {
     fun createOpenAI(
         apiKey: String,
         baseUrl: String = "https://api.openai.com/v1",
-        model: String = "gpt-3.5-turbo"
+        model: String = "gpt-3.5-turbo",
+        customParams: CustomParams? = null
     ): AIProvider {
-        return OpenAIProvider(apiKey, baseUrl, model)
+        return OpenAIProvider(apiKey, baseUrl, model, customParams)
     }
 
     /**
@@ -72,9 +77,10 @@ object AIProviderFactory {
         apiKey: String,
         baseUrl: String = "https://api.anthropic.com",
         model: String = "claude-sonnet-4-20250514",
-        maxTokens: Int = 8192
+        maxTokens: Int = 8192,
+        customParams: CustomParams? = null
     ): AIProvider {
-        return AnthropicProvider(apiKey, baseUrl, model, maxTokens)
+        return AnthropicProvider(apiKey, baseUrl, model, maxTokens, customParams = customParams)
     }
 
     /**
@@ -83,9 +89,10 @@ object AIProviderFactory {
     fun createGemini(
         apiKey: String,
         baseUrl: String = "https://generativelanguage.googleapis.com/v1beta",
-        model: String = "gemini-pro"
+        model: String = "gemini-pro",
+        customParams: CustomParams? = null
     ): AIProvider {
-        return GeminiProvider(apiKey, baseUrl, model)
+        return GeminiProvider(apiKey, baseUrl, model, customParams)
     }
 
     /**
@@ -96,7 +103,8 @@ object AIProviderFactory {
         providerType: String,
         apiKey: String,
         baseUrl: String? = null,
-        model: String
+        model: String,
+        customParams: CustomParams? = null
     ): AIProvider {
         val type = when (providerType.lowercase()) {
             "openai" -> ProviderType.OPENAI
@@ -108,7 +116,8 @@ object AIProviderFactory {
             type = type,
             apiKey = apiKey,
             baseUrl = baseUrl ?: "",
-            model = model
+            model = model,
+            customParams = customParams
         ))
     }
 }

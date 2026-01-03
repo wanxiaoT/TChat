@@ -9,6 +9,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tchat.wanxiaot.settings.AIProviderType
+import com.tchat.wanxiaot.settings.ModelCustomParams
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.components.QRCodeDialog
@@ -60,6 +62,8 @@ fun ProviderEditScreen(
     var fetchError by remember { mutableStateOf<String?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showQRDialog by remember { mutableStateOf(false) }
+    var showModelParamsDialog by remember { mutableStateOf<String?>(null) }
+    var modelCustomParams by remember { mutableStateOf(provider?.modelCustomParams ?: emptyMap()) }
 
     val scope = rememberCoroutineScope()
     val httpClient = remember { OkHttpClient() }
@@ -106,6 +110,24 @@ fun ProviderEditScreen(
         QRCodeDialog(
             provider = provider,
             onDismiss = { showQRDialog = false }
+        )
+    }
+
+    // 模型参数配置对话框
+    showModelParamsDialog?.let { modelName ->
+        val currentParams = modelCustomParams[modelName] ?: ModelCustomParams(modelName = modelName)
+        ModelParamsDialog(
+            modelName = modelName,
+            params = currentParams,
+            onDismiss = { showModelParamsDialog = null },
+            onSave = { newParams ->
+                modelCustomParams = if (newParams.hasAnyValue()) {
+                    modelCustomParams + (modelName to newParams)
+                } else {
+                    modelCustomParams - modelName
+                }
+                showModelParamsDialog = null
+            }
         )
     }
 
@@ -249,7 +271,8 @@ fun ProviderEditScreen(
                         apiKey = apiKey.trim(),
                         endpoint = endpoint.trim(),
                         selectedModel = selectedModel,
-                        availableModels = savedModels
+                        availableModels = savedModels,
+                        modelCustomParams = modelCustomParams
                     )
                     onSave(newProvider)
                     if (isNew) {
@@ -507,6 +530,35 @@ fun ProviderEditScreen(
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
+                                            // 显示已配置标记
+                                            if (modelCustomParams.containsKey(model)) {
+                                                Surface(
+                                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                                    shape = MaterialTheme.shapes.extraSmall
+                                                ) {
+                                                    Text(
+                                                        text = "已配置",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        // 配置按钮
+                                        IconButton(
+                                            onClick = { showModelParamsDialog = model },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Outlined.Settings,
+                                                contentDescription = "配置参数",
+                                                modifier = Modifier.size(18.dp),
+                                                tint = if (modelCustomParams.containsKey(model))
+                                                    MaterialTheme.colorScheme.primary
+                                                else
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                         }
                                         IconButton(
                                             onClick = {
@@ -641,4 +693,277 @@ private suspend fun fetchModelsFromApi(
     }
 
     models
+}
+
+/**
+ * 模型参数配置对话框
+ */
+@Composable
+private fun ModelParamsDialog(
+    modelName: String,
+    params: ModelCustomParams,
+    onDismiss: () -> Unit,
+    onSave: (ModelCustomParams) -> Unit
+) {
+    var temperatureEnabled by remember { mutableStateOf(params.temperature != null) }
+    var temperature by remember { mutableFloatStateOf(params.temperature ?: 0.7f) }
+
+    var topPEnabled by remember { mutableStateOf(params.topP != null) }
+    var topP by remember { mutableFloatStateOf(params.topP ?: 0.9f) }
+
+    var topKEnabled by remember { mutableStateOf(params.topK != null) }
+    var topK by remember { mutableStateOf((params.topK ?: 50).toString()) }
+
+    var presencePenaltyEnabled by remember { mutableStateOf(params.presencePenalty != null) }
+    var presencePenalty by remember { mutableFloatStateOf(params.presencePenalty ?: 0f) }
+
+    var frequencyPenaltyEnabled by remember { mutableStateOf(params.frequencyPenalty != null) }
+    var frequencyPenalty by remember { mutableFloatStateOf(params.frequencyPenalty ?: 0f) }
+
+    var repetitionPenaltyEnabled by remember { mutableStateOf(params.repetitionPenalty != null) }
+    var repetitionPenalty by remember { mutableFloatStateOf(params.repetitionPenalty ?: 1f) }
+
+    var maxTokensEnabled by remember { mutableStateOf(params.maxTokens != null) }
+    var maxTokens by remember { mutableStateOf((params.maxTokens ?: 4096).toString()) }
+
+    var extraParams by remember { mutableStateOf(params.extraParams) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("模型参数配置")
+                Text(
+                    text = modelName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 450.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Temperature
+                ParamSliderItem(
+                    label = "Temperature",
+                    enabled = temperatureEnabled,
+                    onEnabledChange = { temperatureEnabled = it },
+                    value = temperature,
+                    onValueChange = { temperature = it },
+                    valueRange = 0f..2f,
+                    valueDisplay = "%.2f".format(temperature)
+                )
+
+                // Top-P
+                ParamSliderItem(
+                    label = "Top-P",
+                    enabled = topPEnabled,
+                    onEnabledChange = { topPEnabled = it },
+                    value = topP,
+                    onValueChange = { topP = it },
+                    valueRange = 0f..1f,
+                    valueDisplay = "%.2f".format(topP)
+                )
+
+                // Top-K
+                ParamInputItem(
+                    label = "Top-K",
+                    enabled = topKEnabled,
+                    onEnabledChange = { topKEnabled = it },
+                    value = topK,
+                    onValueChange = { topK = it },
+                    placeholder = "50"
+                )
+
+                // Presence Penalty
+                ParamSliderItem(
+                    label = "Presence Penalty",
+                    enabled = presencePenaltyEnabled,
+                    onEnabledChange = { presencePenaltyEnabled = it },
+                    value = presencePenalty,
+                    onValueChange = { presencePenalty = it },
+                    valueRange = -2f..2f,
+                    valueDisplay = "%.2f".format(presencePenalty)
+                )
+
+                // Frequency Penalty
+                ParamSliderItem(
+                    label = "Frequency Penalty",
+                    enabled = frequencyPenaltyEnabled,
+                    onEnabledChange = { frequencyPenaltyEnabled = it },
+                    value = frequencyPenalty,
+                    onValueChange = { frequencyPenalty = it },
+                    valueRange = -2f..2f,
+                    valueDisplay = "%.2f".format(frequencyPenalty)
+                )
+
+                // Repetition Penalty
+                ParamSliderItem(
+                    label = "Repetition Penalty",
+                    enabled = repetitionPenaltyEnabled,
+                    onEnabledChange = { repetitionPenaltyEnabled = it },
+                    value = repetitionPenalty,
+                    onValueChange = { repetitionPenalty = it },
+                    valueRange = 0f..2f,
+                    valueDisplay = "%.2f".format(repetitionPenalty)
+                )
+
+                // Max Tokens
+                ParamInputItem(
+                    label = "Max Tokens",
+                    enabled = maxTokensEnabled,
+                    onEnabledChange = { maxTokensEnabled = it },
+                    value = maxTokens,
+                    onValueChange = { maxTokens = it },
+                    placeholder = "4096"
+                )
+
+                HorizontalDivider()
+
+                // Extra JSON Params
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "自定义 JSON 参数",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    OutlinedTextField(
+                        value = extraParams,
+                        onValueChange = { extraParams = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("{\"stop\": [\"<|end|>\"]}") },
+                        supportingText = { Text("直接合并到请求体，覆盖同名参数") },
+                        minLines = 2,
+                        maxLines = 4
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val newParams = ModelCustomParams(
+                        modelName = modelName,
+                        temperature = if (temperatureEnabled) temperature else null,
+                        topP = if (topPEnabled) topP else null,
+                        topK = if (topKEnabled) topK.toIntOrNull() else null,
+                        presencePenalty = if (presencePenaltyEnabled) presencePenalty else null,
+                        frequencyPenalty = if (frequencyPenaltyEnabled) frequencyPenalty else null,
+                        repetitionPenalty = if (repetitionPenaltyEnabled) repetitionPenalty else null,
+                        maxTokens = if (maxTokensEnabled) maxTokens.toIntOrNull() else null,
+                        extraParams = extraParams.ifBlank { "{}" }
+                    )
+                    onSave(newParams)
+                }
+            ) {
+                Text("保存")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+/**
+ * 滑块参数项
+ */
+@Composable
+private fun ParamSliderItem(
+    label: String,
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    valueDisplay: String
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Checkbox(
+                    checked = enabled,
+                    onCheckedChange = onEnabledChange,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                text = valueDisplay,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (enabled) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+/**
+ * 输入框参数项
+ */
+@Composable
+private fun ParamInputItem(
+    label: String,
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Checkbox(
+                checked = enabled,
+                onCheckedChange = onEnabledChange,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            placeholder = { Text(placeholder) },
+            modifier = Modifier.width(100.dp),
+            singleLine = true
+        )
+    }
 }

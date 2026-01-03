@@ -9,6 +9,48 @@ import com.tchat.data.deepresearch.service.WebSearchProvider
 import java.util.UUID
 
 /**
+ * 模型自定义参数配置
+ * 用于配置 AI 请求体中的额外参数
+ */
+data class ModelCustomParams(
+    val modelName: String = "",
+    val temperature: Float? = null,
+    val topP: Float? = null,
+    val topK: Int? = null,
+    val presencePenalty: Float? = null,
+    val frequencyPenalty: Float? = null,
+    val repetitionPenalty: Float? = null,
+    val maxTokens: Int? = null,
+    val extraParams: String = "{}"  // 自定义 JSON 参数，直接合并到请求体
+) {
+    /** 检查是否有任何参数被设置 */
+    fun hasAnyValue(): Boolean {
+        return temperature != null ||
+                topP != null ||
+                topK != null ||
+                presencePenalty != null ||
+                frequencyPenalty != null ||
+                repetitionPenalty != null ||
+                maxTokens != null ||
+                (extraParams.isNotBlank() && extraParams != "{}")
+    }
+}
+
+/**
+ * 正则表达式规则
+ * 用于清理 AI 输出内容
+ */
+data class RegexRule(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String = "",
+    val pattern: String = "",
+    val replacement: String = "",
+    val isEnabled: Boolean = true,
+    val description: String = "",
+    val order: Int = 0
+)
+
+/**
  * 服务商配置条目
  */
 data class ProviderConfig(
@@ -18,7 +60,8 @@ data class ProviderConfig(
     val apiKey: String = "",
     val endpoint: String = "",
     val selectedModel: String = "",
-    val availableModels: List<String> = emptyList()
+    val availableModels: List<String> = emptyList(),
+    val modelCustomParams: Map<String, ModelCustomParams> = emptyMap()  // 模型名 -> 自定义参数
 )
 
 /**
@@ -56,7 +99,8 @@ data class AppSettings(
     val currentAssistantId: String = "",  // 当前使用的助手 ID
     val providers: List<ProviderConfig> = emptyList(),
     val deepResearchSettings: DeepResearchSettings = DeepResearchSettings(),
-    val providerGridColumnCount: Int = 1  // 服务商列表网格列数（1-3）
+    val providerGridColumnCount: Int = 1,  // 服务商列表网格列数（1-3）
+    val regexRules: List<RegexRule> = emptyList()  // 全局正则表达式规则
 ) {
     // 兼容旧代码
     val defaultProviderId: String get() = currentProviderId

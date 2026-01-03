@@ -8,6 +8,7 @@ import com.tchat.data.model.Message
 import com.tchat.data.repository.ChatConfig
 import com.tchat.data.repository.ChatRepository
 import com.tchat.data.tool.Tool
+import com.tchat.data.util.RegexRuleData
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -105,11 +106,17 @@ class ChatViewModel(
     /**
      * 设置可用的工具
      */
-    fun setTools(tools: List<Tool>, systemPrompt: String? = null, modelName: String? = null) {
+    fun setTools(
+        tools: List<Tool>,
+        systemPrompt: String? = null,
+        modelName: String? = null,
+        regexRules: List<RegexRuleData> = emptyList()
+    ) {
         val config = ChatConfig(
             systemPrompt = systemPrompt,
             tools = tools,
-            modelName = modelName
+            modelName = modelName,
+            regexRules = regexRules
         )
         setChatConfig(config)
     }

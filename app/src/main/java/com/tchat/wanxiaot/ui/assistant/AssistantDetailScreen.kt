@@ -77,6 +77,7 @@ import com.tchat.data.model.LocalToolOption
 import com.tchat.data.model.LocalToolOption.Companion.description
 import com.tchat.data.model.LocalToolOption.Companion.displayName
 import com.tchat.data.model.McpServer
+import com.tchat.wanxiaot.settings.RegexRule
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -97,7 +98,7 @@ fun AssistantDetailScreen(
     val knowledgeBases by viewModel.knowledgeBases.collectAsState()
     val mcpServers by viewModel.mcpServers.collectAsState()
 
-    val tabs = listOf("基本设置", "提示词", "本地工具", "MCP工具", "知识库")
+    val tabs = listOf("基本设置", "提示词", "本地工具", "MCP工具", "知识库", "正则规则")
     val pagerState = rememberPagerState { tabs.size }
 
     Scaffold(
@@ -194,6 +195,11 @@ fun AssistantDetailScreen(
                         4 -> KnowledgeBaseTab(
                             assistant = assistant!!,
                             knowledgeBases = knowledgeBases,
+                            onUpdate = { viewModel.updateAssistant(it) }
+                        )
+                        5 -> RegexRulesTab(
+                            assistant = assistant!!,
+                            regexRules = viewModel.regexRules.collectAsState().value,
                             onUpdate = { viewModel.updateAssistant(it) }
                         )
                     }
@@ -1058,6 +1064,130 @@ private fun KnowledgeBaseOption(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+    }
+}
+
+/**
+ * 正则规则配置标签页
+ */
+@Composable
+private fun RegexRulesTab(
+    assistant: Assistant,
+    regexRules: List<RegexRule>,
+    onUpdate: (Assistant) -> Unit
+) {
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "选择要启用的正则规则，用于在流式输出时实时清理 AI 回复内容",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        if (regexRules.isEmpty()) {
+            // 空状态
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "暂无正则规则",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "请先在设置中添加正则规则",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        } else {
+            regexRules.forEach { rule ->
+                val isEnabled = assistant.enabledRegexRuleIds.contains(rule.id)
+
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = rule.name.ifEmpty { "未命名规则" },
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "模式: ${rule.pattern}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (rule.description.isNotBlank()) {
+                                Text(
+                                    text = rule.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = isEnabled,
+                            onCheckedChange = { enabled ->
+                                val newIds = if (enabled) {
+                                    assistant.enabledRegexRuleIds + rule.id
+                                } else {
+                                    assistant.enabledRegexRuleIds - rule.id
+                                }
+                                onUpdate(assistant.copy(enabledRegexRuleIds = newIds))
+                                Toast.makeText(
+                                    context,
+                                    if (enabled) "已启用「${rule.name}」" else "已禁用「${rule.name}」",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        if (assistant.enabledRegexRuleIds.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "已启用 ${assistant.enabledRegexRuleIds.size} 个正则规则",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }

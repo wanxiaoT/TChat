@@ -20,6 +20,8 @@ data class Assistant(
     val knowledgeBaseId: String? = null,
     /** 关联的MCP服务器ID列表 */
     val mcpServerIds: List<String> = emptyList(),
+    /** 启用的正则规则ID列表 */
+    val enabledRegexRuleIds: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {

@@ -19,7 +19,8 @@ import java.util.concurrent.TimeUnit
 class GeminiProvider(
     private val apiKey: String,
     private val baseUrl: String = "https://generativelanguage.googleapis.com/v1beta",
-    private val model: String = "gemini-pro"
+    private val model: String = "gemini-pro",
+    private val customParams: CustomParams? = null
 ) : AIProvider {
 
     private val client = OkHttpClient.Builder()
@@ -495,7 +496,34 @@ class GeminiProvider(
 
         // 添加生成配置
         val generationConfig = JSONObject()
-        generationConfig.put("maxOutputTokens", 8192)
+
+        // 使用自定义参数中的 maxTokens，如果没有则使用默认值
+        val effectiveMaxTokens = customParams?.maxTokens ?: 8192
+        generationConfig.put("maxOutputTokens", effectiveMaxTokens)
+
+        // 添加自定义参数 (Gemini 使用 temperature, topP, topK)
+        customParams?.let { params ->
+            params.temperature?.let { generationConfig.put("temperature", it.toDouble()) }
+            params.topP?.let { generationConfig.put("topP", it.toDouble()) }
+            params.topK?.let { generationConfig.put("topK", it) }
+            // Gemini 不支持 presence_penalty 和 frequency_penalty
+            // 但可以通过 extraParams 传递其他参数
+
+            // 合并额外的 JSON 参数到 generationConfig
+            if (params.extraParams.isNotEmpty() && params.extraParams != "{}") {
+                try {
+                    val extraJson = JSONObject(params.extraParams)
+                    val keys = extraJson.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        generationConfig.put(key, extraJson.get(key))
+                    }
+                } catch (e: Exception) {
+                    // 忽略无效的 JSON
+                }
+            }
+        }
+
         jsonObject.put("generationConfig", generationConfig)
 
         return jsonObject.toString()
