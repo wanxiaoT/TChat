@@ -55,7 +55,8 @@ data class AppSettings(
     val currentModel: String = "",  // 当前使用的模型（可在聊天页面切换）
     val currentAssistantId: String = "",  // 当前使用的助手 ID
     val providers: List<ProviderConfig> = emptyList(),
-    val deepResearchSettings: DeepResearchSettings = DeepResearchSettings()
+    val deepResearchSettings: DeepResearchSettings = DeepResearchSettings(),
+    val providerGridColumnCount: Int = 1  // 服务商列表网格列数（1-3）
 ) {
     // 兼容旧代码
     val defaultProviderId: String get() = currentProviderId

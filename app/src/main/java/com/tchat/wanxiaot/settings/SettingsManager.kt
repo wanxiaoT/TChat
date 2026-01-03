@@ -22,6 +22,7 @@ class SettingsManager(context: Context) {
             val currentAssistantId = prefs.getString("current_assistant_id", "") ?: ""
             val providersJson = prefs.getString("providers", "[]") ?: "[]"
             val deepResearchJson = prefs.getString("deep_research_settings", "{}") ?: "{}"
+            val providerGridColumnCount = prefs.getInt("provider_grid_column_count", 1)
 
             val providers = parseProviders(providersJson)
             val deepResearchSettings = parseDeepResearchSettings(deepResearchJson)
@@ -31,7 +32,8 @@ class SettingsManager(context: Context) {
                 currentModel = currentModel,
                 currentAssistantId = currentAssistantId,
                 providers = providers,
-                deepResearchSettings = deepResearchSettings
+                deepResearchSettings = deepResearchSettings,
+                providerGridColumnCount = providerGridColumnCount
             )
         } catch (e: Exception) {
             e.printStackTrace()
@@ -234,5 +236,15 @@ class SettingsManager(context: Context) {
     fun updateDeepResearchSettings(settings: DeepResearchSettings) {
         val currentSettings = _settings.value
         updateSettings(currentSettings.copy(deepResearchSettings = settings))
+    }
+
+    /**
+     * 更新服务商列表网格列数
+     */
+    fun updateProviderGridColumnCount(columnCount: Int) {
+        val currentSettings = _settings.value
+        val validColumnCount = columnCount.coerceIn(1, 3)
+        prefs.edit().putInt("provider_grid_column_count", validColumnCount).apply()
+        updateSettings(currentSettings.copy(providerGridColumnCount = validColumnCount))
     }
 }

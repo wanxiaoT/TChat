@@ -26,7 +26,8 @@
       "WebFetch(domain:github.com)",
       "Bash(./gradlew :app:compileDebugKotlin:*)",
       "Bash(dir:*)",
-      "Bash(cmd /c:*)"
+      "Bash(cmd /c:*)",
+      "Bash(.gradlew.bat compileDebugKotlin)"
     ]
   }
 }
