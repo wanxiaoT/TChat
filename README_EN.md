@@ -28,6 +28,42 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
 
 [Voluntary Donation](https://tchat.wanxiaot.com/donate.html)
 
+# v1.6
+
+### New Features
+
+- **In-App Update Support**
+  - Check for updates, download and install within the app
+  - Menu bar works properly in landscape tablet mode
+
+- **Regular Expression Feature**
+  - Added regular expression support based on community suggestions
+
+- **Provider Page Column Layout Selection**
+  - Support switching between one, two, and three column display modes
+
+- **Network Request Viewer**
+  - Added network request debugging/viewing entry
+
+- **Local Tool - Sleep Tool**
+  - AI can call sleep tool to pause for a period and then send notification
+
+---
+
+### Bug Fixes
+
+- **Fixed thinking tag parsing issue**
+  - Resolved the issue where `<thinking>` tags returned by some models (e.g., Kimi-K2-Thinking) could not be parsed correctly
+
+- **Fixed tool calling issues**
+  - Resolved several issues during tool calling process
+
+- **Optimized local file system tool description**
+  - Fixed the issue where LLM didn't know the system is Android, causing incorrect file storage paths
+  - Improved local tool - file system description for LLM
+
+---
+
 # v1.5
 
 ### New Features
