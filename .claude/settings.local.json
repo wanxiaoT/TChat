@@ -27,7 +27,8 @@
       "Bash(./gradlew :app:compileDebugKotlin:*)",
       "Bash(dir:*)",
       "Bash(cmd /c:*)",
-      "Bash(.gradlew.bat compileDebugKotlin)"
+      "Bash(.gradlew.bat compileDebugKotlin)",
+      "Skill(frontend-design)"
     ]
   }
 }

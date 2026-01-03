@@ -5,6 +5,13 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- 网络权限 - 用于检查更新和下载APK -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- 安装APK权限 - Android 8.0+ -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- 存储权限 - 用于本地文件读写工具 -->
     <!-- Android 10 及以下 -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" 
