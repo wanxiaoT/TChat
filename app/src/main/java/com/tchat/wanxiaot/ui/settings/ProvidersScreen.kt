@@ -284,12 +284,77 @@ private fun ProvidersListContent(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     item {
-                        Text(
-                            text = "已配置 ${settings.providers.size} 个服务商",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "已配置 ${settings.providers.size} 个服务商",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            
+                            // 平板模式下显示操作按钮
+                            if (!showTopBar) {
+                                Row {
+                                    // 列数选择按钮
+                                    Box {
+                                        IconButton(onClick = { showColumnMenu = true }) {
+                                            Icon(Icons.Default.MoreVert, contentDescription = "布局选项")
+                                        }
+
+                                        DropdownMenu(
+                                            expanded = showColumnMenu,
+                                            onDismissRequest = { showColumnMenu = false }
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text("单列显示") },
+                                                onClick = {
+                                                    settingsManager.updateProviderGridColumnCount(1)
+                                                    showColumnMenu = false
+                                                },
+                                                leadingIcon = {
+                                                    if (settings.providerGridColumnCount == 1) {
+                                                        Icon(Icons.Default.Check, contentDescription = null)
+                                                    }
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("双列显示") },
+                                                onClick = {
+                                                    settingsManager.updateProviderGridColumnCount(2)
+                                                    showColumnMenu = false
+                                                },
+                                                leadingIcon = {
+                                                    if (settings.providerGridColumnCount == 2) {
+                                                        Icon(Icons.Default.Check, contentDescription = null)
+                                                    }
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("三列显示") },
+                                                onClick = {
+                                                    settingsManager.updateProviderGridColumnCount(3)
+                                                    showColumnMenu = false
+                                                },
+                                                leadingIcon = {
+                                                    if (settings.providerGridColumnCount == 3) {
+                                                        Icon(Icons.Default.Check, contentDescription = null)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+
+                                    IconButton(onClick = onScan) {
+                                        Icon(Icons.Outlined.QrCodeScanner, contentDescription = "扫码导入")
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     items(settings.providers, key = { it.id }) { provider ->
@@ -318,12 +383,77 @@ private fun ProvidersListContent(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(settings.providerGridColumnCount) }) {
-                        Text(
-                            text = "已配置 ${settings.providers.size} 个服务商",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "已配置 ${settings.providers.size} 个服务商",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            
+                            // 平板模式下显示操作按钮
+                            if (!showTopBar) {
+                                Row {
+                                    // 列数选择按钮
+                                    Box {
+                                        IconButton(onClick = { showColumnMenu = true }) {
+                                            Icon(Icons.Default.MoreVert, contentDescription = "布局选项")
+                                        }
+
+                                        DropdownMenu(
+                                            expanded = showColumnMenu,
+                                            onDismissRequest = { showColumnMenu = false }
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text("单列显示") },
+                                                onClick = {
+                                                    settingsManager.updateProviderGridColumnCount(1)
+                                                    showColumnMenu = false
+                                                },
+                                                leadingIcon = {
+                                                    if (settings.providerGridColumnCount == 1) {
+                                                        Icon(Icons.Default.Check, contentDescription = null)
+                                                    }
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("双列显示") },
+                                                onClick = {
+                                                    settingsManager.updateProviderGridColumnCount(2)
+                                                    showColumnMenu = false
+                                                },
+                                                leadingIcon = {
+                                                    if (settings.providerGridColumnCount == 2) {
+                                                        Icon(Icons.Default.Check, contentDescription = null)
+                                                    }
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("三列显示") },
+                                                onClick = {
+                                                    settingsManager.updateProviderGridColumnCount(3)
+                                                    showColumnMenu = false
+                                                },
+                                                leadingIcon = {
+                                                    if (settings.providerGridColumnCount == 3) {
+                                                        Icon(Icons.Default.Check, contentDescription = null)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+
+                                    IconButton(onClick = onScan) {
+                                        Icon(Icons.Outlined.QrCodeScanner, contentDescription = "扫码导入")
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     items(settings.providers, key = { it.id }) { provider ->

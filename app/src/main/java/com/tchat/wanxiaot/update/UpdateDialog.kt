@@ -1,12 +1,14 @@
 package com.tchat.wanxiaot.update
 
-import android.app.Activity
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,6 +19,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.tchat.feature.chat.markdown.MarkdownText
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -36,6 +39,7 @@ fun UpdateDialog(
     var downloadedBytes by remember { mutableLongStateOf(0L) }
     var totalBytes by remember { mutableLongStateOf(0L) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isFullscreen by remember { mutableStateOf(false) }
 
     val canDismiss = !updateInfo.forceUpdate && !isDownloading
 
@@ -119,14 +123,36 @@ fun UpdateDialog(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 ) {
-                    Text(
-                        text = updateInfo.releaseNotes,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .padding(12.dp)
-                            .verticalScroll(rememberScrollState())
-                    )
+                    Box(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .padding(12.dp)
+                                .padding(end = 32.dp) // 为全屏按钮留出空间
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            MarkdownText(
+                                markdown = updateInfo.releaseNotes,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        
+                        // 全屏按钮
+                        IconButton(
+                            onClick = { isFullscreen = true },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Fullscreen,
+                                contentDescription = "全屏查看",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -147,7 +173,7 @@ fun UpdateDialog(
                     FilterChip(
                         selected = downloadSource == DownloadSource.CHINA,
                         onClick = { if (!isDownloading) downloadSource = DownloadSource.CHINA },
-                        label = { Text("大陆优化") },
+                        label = { Text("大陆优化（服务器）") },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.CloudDownload,
@@ -162,7 +188,7 @@ fun UpdateDialog(
                     FilterChip(
                         selected = downloadSource == DownloadSource.GLOBAL,
                         onClick = { if (!isDownloading) downloadSource = DownloadSource.GLOBAL },
-                        label = { Text("全球链接") },
+                        label = { Text("全球连接（Github）") },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Public,
@@ -235,6 +261,23 @@ fun UpdateDialog(
                         }
                     }
 
+                    // 下载中显示取消按钮
+                    if (isDownloading) {
+                        OutlinedButton(
+                            onClick = {
+                                updateManager.cancelDownload()
+                                isDownloading = false
+                                downloadProgress = 0f
+                                downloadedBytes = 0L
+                                totalBytes = 0L
+                                errorMessage = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("取消下载")
+                        }
+                    }
+
                     Button(
                         onClick = {
                             isDownloading = true
@@ -244,6 +287,14 @@ fun UpdateDialog(
                                 DownloadSource.CHINA -> updateInfo.downloadUrls.china
                                 DownloadSource.GLOBAL -> updateInfo.downloadUrls.global
                             }
+
+                            // 输出用户选择的渠道和下载链接
+                            val sourceName = when (downloadSource) {
+                                DownloadSource.CHINA -> "大陆优化"
+                                DownloadSource.GLOBAL -> "全球链接"
+                            }
+                            Log.i("UpdateDialog", "用户选择下载渠道: $sourceName")
+                            Log.i("UpdateDialog", "下载链接: $downloadUrl")
 
                             scope.launch {
                                 val result = updateManager.downloadApk(downloadUrl) { downloaded, total ->
@@ -256,8 +307,11 @@ fun UpdateDialog(
                                     // 安装APK
                                     onInstall(apkFile)
                                 }.onFailure { e ->
-                                    errorMessage = "下载失败: ${e.message}"
                                     isDownloading = false
+                                    // 取消下载不显示错误信息
+                                    if (e !is DownloadCancelledException) {
+                                        errorMessage = "下载失败: ${e.message}"
+                                    }
                                 }
                             }
                         },
@@ -273,6 +327,66 @@ fun UpdateDialog(
                             Spacer(modifier = Modifier.width(8.dp))
                         }
                         Text(if (isDownloading) "下载中..." else "立即更新")
+                    }
+                }
+            }
+        }
+    }
+    
+    // 全屏对话框
+    if (isFullscreen) {
+        Dialog(
+            onDismissRequest = { isFullscreen = false },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false
+            )
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
+                ) {
+                    // 标题栏
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "更新内容 - 版本 ${updateInfo.versionName}",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        
+                        IconButton(onClick = { isFullscreen = false }) {
+                            Icon(
+                                imageVector = Icons.Default.FullscreenExit,
+                                contentDescription = "退出全屏",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Markdown 内容
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        MarkdownText(
+                            markdown = updateInfo.releaseNotes,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }

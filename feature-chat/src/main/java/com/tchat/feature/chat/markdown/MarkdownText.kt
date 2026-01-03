@@ -15,6 +15,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import io.noties.markwon.Markwon
 import io.noties.markwon.core.MarkwonTheme
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
+import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.html.HtmlPlugin
 
 /**
@@ -53,6 +54,7 @@ fun MarkdownText(
     val markwon = remember(isDarkTheme, textColor, linkColor) {
         Markwon.builder(context)
             .usePlugin(StrikethroughPlugin.create())
+            .usePlugin(TablePlugin.create(context))
             .usePlugin(HtmlPlugin.create())
             .usePlugin(object : io.noties.markwon.AbstractMarkwonPlugin() {
                 override fun configureTheme(builder: MarkwonTheme.Builder) {

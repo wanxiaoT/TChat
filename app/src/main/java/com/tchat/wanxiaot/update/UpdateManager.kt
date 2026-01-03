@@ -3,19 +3,26 @@ package com.tchat.wanxiaot.update
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.coroutineContext
 
 class UpdateManager(private val context: Context) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
+
+    private var currentDownloadCall: Call? = null
+    private val isCancelled = AtomicBoolean(false)
 
     companion object {
         private const val TAG = "UpdateManager"
@@ -90,13 +97,18 @@ class UpdateManager(private val context: Context) {
         url: String,
         onProgress: (downloaded: Long, total: Long) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
+        isCancelled.set(false)
+        var apkFile: File? = null
+
         try {
             val request = Request.Builder()
                 .url(url)
                 .get()
                 .build()
 
-            val response = client.newCall(request).execute()
+            val call = client.newCall(request)
+            currentDownloadCall = call
+            val response = call.execute()
 
             if (!response.isSuccessful) {
                 return@withContext Result.failure(Exception("Download failed: HTTP ${response.code}"))
@@ -110,7 +122,7 @@ class UpdateManager(private val context: Context) {
                 downloadDir.mkdirs()
             }
 
-            val apkFile = File(downloadDir, APK_FILE_NAME)
+            apkFile = File(downloadDir, APK_FILE_NAME)
             if (apkFile.exists()) {
                 apkFile.delete()
             }
@@ -123,6 +135,12 @@ class UpdateManager(private val context: Context) {
                     var bytes: Int
 
                     while (inputStream.read(buffer).also { bytes = it } != -1) {
+                        // 检查是否已取消
+                        if (isCancelled.get()) {
+                            throw DownloadCancelledException("下载已取消")
+                        }
+                        coroutineContext.ensureActive()
+
                         outputStream.write(buffer, 0, bytes)
                         downloadedBytes += bytes
                         onProgress(downloadedBytes, totalBytes)
@@ -130,11 +148,29 @@ class UpdateManager(private val context: Context) {
                 }
             }
 
+            currentDownloadCall = null
             Result.success(apkFile)
+        } catch (e: DownloadCancelledException) {
+            Log.i(TAG, "Download cancelled by user")
+            apkFile?.delete()
+            Result.failure(e)
         } catch (e: Exception) {
             Log.e(TAG, "Download APK failed", e)
+            apkFile?.delete()
             Result.failure(e)
+        } finally {
+            currentDownloadCall = null
         }
+    }
+
+    /**
+     * 取消当前下载
+     */
+    fun cancelDownload() {
+        isCancelled.set(true)
+        currentDownloadCall?.cancel()
+        currentDownloadCall = null
+        Log.i(TAG, "Download cancel requested")
     }
 
     /**
@@ -149,3 +185,8 @@ class UpdateManager(private val context: Context) {
         }
     }
 }
+
+/**
+ * 下载取消异常
+ */
+class DownloadCancelledException(message: String) : Exception(message)
