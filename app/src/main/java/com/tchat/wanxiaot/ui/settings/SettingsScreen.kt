@@ -36,6 +36,7 @@ import com.composables.icons.lucide.BookOpen
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.ScrollText
 import com.composables.icons.lucide.Settings2
+import com.composables.icons.lucide.Users
 import com.tchat.data.database.AppDatabase
 import com.tchat.data.repository.impl.AssistantRepositoryImpl
 import com.tchat.data.repository.impl.KnowledgeRepositoryImpl
@@ -54,6 +55,10 @@ import com.tchat.data.repository.impl.McpServerRepositoryImpl
 import com.tchat.wanxiaot.ui.deepresearch.DeepResearchScreen
 import com.tchat.wanxiaot.ui.deepresearch.DeepResearchViewModel
 import com.tchat.data.deepresearch.repository.DeepResearchHistoryRepository
+import com.tchat.data.repository.impl.GroupChatRepositoryImpl
+import com.tchat.wanxiaot.ui.groupchat.GroupChatListScreen
+import com.tchat.wanxiaot.ui.groupchat.CreateGroupChatScreen
+import kotlinx.coroutines.launch
 
 // 平板模式的最小宽度阈值
 private val TABLET_MIN_WIDTH = 840.dp
@@ -71,6 +76,9 @@ private sealed class SettingsSubPage {
     data object NETWORK_LOG : SettingsSubPage()
     data object ASSISTANTS : SettingsSubPage()
     data class ASSISTANT_DETAIL(val id: String) : SettingsSubPage()
+    data object GROUP_CHAT : SettingsSubPage()
+    data object CREATE_GROUP_CHAT : SettingsSubPage()
+    data class EDIT_GROUP_CHAT(val id: String) : SettingsSubPage()
     data object KNOWLEDGE : SettingsSubPage()
     data class KNOWLEDGE_DETAIL(val id: String) : SettingsSubPage()
     data object MCP : SettingsSubPage()
@@ -114,6 +122,15 @@ fun SettingsScreen(
         McpServerRepositoryImpl(database.mcpServerDao())
     }
 
+    // 创建群聊Repository
+    val groupChatRepository = remember(database) {
+        GroupChatRepositoryImpl(
+            database.groupChatDao(),
+            database.assistantDao(),
+            database.messageDao()
+        )
+    }
+
     // 使用 BoxWithConstraints 检测屏幕宽度
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isTabletMode = maxWidth >= TABLET_MIN_WIDTH
@@ -129,7 +146,8 @@ fun SettingsScreen(
                 assistantRepository = assistantRepository,
                 knowledgeRepository = knowledgeRepository,
                 knowledgeService = knowledgeService,
-                mcpRepository = mcpRepository
+                mcpRepository = mcpRepository,
+                groupChatRepository = groupChatRepository
             )
         } else {
             // 手机模式：单栏布局（保持原有逻辑）
@@ -142,7 +160,8 @@ fun SettingsScreen(
                 assistantRepository = assistantRepository,
                 knowledgeRepository = knowledgeRepository,
                 knowledgeService = knowledgeService,
-                mcpRepository = mcpRepository
+                mcpRepository = mcpRepository,
+                groupChatRepository = groupChatRepository
             )
         }
     }
@@ -162,7 +181,8 @@ private fun TabletSettingsLayout(
     assistantRepository: AssistantRepositoryImpl,
     knowledgeRepository: KnowledgeRepositoryImpl,
     knowledgeService: KnowledgeService,
-    mcpRepository: McpServerRepositoryImpl
+    mcpRepository: McpServerRepositoryImpl,
+    groupChatRepository: GroupChatRepositoryImpl
 ) {
     // 搜索状态
     var showSearchBar by remember { mutableStateOf(false) }
@@ -179,6 +199,8 @@ private fun TabletSettingsLayout(
             currentSubPage is SettingsSubPage.MAIN -> onBack()
             currentSubPage is SettingsSubPage.ASSISTANT_DETAIL -> onSubPageChange(SettingsSubPage.ASSISTANTS)
             currentSubPage is SettingsSubPage.KNOWLEDGE_DETAIL -> onSubPageChange(SettingsSubPage.KNOWLEDGE)
+            currentSubPage is SettingsSubPage.CREATE_GROUP_CHAT -> onSubPageChange(SettingsSubPage.GROUP_CHAT)
+            currentSubPage is SettingsSubPage.EDIT_GROUP_CHAT -> onSubPageChange(SettingsSubPage.GROUP_CHAT)
             else -> onSubPageChange(SettingsSubPage.MAIN)
         }
     }
@@ -260,6 +282,7 @@ private fun TabletSettingsLayout(
                 onLogcatClick = { onSubPageChange(SettingsSubPage.LOGCAT) },
                 onNetworkLogClick = { onSubPageChange(SettingsSubPage.NETWORK_LOG) },
                 onAssistantsClick = { onSubPageChange(SettingsSubPage.ASSISTANTS) },
+                onGroupChatClick = { onSubPageChange(SettingsSubPage.GROUP_CHAT) },
                 onKnowledgeClick = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
                 onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
                 onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) },
@@ -412,6 +435,51 @@ private fun TabletSettingsLayout(
                             showTopBar = false
                         )
                     }
+                    is SettingsSubPage.GROUP_CHAT -> {
+                        val groups by groupChatRepository.getAllGroups().collectAsState(initial = emptyList())
+                        GroupChatListScreen(
+                            groups = groups,
+                            onBackClick = { onSubPageChange(SettingsSubPage.MAIN) },
+                            onGroupClick = { /* TODO: 进入群聊对话 */ },
+                            onCreateGroup = { onSubPageChange(SettingsSubPage.CREATE_GROUP_CHAT) },
+                            onEditGroup = { group -> onSubPageChange(SettingsSubPage.EDIT_GROUP_CHAT(group.id)) },
+                            onDeleteGroup = { group ->
+                                kotlinx.coroutines.MainScope().launch {
+                                    groupChatRepository.deleteGroup(group.id)
+                                }
+                            }
+                        )
+                    }
+                    is SettingsSubPage.CREATE_GROUP_CHAT -> {
+                        val assistants by assistantRepository.getAllAssistants().collectAsState(initial = emptyList())
+                        CreateGroupChatScreen(
+                            availableAssistants = assistants,
+                            onBackClick = { onSubPageChange(SettingsSubPage.GROUP_CHAT) },
+                            onSave = { group, memberIds ->
+                                kotlinx.coroutines.MainScope().launch {
+                                    groupChatRepository.createGroup(group)
+                                    onSubPageChange(SettingsSubPage.GROUP_CHAT)
+                                }
+                            }
+                        )
+                    }
+                    is SettingsSubPage.EDIT_GROUP_CHAT -> {
+                        val assistants by assistantRepository.getAllAssistants().collectAsState(initial = emptyList())
+                        val editingGroup by groupChatRepository.getGroupByIdFlow(page.id).collectAsState(initial = null)
+                        editingGroup?.let { group ->
+                            CreateGroupChatScreen(
+                                availableAssistants = assistants,
+                                onBackClick = { onSubPageChange(SettingsSubPage.GROUP_CHAT) },
+                                onSave = { updatedGroup, memberIds ->
+                                    kotlinx.coroutines.MainScope().launch {
+                                        groupChatRepository.updateGroup(updatedGroup)
+                                        onSubPageChange(SettingsSubPage.GROUP_CHAT)
+                                    }
+                                },
+                                editingGroup = group
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -432,7 +500,8 @@ private fun PhoneSettingsLayout(
     assistantRepository: AssistantRepositoryImpl,
     knowledgeRepository: KnowledgeRepositoryImpl,
     knowledgeService: KnowledgeService,
-    mcpRepository: McpServerRepositoryImpl
+    mcpRepository: McpServerRepositoryImpl,
+    groupChatRepository: GroupChatRepositoryImpl
 ) {
     // 处理系统返回键
     BackHandler {
@@ -440,6 +509,8 @@ private fun PhoneSettingsLayout(
             is SettingsSubPage.MAIN -> onBack()
             is SettingsSubPage.ASSISTANT_DETAIL -> onSubPageChange(SettingsSubPage.ASSISTANTS)
             is SettingsSubPage.KNOWLEDGE_DETAIL -> onSubPageChange(SettingsSubPage.KNOWLEDGE)
+            is SettingsSubPage.CREATE_GROUP_CHAT -> onSubPageChange(SettingsSubPage.GROUP_CHAT)
+            is SettingsSubPage.EDIT_GROUP_CHAT -> onSubPageChange(SettingsSubPage.GROUP_CHAT)
             else -> onSubPageChange(SettingsSubPage.MAIN)
         }
     }
@@ -447,7 +518,8 @@ private fun PhoneSettingsLayout(
     // 定义页面层级用于判断导航方向
     fun SettingsSubPage.level(): Int = when (this) {
         is SettingsSubPage.MAIN -> 0
-        is SettingsSubPage.ASSISTANT_DETAIL, is SettingsSubPage.KNOWLEDGE_DETAIL -> 2
+        is SettingsSubPage.ASSISTANT_DETAIL, is SettingsSubPage.KNOWLEDGE_DETAIL,
+        is SettingsSubPage.CREATE_GROUP_CHAT, is SettingsSubPage.EDIT_GROUP_CHAT -> 2
         else -> 1
     }
 
@@ -487,6 +559,7 @@ private fun PhoneSettingsLayout(
                     onLogcatClick = { onSubPageChange(SettingsSubPage.LOGCAT) },
                     onNetworkLogClick = { onSubPageChange(SettingsSubPage.NETWORK_LOG) },
                     onAssistantsClick = { onSubPageChange(SettingsSubPage.ASSISTANTS) },
+                    onGroupChatClick = { onSubPageChange(SettingsSubPage.GROUP_CHAT) },
                     onKnowledgeClick = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
                     onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
                     onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) },
@@ -581,6 +654,51 @@ private fun PhoneSettingsLayout(
                     onBack = { onSubPageChange(SettingsSubPage.MAIN) }
                 )
             }
+            is SettingsSubPage.GROUP_CHAT -> {
+                val groups by groupChatRepository.getAllGroups().collectAsState(initial = emptyList())
+                GroupChatListScreen(
+                    groups = groups,
+                    onBackClick = { onSubPageChange(SettingsSubPage.MAIN) },
+                    onGroupClick = { /* TODO: 进入群聊对话 */ },
+                    onCreateGroup = { onSubPageChange(SettingsSubPage.CREATE_GROUP_CHAT) },
+                    onEditGroup = { group -> onSubPageChange(SettingsSubPage.EDIT_GROUP_CHAT(group.id)) },
+                    onDeleteGroup = { group ->
+                        kotlinx.coroutines.MainScope().launch {
+                            groupChatRepository.deleteGroup(group.id)
+                        }
+                    }
+                )
+            }
+            is SettingsSubPage.CREATE_GROUP_CHAT -> {
+                val assistants by assistantRepository.getAllAssistants().collectAsState(initial = emptyList())
+                CreateGroupChatScreen(
+                    availableAssistants = assistants,
+                    onBackClick = { onSubPageChange(SettingsSubPage.GROUP_CHAT) },
+                    onSave = { group, memberIds ->
+                        kotlinx.coroutines.MainScope().launch {
+                            groupChatRepository.createGroup(group)
+                            onSubPageChange(SettingsSubPage.GROUP_CHAT)
+                        }
+                    }
+                )
+            }
+            is SettingsSubPage.EDIT_GROUP_CHAT -> {
+                val assistants by assistantRepository.getAllAssistants().collectAsState(initial = emptyList())
+                val editingGroup by groupChatRepository.getGroupByIdFlow(page.id).collectAsState(initial = null)
+                editingGroup?.let { group ->
+                    CreateGroupChatScreen(
+                        availableAssistants = assistants,
+                        onBackClick = { onSubPageChange(SettingsSubPage.GROUP_CHAT) },
+                        onSave = { updatedGroup, memberIds ->
+                            kotlinx.coroutines.MainScope().launch {
+                                groupChatRepository.updateGroup(updatedGroup)
+                                onSubPageChange(SettingsSubPage.GROUP_CHAT)
+                            }
+                        },
+                        editingGroup = group
+                    )
+                }
+            }
         }
     }
 }
@@ -597,6 +715,7 @@ private fun SettingsMainContent(
     onLogcatClick: () -> Unit,
     onNetworkLogClick: () -> Unit,
     onAssistantsClick: () -> Unit,
+    onGroupChatClick: () -> Unit = {},
     onKnowledgeClick: () -> Unit,
     onMcpClick: () -> Unit,
     onUsageStatsClick: () -> Unit,
@@ -667,6 +786,48 @@ private fun SettingsMainContent(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "管理AI助手和本地工具",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // 助手群聊设置卡片
+            OutlinedCard(
+                onClick = onGroupChatClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Lucide.Users,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "助手群聊",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "创建多助手协作对话",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1084,6 +1245,7 @@ private fun SettingsListContent(
     onLogcatClick: () -> Unit,
     onNetworkLogClick: () -> Unit,
     onAssistantsClick: () -> Unit,
+    onGroupChatClick: () -> Unit = {},
     onKnowledgeClick: () -> Unit,
     onMcpClick: () -> Unit,
     onUsageStatsClick: () -> Unit,
@@ -1106,6 +1268,13 @@ private fun SettingsListContent(
             title = "助手",
             subtitle = "管理AI助手和本地工具",
             onClick = onAssistantsClick
+        ),
+        SettingsItemData(
+            id = "group_chat",
+            group = "通用",
+            title = "助手群聊",
+            subtitle = "创建多助手协作对话",
+            onClick = onGroupChatClick
         ),
         SettingsItemData(
             id = "providers",
@@ -1222,6 +1391,7 @@ private fun SettingsListContent(
                 items.forEach { item ->
                     val isSelected = when (item.id) {
                         "assistants" -> currentSubPage is SettingsSubPage.ASSISTANTS || currentSubPage is SettingsSubPage.ASSISTANT_DETAIL
+                        "group_chat" -> currentSubPage is SettingsSubPage.GROUP_CHAT || currentSubPage is SettingsSubPage.CREATE_GROUP_CHAT || currentSubPage is SettingsSubPage.EDIT_GROUP_CHAT
                         "providers" -> currentSubPage is SettingsSubPage.PROVIDERS
                         "knowledge" -> currentSubPage is SettingsSubPage.KNOWLEDGE || currentSubPage is SettingsSubPage.KNOWLEDGE_DETAIL
                         "mcp" -> currentSubPage is SettingsSubPage.MCP

@@ -14,6 +14,8 @@ TChat的作者是大陆人，交流最好用简体中文，如果不会使用那
 
 [QQ Group：819083916](https://qm.qq.com/cgi-bin/qm/qr?k=MhzseFKAGyXOC18WbtNtz3Dh1kl-5uj-&jump_from=webapi&authKey=2Oz35S0JdSNfRwutsIyQZ8Y5k/3NG9iKfpJDUPVvjoxuu4NVYYh5WuIrKSyoFXhB)
 
+[自愿赞助](https://tchat.wanxiaot.com/donate.html)
+
 ## 功能特色
 
 - 多服务商支持（OpenAI、Anthropic Claude、Google Gemini）
@@ -26,8 +28,143 @@ TChat的作者是大陆人，交流最好用简体中文，如果不会使用那
 - 知识库（RAG）功能
 - MCP（Model Context Protocol）工具服务器支持
 - 深度研究（Deep Research）功能
+- **配置导出/导入**（文件、二维码、加密）
+- **聊天文件夹管理**（嵌套、智能分组）
+- **助手群聊**（多助手协作对话）
 
-[自愿赞助](https://tchat.wanxiaot.com/donate.html)
+
+
+# v1.7
+
+### 新增功能
+
+- **配置导出/导入系统**
+  - 供应商配置批量导出/导入（支持多选、文件、二维码）
+  - 单个供应商模型列表导出/导入
+  - API配置导出/导入（包含密钥，强制加密）
+  - 知识库完整导出（原始文件+向量数据+配置）
+  - AES-256-CBC 加密保护
+  - 二维码分享支持（可选加密）
+  - 批量文件导入（自动防止ID冲突）
+
+- **聊天文件夹系统**
+  - 无限层级嵌套文件夹
+  - 文件夹图标和颜色自定义
+  - 拖拽排序支持
+  - 智能自动分组：
+    - 按时间分组（今天/昨天/本周/本月/更早）
+    - 按模型分组（根据使用的AI模型）
+    - 按助手分组（根据关联的助手）
+  - 文件夹树状展示（支持展开/折叠）
+  - 聊天快速分配到文件夹
+
+- **助手群聊功能**
+  - 多个助手在同一聊天中协作对话
+  - 4种消息路由策略：
+    - **自然模式**：基于话语权智能选择
+    - **轮流模式**：按成员优先级顺序发言
+    - **随机模式**：随机选择助手回复
+    - **手动模式**：用户手动选择发言者
+  - 成员配置（优先级、话语权、启用/禁用）
+  - 自动模式支持（助手自动连续对话）
+  - 群聊统计信息
+
+---
+
+### 技术改进详情
+
+#### 1. 导出/导入系统
+
+**功能**：完整的配置备份和迁移方案
+
+**实现**：
+- `ExportDataModels.kt` 定义导出数据结构
+- `EncryptionUtils.kt` AES-256-CBC加密
+- `QRCodeUtils.kt` 二维码生成/解析
+- `ExportImportManager.kt` 统一管理器
+- `ExportImportScreen.kt` Material 3 UI界面
+
+**安全特性**：
+- PBKDF2 密钥派生（10000次迭代）
+- API密钥强制加密导出
+- 二维码支持加密/非加密模式
+
+---
+
+#### 2. 聊天文件夹系统
+
+**功能**：组织和管理聊天记录
+
+**实现**：
+- `ChatFolder.kt` 文件夹数据模型
+- `ChatFolderEntity.kt` 数据库实体
+- `ChatFolderDao.kt` 数据访问层
+- `ChatFolderRepository.kt` 业务逻辑层
+- `ChatFolderManagementScreen.kt` 文件夹管理UI
+
+**核心算法**：
+- 文件夹树构建算法（递归）
+- 循环引用检测（移动文件夹时）
+- 智能分组算法（时间/模型/助手）
+
+---
+
+#### 3. 助手群聊系统
+
+**功能**：多助手协作对话
+
+**实现**：
+- `GroupChat.kt` 群聊数据模型
+- `GroupChatEntity.kt` + `GroupMemberEntity.kt` 数据库实体
+- `GroupChatDao.kt` 数据访问层
+- `GroupChatRepository.kt` 业务逻辑层
+- `GroupChatScreen.kt` 群聊UI界面
+
+**消息路由策略**：
+- **LIST模式**：按优先级顺序轮流发言
+- **POOLED模式**：随机选择成员
+- **NATURAL模式**：基于话语权加权随机选择
+- **MANUAL模式**：用户手动选择发言者
+
+---
+
+#### 4. 数据库升级
+
+**修改**：
+- 数据库版本 14 → 15
+- 新增4个实体表：
+  - `chat_folders` 聊天文件夹
+  - `chat_folder_relations` 聊天-文件夹关联
+  - `group_chats` 群聊
+  - `group_members` 群聊成员
+- 完整的外键约束和索引优化
+
+---
+
+### 涉及文件
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| app/util | ExportDataModels.kt | 导出数据模型定义 |
+| app/util | EncryptionUtils.kt | AES-256-CBC加密工具 |
+| app/util | QRCodeUtils.kt | 二维码生成/解析工具 |
+| app/util | ExportImportManager.kt | 导出导入统一管理器 |
+| app/ui/settings | ExportImportScreen.kt | 导出导入UI界面 |
+| app/ui/folder | ChatFolderManagementScreen.kt | 文件夹管理UI |
+| app/ui/groupchat | GroupChatScreen.kt | 群聊UI界面 |
+| data/model | ChatFolder.kt | 文件夹数据模型 |
+| data/model | GroupChat.kt | 群聊数据模型 |
+| data/database/entity | ChatFolderEntity.kt | 文件夹数据库实体 |
+| data/database/entity | GroupChatEntity.kt | 群聊数据库实体 |
+| data/database/dao | ChatFolderDao.kt | 文件夹DAO |
+| data/database/dao | GroupChatDao.kt | 群聊DAO |
+| data/repository | ChatFolderRepository.kt | 文件夹Repository接口 |
+| data/repository | GroupChatRepository.kt | 群聊Repository接口 |
+| data/repository/impl | ChatFolderRepositoryImpl.kt | 文件夹Repository实现 |
+| data/repository/impl | GroupChatRepositoryImpl.kt | 群聊Repository实现 |
+| data/database | AppDatabase.kt | 数据库版本15迁移 |
+
+---
 
 
 # v1.6

@@ -15,6 +15,8 @@ import com.tchat.data.database.dao.KnowledgeChunkDao
 import com.tchat.data.database.dao.AssistantDao
 import com.tchat.data.database.dao.McpServerDao
 import com.tchat.data.database.dao.DeepResearchHistoryDao
+import com.tchat.data.database.dao.ChatFolderDao
+import com.tchat.data.database.dao.GroupChatDao
 import com.tchat.data.database.entity.ChatEntity
 import com.tchat.data.database.entity.MessageEntity
 import com.tchat.data.database.entity.KnowledgeBaseEntity
@@ -23,6 +25,10 @@ import com.tchat.data.database.entity.KnowledgeChunkEntity
 import com.tchat.data.database.entity.AssistantEntity
 import com.tchat.data.database.entity.McpServerEntity
 import com.tchat.data.database.entity.DeepResearchHistoryEntity
+import com.tchat.data.database.entity.ChatFolderEntity
+import com.tchat.data.database.entity.ChatFolderRelationEntity
+import com.tchat.data.database.entity.GroupChatEntity
+import com.tchat.data.database.entity.GroupMemberEntity
 import com.tchat.data.database.entity.LocalToolOptionConverter
 
 /**
@@ -39,9 +45,13 @@ import com.tchat.data.database.entity.LocalToolOptionConverter
         KnowledgeChunkEntity::class,
         AssistantEntity::class,
         McpServerEntity::class,
-        DeepResearchHistoryEntity::class
+        DeepResearchHistoryEntity::class,
+        ChatFolderEntity::class,
+        ChatFolderRelationEntity::class,
+        GroupChatEntity::class,
+        GroupMemberEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 @TypeConverters(LocalToolOptionConverter::class)
@@ -55,6 +65,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun assistantDao(): AssistantDao
     abstract fun mcpServerDao(): McpServerDao
     abstract fun deepResearchHistoryDao(): DeepResearchHistoryDao
+    abstract fun chatFolderDao(): ChatFolderDao
+    abstract fun groupChatDao(): GroupChatDao
 
     companion object {
         @Volatile
@@ -268,6 +280,75 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // 迁移:添加聊天文件夹和群聊表
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 创建聊天文件夹表
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS chat_folders (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        name TEXT NOT NULL,
+                        parentId TEXT,
+                        icon TEXT,
+                        color TEXT,
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                """.trimIndent())
+
+                // 创建聊天文件夹关联表
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS chat_folder_relations (
+                        chatId TEXT NOT NULL,
+                        folderId TEXT NOT NULL,
+                        addedAt INTEGER NOT NULL,
+                        PRIMARY KEY(chatId, folderId),
+                        FOREIGN KEY(chatId) REFERENCES chats(id) ON DELETE CASCADE,
+                        FOREIGN KEY(folderId) REFERENCES chat_folders(id) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+
+                // 创建群聊表
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS group_chats (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        name TEXT NOT NULL,
+                        avatar TEXT,
+                        description TEXT,
+                        activationStrategy TEXT NOT NULL,
+                        generationMode TEXT NOT NULL,
+                        autoModeEnabled INTEGER NOT NULL DEFAULT 0,
+                        autoModeDelay INTEGER NOT NULL DEFAULT 5,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                """.trimIndent())
+
+                // 创建群聊成员表
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS group_members (
+                        groupId TEXT NOT NULL,
+                        assistantId TEXT NOT NULL,
+                        enabled INTEGER NOT NULL DEFAULT 1,
+                        priority INTEGER NOT NULL DEFAULT 0,
+                        talkativeness REAL NOT NULL DEFAULT 0.5,
+                        joinedAt INTEGER NOT NULL,
+                        PRIMARY KEY(groupId, assistantId),
+                        FOREIGN KEY(groupId) REFERENCES group_chats(id) ON DELETE CASCADE,
+                        FOREIGN KEY(assistantId) REFERENCES assistants(id) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+
+                // 创建索引
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_chat_folder_relations_chatId ON chat_folder_relations(chatId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_chat_folder_relations_folderId ON chat_folder_relations(folderId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_chat_folders_parentId ON chat_folders(parentId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_group_members_groupId ON group_members(groupId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_group_members_assistantId ON group_members(assistantId)")
+            }
+        }
+
         // 迁移:采用 MessagePart 架构，将旧字段迁移到 partsJson
         private val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -409,7 +490,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                         MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
-                        MIGRATION_13_14
+                        MIGRATION_13_14, MIGRATION_14_15
                     )
                     .build()
                 INSTANCE = instance
