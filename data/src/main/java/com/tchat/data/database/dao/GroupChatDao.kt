@@ -123,6 +123,13 @@ interface GroupChatDao {
     suspend fun getEnabledMembers(groupId: String): List<GroupMemberEntity>
 
     /**
+     * 获取所有群聊成员（Flow）
+     * 用于在群聊列表中同步 memberIds
+     */
+    @Query("SELECT * FROM group_members ORDER BY groupId, priority DESC, joinedAt ASC")
+    fun getAllMembersFlow(): Flow<List<GroupMemberEntity>>
+
+    /**
      * 获取群聊的成员数量
      */
     @Query("SELECT COUNT(*) FROM group_members WHERE groupId = :groupId")

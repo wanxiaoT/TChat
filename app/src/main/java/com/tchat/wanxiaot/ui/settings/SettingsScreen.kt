@@ -472,7 +472,16 @@ private fun TabletSettingsLayout(
                                 onBackClick = { onSubPageChange(SettingsSubPage.GROUP_CHAT) },
                                 onSave = { updatedGroup, memberIds ->
                                     kotlinx.coroutines.MainScope().launch {
+                                        // 更新群聊基本信息
                                         groupChatRepository.updateGroup(updatedGroup)
+
+                                        // 更新成员列表：先删除所有成员，再添加新成员
+                                        val oldMembers = groupChatRepository.getMembers(updatedGroup.id)
+                                        oldMembers.forEach { member ->
+                                            groupChatRepository.removeMember(updatedGroup.id, member.assistantId)
+                                        }
+                                        groupChatRepository.addMembers(updatedGroup.id, memberIds)
+
                                         onSubPageChange(SettingsSubPage.GROUP_CHAT)
                                     }
                                 },
@@ -691,7 +700,16 @@ private fun PhoneSettingsLayout(
                         onBackClick = { onSubPageChange(SettingsSubPage.GROUP_CHAT) },
                         onSave = { updatedGroup, memberIds ->
                             kotlinx.coroutines.MainScope().launch {
+                                // 更新群聊基本信息
                                 groupChatRepository.updateGroup(updatedGroup)
+
+                                // 更新成员列表：先删除所有成员，再添加新成员
+                                val oldMembers = groupChatRepository.getMembers(updatedGroup.id)
+                                oldMembers.forEach { member ->
+                                    groupChatRepository.removeMember(updatedGroup.id, member.assistantId)
+                                }
+                                groupChatRepository.addMembers(updatedGroup.id, memberIds)
+
                                 onSubPageChange(SettingsSubPage.GROUP_CHAT)
                             }
                         },
@@ -1430,6 +1448,28 @@ private fun SettingsListContent(
                                            else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             },
+                            title = item.title,
+                            subtitle = item.subtitle,
+                            isSelected = isSelected,
+                            onClick = item.onClick
+                        )
+                        "group_chat" -> SettingsListItem(
+                            iconContent = {
+                                Icon(
+                                    Lucide.Users,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer
+                                           else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            title = item.title,
+                            subtitle = item.subtitle,
+                            isSelected = isSelected,
+                            onClick = item.onClick
+                        )
+                        "regex_rules" -> SettingsListItem(
+                            icon = Icons.Default.BugReport,
                             title = item.title,
                             subtitle = item.subtitle,
                             isSelected = isSelected,

@@ -195,7 +195,7 @@ fun ChatScreen(
  * 输入框上方的工具栏
  */
 @Composable
-private fun InputToolbar(
+internal fun InputToolbar(
     availableModels: List<String>,
     currentModel: String,
     onModelSelected: (String) -> Unit,
@@ -379,20 +379,20 @@ private fun InputToolbar(
 /**
  * 根据模型名称获取对应的 Lucide 图标
  */
-private fun getModelLucideIcon(model: String): ImageVector {
+internal fun getModelLucideIcon(model: String): ImageVector {
     return when {
         // OpenAI 模型
         model.contains("gpt", ignoreCase = true) -> Lucide.Sparkles
         model.contains("o1", ignoreCase = true) -> Lucide.Sparkles
         model.contains("o3", ignoreCase = true) -> Lucide.Sparkles
         model.contains("davinci", ignoreCase = true) -> Lucide.Sparkles
-        
+
         // Claude 模型
         model.contains("claude", ignoreCase = true) -> Lucide.Bot
-        
+
         // Gemini 模型
         model.contains("gemini", ignoreCase = true) -> Lucide.BrainCircuit
-        
+
         // 其他模型使用通用图标
         else -> Lucide.Bot
     }
@@ -401,7 +401,7 @@ private fun getModelLucideIcon(model: String): ImageVector {
 /**
  * 获取模型简短显示名称
  */
-private fun getModelDisplayName(model: String): String {
+internal fun getModelDisplayName(model: String): String {
     return when {
         model.length <= 20 -> model
         else -> model.take(18) + "..."

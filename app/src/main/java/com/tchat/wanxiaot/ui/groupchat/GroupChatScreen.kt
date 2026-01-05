@@ -266,17 +266,30 @@ fun CreateGroupChatScreen(
                 actions = {
                     TextButton(
                         onClick = {
-                            val group = GroupChat(
-                                id = editingGroup?.id ?: "",
-                                name = groupName,
-                                description = groupDescription.takeIf { it.isNotBlank() },
-                                memberIds = selectedAssistants.toList(),
-                                activationStrategy = activationStrategy,
-                                generationMode = generationMode,
-                                autoModeEnabled = autoModeEnabled,
-                                autoModeDelay = autoModeDelay.toIntOrNull() ?: 5
-                            )
-                            onSave(group, selectedAssistants.toList())
+                            val memberIds = selectedAssistants.toList()
+                            val group = if (editingGroup != null) {
+                                editingGroup.copy(
+                                    name = groupName,
+                                    description = groupDescription.takeIf { it.isNotBlank() },
+                                    memberIds = memberIds,
+                                    activationStrategy = activationStrategy,
+                                    generationMode = generationMode,
+                                    autoModeEnabled = autoModeEnabled,
+                                    autoModeDelay = autoModeDelay.toIntOrNull() ?: 5,
+                                    updatedAt = System.currentTimeMillis()
+                                )
+                            } else {
+                                GroupChat(
+                                    name = groupName,
+                                    description = groupDescription.takeIf { it.isNotBlank() },
+                                    memberIds = memberIds,
+                                    activationStrategy = activationStrategy,
+                                    generationMode = generationMode,
+                                    autoModeEnabled = autoModeEnabled,
+                                    autoModeDelay = autoModeDelay.toIntOrNull() ?: 5
+                                )
+                            }
+                            onSave(group, memberIds)
                         },
                         enabled = groupName.isNotBlank() && selectedAssistants.size >= 2
                     ) {

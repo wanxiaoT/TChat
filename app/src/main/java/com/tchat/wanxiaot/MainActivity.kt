@@ -27,9 +27,11 @@ import com.tchat.data.MessageSender
 import com.tchat.data.database.AppDatabase
 import com.tchat.data.database.entity.AssistantEntity
 import com.tchat.data.model.Assistant
+import com.tchat.data.model.GroupChat
 import com.tchat.data.model.LocalToolOption
 import com.tchat.data.repository.impl.ChatRepositoryImpl
 import com.tchat.data.repository.impl.KnowledgeRepositoryImpl
+import com.tchat.data.repository.impl.GroupChatRepositoryImpl
 import com.tchat.data.service.KnowledgeService
 import com.tchat.data.tool.KnowledgeSearchTool
 import com.tchat.data.tool.LocalTools
@@ -38,6 +40,8 @@ import com.tchat.data.mcp.McpToolService
 import com.tchat.data.repository.impl.McpServerRepositoryImpl
 import com.tchat.feature.chat.ChatScreen
 import com.tchat.feature.chat.ChatViewModel
+import com.tchat.feature.chat.GroupChatScreen
+import com.tchat.feature.chat.GroupChatViewModel
 import com.tchat.network.provider.AIProviderFactory
 import com.tchat.network.provider.EmbeddingProviderFactory
 import com.tchat.wanxiaot.settings.AIProviderType
@@ -168,6 +172,15 @@ fun MainScreen(
         KnowledgeService(knowledgeRepository)
     }
 
+    // 群聊相关
+    val groupChatRepository = remember(database) {
+        GroupChatRepositoryImpl(
+            database.groupChatDao(),
+            database.assistantDao(),
+            database.messageDao()
+        )
+    }
+
     // MCP 相关
     val mcpRepository = remember(database) {
         McpServerRepositoryImpl(database.mcpServerDao())
@@ -178,7 +191,9 @@ fun MainScreen(
 
     // null表示新对话（懒创建模式）
     var currentChatId by remember { mutableStateOf<String?>(null) }
+    var currentGroupChatId by remember { mutableStateOf<String?>(null) }
     var chatList by remember { mutableStateOf(emptyList<com.tchat.data.model.Chat>()) }
+    var groupChatList by remember { mutableStateOf(emptyList<GroupChat>()) }
     var repository by remember { mutableStateOf<ChatRepositoryImpl?>(null) }
     var currentNavState by remember { mutableStateOf(MainNavState.CHAT) }
     var isDrawerRequested by remember { mutableStateOf(false) }
@@ -264,6 +279,13 @@ fun MainScreen(
         }
     }
 
+    // 监听群聊列表
+    LaunchedEffect(groupChatRepository) {
+        groupChatRepository.getAllGroups().collect { groups ->
+            groupChatList = groups
+        }
+    }
+
     // 主页面切换动画
     AnimatedContent(
         targetState = currentNavState,
@@ -335,17 +357,26 @@ fun MainScreen(
             ) {
                 DrawerContent(
                     chats = chatList,
+                    groupChats = groupChatList,
                     currentChatId = currentChatId,
+                    currentGroupChatId = currentGroupChatId,
                     currentProviderName = currentProvider?.name ?: "未配置",
                     currentProviderId = settings.currentProviderId,
                     providers = settings.providers,
                     onChatSelected = { chatId ->
                         currentChatId = chatId
+                        currentGroupChatId = null // 切换到单聊模式
+                        scope.launch { drawerState.close() }
+                    },
+                    onGroupChatSelected = { groupChatId ->
+                        currentGroupChatId = groupChatId
+                        currentChatId = null // 切换到群聊模式
                         scope.launch { drawerState.close() }
                     },
                     onNewChat = {
                         // 新对话：设置为null进入懒创建模式
                         currentChatId = null
+                        currentGroupChatId = null
                         scope.launch { drawerState.close() }
                     },
                     onDeleteChat = { chatId ->
@@ -381,7 +412,14 @@ fun MainScreen(
                     TopAppBar(
                         title = {
                             Column {
-                                Text(currentAssistant?.name ?: "AI 聊天")
+                                Text(
+                                    text = when {
+                                        currentGroupChatId != null -> {
+                                            groupChatList.find { it.id == currentGroupChatId }?.name ?: "群聊"
+                                        }
+                                        else -> currentAssistant?.name ?: "AI 聊天"
+                                    }
+                                )
                                 Text(
                                     text = "${currentProvider?.name ?: "未配置"} > ${settings.getActiveModel()}",
                                     style = MaterialTheme.typography.bodySmall,
@@ -410,6 +448,76 @@ fun MainScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     when {
+                        // 群聊模式
+                        currentGroupChatId != null && repository != null -> {
+                            val groupChatViewModel = remember(repository, groupChatRepository, currentGroupChatId) {
+                                GroupChatViewModel(repository!!, groupChatRepository, messageSender)
+                            }
+
+                            // 加载助手列表
+                            val groupChat = groupChatList.find { it.id == currentGroupChatId }
+                            val groupAssistants = remember(groupChat?.memberIds, assistantDao) {
+                                val memberIds = groupChat?.memberIds ?: emptyList()
+                                if (memberIds.isEmpty()) {
+                                    emptyList()
+                                } else {
+                                    // 同步加载助手信息
+                                    memberIds.mapNotNull { memberId ->
+                                        kotlinx.coroutines.runBlocking {
+                                            assistantDao.getAssistantById(memberId)?.let { entityToAssistant(it) }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 创建本地工具实例
+                            val context = LocalContext.current
+                            val localTools = remember(context) {
+                                LocalTools(context)
+                            }
+
+                            GroupChatScreen(
+                                viewModel = groupChatViewModel,
+                                groupChatId = currentGroupChatId!!,
+                                chatId = currentChatId,
+                                modifier = Modifier.fillMaxSize(),
+                                availableModels = currentProvider?.availableModels ?: emptyList(),
+                                currentModel = settings.getActiveModel(),
+                                onModelSelected = { model ->
+                                    settingsManager.setCurrentModel(model)
+                                },
+                                providerIcon = currentProvider?.providerType?.icon?.invoke(),
+                                enabledTools = enabledTools,
+                                onToolToggle = { tool, enabled ->
+                                    enabledTools = if (enabled) {
+                                        enabledTools + tool
+                                    } else {
+                                        enabledTools - tool
+                                    }
+                                },
+                                getToolsForOptions = { options ->
+                                    localTools.getToolsForOptions(options)
+                                },
+                                extraTools = emptyList(),
+                                systemPrompt = null,
+                                regexRules = emptyList(),
+                                assistants = groupAssistants,
+                                onDeepResearch = { query ->
+                                    if (query != null) {
+                                        startDeepResearch(
+                                            query = query,
+                                            settingsManager = settingsManager,
+                                            viewModel = ChatViewModel(repository!!, messageSender),
+                                            chatId = currentChatId
+                                        )
+                                    } else {
+                                        currentNavState = MainNavState.DEEP_RESEARCH
+                                    }
+                                },
+                                isDeepResearching = isDeepResearching
+                            )
+                        }
+                        // 单聊模式
                         repository != null -> {
                             val viewModel = remember(repository) {
                                 ChatViewModel(repository!!, messageSender)

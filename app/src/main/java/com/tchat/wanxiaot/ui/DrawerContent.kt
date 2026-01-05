@@ -19,18 +19,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tchat.data.model.Chat
+import com.tchat.data.model.GroupChat
 import com.tchat.wanxiaot.settings.ProviderConfig
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Users
 import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
 fun DrawerContent(
     chats: List<Chat>,
+    groupChats: List<GroupChat> = emptyList(),
     currentChatId: String?,
+    currentGroupChatId: String? = null,
     currentProviderName: String,
     currentProviderId: String,
     providers: List<ProviderConfig>,
     onChatSelected: (String) -> Unit,
+    onGroupChatSelected: (String) -> Unit = {},
     onNewChat: () -> Unit,
     onDeleteChat: (String) -> Unit,
     onSettingsClick: () -> Unit,
@@ -90,10 +96,51 @@ fun DrawerContent(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            // 群聊分组
+            if (groupChats.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "群聊",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    )
+                }
+
+                items(groupChats) { groupChat ->
+                    GroupChatHistoryItem(
+                        groupChat = groupChat,
+                        isSelected = groupChat.id == currentGroupChatId,
+                        onClick = { onGroupChatSelected(groupChat.id) }
+                    )
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            // 单聊分组
+            if (chats.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "单聊",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    )
+                }
+            }
+
             items(chats) { chat ->
                 ChatHistoryItem(
                     chat = chat,
-                    isSelected = chat.id == currentChatId,
+                    isSelected = chat.id == currentChatId && currentGroupChatId == null,
                     onClick = { onChatSelected(chat.id) },
                     onDelete = { onDeleteChat(chat.id) }
                 )
@@ -310,6 +357,47 @@ fun ProviderSelectionItem(
 }
 
 
+
+@Composable
+fun GroupChatHistoryItem(
+    groupChat: GroupChat,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val dateFormat = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
+
+    NavigationDrawerItem(
+        icon = {
+            Icon(
+                imageVector = Lucide.Users,
+                contentDescription = null,
+                tint = if (isSelected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        },
+        label = {
+            Column {
+                Text(
+                    text = groupChat.name.ifEmpty { "未命名群聊" },
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${groupChat.memberIds.size} 位成员 • ${dateFormat.format(Date(groupChat.updatedAt))}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        selected = isSelected,
+        onClick = onClick,
+        modifier = Modifier.padding(horizontal = 4.dp)
+    )
+}
 
 @Composable
 fun ChatHistoryItem(

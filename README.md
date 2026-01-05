@@ -164,6 +164,38 @@ TChat的作者是大陆人，交流最好用简体中文，如果不会使用那
 | data/repository/impl | GroupChatRepositoryImpl.kt | 群聊Repository实现 |
 | data/database | AppDatabase.kt | 数据库版本15迁移 |
 
+同步平板和手机模式的设置图标
+ 同步平板模式和手机模式的设置图标
+
+  修改内容
+
+  在 SettingsScreen.kt 的平板模式 SettingsListContent 函数中，添加了两个缺失的图标定义：
+
+  1. 助手群聊 (group_chat):
+    - 使用 Lucide.Users 图标
+    - 与手机模式保持一致
+  2. 正则表达式 (regex_rules):
+    - 使用 Icons.Default.BugReport 图标
+    - 与手机模式保持一致
+
+  当前图标映射
+
+  | 设置项     | 图标                    | 类型        |
+  |------------|-------------------------|-------------|
+  | 助手       | Icons.Default.Person    | Material    |
+  | 助手群聊   | Lucide.Users            | Lucide ✨   |
+  | 服务商     | Icons.Default.Settings  | Material    |
+  | 知识库     | Lucide.BookOpen         | Lucide ✨   |
+  | MCP 服务器 | Icons.Default.Cloud     | Material    |
+  | 深度研究   | Icons.Default.Search    | Material    |
+  | 正则表达式 | Icons.Default.BugReport | Material ✨ |
+  | 使用统计   | Icons.Default.BarChart  | Material    |
+  | 日志查看   | Lucide.ScrollText       | Lucide ✨   |
+  | 网络日志   | Icons.Default.Cloud     | Material    |
+  | 关于       | Icons.Default.Info      | Material    |
+
+  现在平板模式和手机模式在设置页面中显示的图标完全一致了！
+
 ---
 
 

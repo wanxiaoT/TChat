@@ -8,8 +8,9 @@ import com.tchat.data.database.entity.GroupMemberEntity
 import com.tchat.data.model.*
 import com.tchat.data.repository.GroupChatRepository
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import java.util.UUID
 import kotlin.random.Random
 
 /**
@@ -22,42 +23,64 @@ class GroupChatRepositoryImpl(
 ) : GroupChatRepository {
 
     override fun getAllGroups(): Flow<List<GroupChat>> {
-        return groupChatDao.getAllFlow().map { entities ->
-            entities.map { it.toModel() }
+        return combine(
+            groupChatDao.getAllFlow(),
+            groupChatDao.getAllMembersFlow()
+        ) { groupEntities, memberEntities ->
+            val memberIdsByGroupId = memberEntities
+                .groupBy { it.groupId }
+                .mapValues { (_, members) -> members.map { it.assistantId } }
+
+            groupEntities.map { entity ->
+                entity.toModel(memberIds = memberIdsByGroupId[entity.id].orEmpty())
+            }
         }
     }
 
     override suspend fun getGroupById(groupId: String): GroupChat? {
-        return groupChatDao.getById(groupId)?.toModel()
+        val entity = groupChatDao.getById(groupId) ?: return null
+        val members = groupChatDao.getMembers(groupId)
+        return entity.toModel(memberIds = members.map { it.assistantId })
     }
 
     override fun getGroupByIdFlow(groupId: String): Flow<GroupChat?> {
-        return groupChatDao.getByIdFlow(groupId).map { it?.toModel() }
+        return combine(
+            groupChatDao.getByIdFlow(groupId),
+            groupChatDao.getMembersFlow(groupId)
+        ) { groupEntity, memberEntities ->
+            groupEntity?.toModel(memberIds = memberEntities.map { it.assistantId })
+        }
     }
 
     override suspend fun createGroup(group: GroupChat): GroupChat {
+        val resolvedGroup = if (group.id.isBlank()) {
+            group.copy(id = UUID.randomUUID().toString())
+        } else {
+            group
+        }
+
         // 检查名称是否重复
-        val exists = groupChatDao.checkNameExists(group.name, group.id) > 0
+        val exists = groupChatDao.checkNameExists(resolvedGroup.name, resolvedGroup.id) > 0
         if (exists) {
             throw IllegalArgumentException("群聊名称已存在")
         }
 
-        val entity = group.toEntity()
+        val entity = resolvedGroup.toEntity()
         groupChatDao.insert(entity)
 
         // 添加成员
-        if (group.memberIds.isNotEmpty()) {
-            val members = group.memberIds.mapIndexed { index, assistantId ->
+        if (resolvedGroup.memberIds.isNotEmpty()) {
+            val members = resolvedGroup.memberIds.mapIndexed { index, assistantId ->
                 GroupMemberEntity(
-                    groupId = group.id,
+                    groupId = resolvedGroup.id,
                     assistantId = assistantId,
-                    priority = group.memberIds.size - index
+                    priority = resolvedGroup.memberIds.size - index
                 )
             }
             groupChatDao.addMembers(members)
         }
 
-        return group
+        return resolvedGroup
     }
 
     override suspend fun updateGroup(group: GroupChat) {
@@ -231,22 +254,22 @@ class GroupChatRepositoryImpl(
     }
 
     private fun GroupChatEntity.toModel(): GroupChat {
-        // 获取成员ID列表需要额外查询，这里先返回空列表
-        // 实际使用时应该通过getMembers获取
-        return GroupChat(
-            id = id,
-            name = name,
-            avatar = avatar,
-            description = description,
-            memberIds = emptyList(), // 需要单独查询
-            activationStrategy = GroupActivationStrategy.valueOf(activationStrategy),
-            generationMode = GroupGenerationMode.valueOf(generationMode),
-            autoModeEnabled = autoModeEnabled,
-            autoModeDelay = autoModeDelay,
-            createdAt = createdAt,
-            updatedAt = updatedAt
-        )
+        return toModel(memberIds = emptyList())
     }
+
+    private fun GroupChatEntity.toModel(memberIds: List<String>): GroupChat = GroupChat(
+        id = id,
+        name = name,
+        avatar = avatar,
+        description = description,
+        memberIds = memberIds,
+        activationStrategy = GroupActivationStrategy.valueOf(activationStrategy),
+        generationMode = GroupGenerationMode.valueOf(generationMode),
+        autoModeEnabled = autoModeEnabled,
+        autoModeDelay = autoModeDelay,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
 
     private fun GroupChat.toEntity() = GroupChatEntity(
         id = id,
