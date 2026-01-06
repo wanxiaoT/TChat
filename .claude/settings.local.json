@@ -31,7 +31,9 @@
       "Skill(frontend-design)",
       "Bash(git checkout:*)",
       "Bash(./gradlew.bat :app:dependencies)",
-      "Bash(.gradlew.bat:*)"
+      "Bash(.gradlew.bat:*)",
+      "Bash(del:*)",
+      "Bash(findstr:*)"
     ]
   }
 }

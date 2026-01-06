@@ -33,6 +33,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.BookOpen
+import com.composables.icons.lucide.Download
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.ScrollText
 import com.composables.icons.lucide.Settings2
@@ -85,6 +86,7 @@ private sealed class SettingsSubPage {
     data object USAGE_STATS : SettingsSubPage()
     data object DEEP_RESEARCH : SettingsSubPage()
     data object REGEX_RULES : SettingsSubPage()
+    data object EXPORT_IMPORT : SettingsSubPage()
 }
 
 /**
@@ -287,7 +289,8 @@ private fun TabletSettingsLayout(
                 onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
                 onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) },
                 onDeepResearchClick = { onSubPageChange(SettingsSubPage.DEEP_RESEARCH) },
-                onRegexRulesClick = { onSubPageChange(SettingsSubPage.REGEX_RULES) }
+                onRegexRulesClick = { onSubPageChange(SettingsSubPage.REGEX_RULES) },
+                onExportImportClick = { onSubPageChange(SettingsSubPage.EXPORT_IMPORT) }
             )
         }
 
@@ -435,6 +438,12 @@ private fun TabletSettingsLayout(
                             showTopBar = false
                         )
                     }
+                    is SettingsSubPage.EXPORT_IMPORT -> {
+                        ExportImportScreenEnhanced(
+                            settingsManager = settingsManager,
+                            onBackClick = { onSubPageChange(SettingsSubPage.MAIN) }
+                        )
+                    }
                     is SettingsSubPage.GROUP_CHAT -> {
                         val groups by groupChatRepository.getAllGroups().collectAsState(initial = emptyList())
                         GroupChatListScreen(
@@ -573,7 +582,8 @@ private fun PhoneSettingsLayout(
                     onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
                     onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) },
                     onDeepResearchClick = { onSubPageChange(SettingsSubPage.DEEP_RESEARCH) },
-                    onRegexRulesClick = { onSubPageChange(SettingsSubPage.REGEX_RULES) }
+                    onRegexRulesClick = { onSubPageChange(SettingsSubPage.REGEX_RULES) },
+                    onExportImportClick = { onSubPageChange(SettingsSubPage.EXPORT_IMPORT) }
                 )
             }
             is SettingsSubPage.PROVIDERS -> {
@@ -663,6 +673,12 @@ private fun PhoneSettingsLayout(
                     onBack = { onSubPageChange(SettingsSubPage.MAIN) }
                 )
             }
+            is SettingsSubPage.EXPORT_IMPORT -> {
+                ExportImportScreenEnhanced(
+                    settingsManager = settingsManager,
+                    onBackClick = { onSubPageChange(SettingsSubPage.MAIN) }
+                )
+            }
             is SettingsSubPage.GROUP_CHAT -> {
                 val groups by groupChatRepository.getAllGroups().collectAsState(initial = emptyList())
                 GroupChatListScreen(
@@ -738,7 +754,8 @@ private fun SettingsMainContent(
     onMcpClick: () -> Unit,
     onUsageStatsClick: () -> Unit,
     onDeepResearchClick: () -> Unit = {},
-    onRegexRulesClick: () -> Unit = {}
+    onRegexRulesClick: () -> Unit = {},
+    onExportImportClick: () -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -1205,6 +1222,48 @@ private fun SettingsMainContent(
                 }
             }
 
+            // 导出/导入卡片
+            OutlinedCard(
+                onClick = onExportImportClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Lucide.Download,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "导出/导入",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "导出或导入配置、知识库等数据",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             // 关于卡片
             OutlinedCard(
                 onClick = onAboutClick,
@@ -1268,7 +1327,8 @@ private fun SettingsListContent(
     onMcpClick: () -> Unit,
     onUsageStatsClick: () -> Unit,
     onDeepResearchClick: () -> Unit = {},
-    onRegexRulesClick: () -> Unit = {}
+    onRegexRulesClick: () -> Unit = {},
+    onExportImportClick: () -> Unit = {}
 ) {
     // 设置项数据（不使用 Composable lambda）
     data class SettingsItemData(
@@ -1335,6 +1395,13 @@ private fun SettingsListContent(
             title = "使用统计",
             subtitle = "查看 Token 和模型调用统计",
             onClick = onUsageStatsClick
+        ),
+        SettingsItemData(
+            id = "export_import",
+            group = "其他",
+            title = "导出/导入",
+            subtitle = "导出或导入配置、知识库等数据",
+            onClick = onExportImportClick
         ),
         SettingsItemData(
             id = "logcat",

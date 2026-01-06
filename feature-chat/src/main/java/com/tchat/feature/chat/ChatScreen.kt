@@ -299,7 +299,7 @@ internal fun InputToolbar(
             // 深度研究按钮
             if (onDeepResearch != null) {
                 Surface(
-                    onClick = { if (!isDeepResearching) onDeepResearch() },
+                    onClick = { onDeepResearch() },
                     color = if (isDeepResearching)
                         MaterialTheme.colorScheme.tertiaryContainer
                     else

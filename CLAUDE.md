@@ -66,13 +66,51 @@ app → feature-chat → data → network → core
 - `ChatViewModel` in `feature-chat` manages UI state
 - `ChatRepository` interface abstracts chat/message operations
 - `ChatRepositoryImpl` connects to AI providers for streaming responses
+- **Tool Calling Loop**: Supports up to 10 iterations of tool calls (execute → send result → continue)
+- **Message Parts**: Messages use `MessagePart` architecture (TextPart, ToolCallPart, ToolResultPart) stored in `partsJson`
+- **MessageSender**: Application-scoped singleton manages concurrent chat sessions, prevents race conditions when switching chats
 
 ### Tech Stack
 
 - Kotlin with Coroutines & Flow for async operations
 - Jetpack Compose with Material 3 for UI
+- Room Database for data persistence
 - OkHttp for HTTP client (direct usage, no Retrofit)
 - JDK 17, compileSdk 36, minSdk 26
+
+**IMPORTANT - Database Migrations**:
+When modifying database entities (adding/removing/changing columns), you MUST:
+1. Increment the database version in `AppDatabase.kt`
+2. Create a new migration (e.g., `MIGRATION_X_Y`) following existing patterns
+3. Add the migration to `.addMigrations()` in `getInstance()`
+4. Use `ALTER TABLE` for column additions with `DEFAULT` values to preserve existing data
+5. For complex schema changes, create new table → copy data → drop old → rename new
+6. Test migration paths to ensure no data loss
+
+### Advanced Features
+
+**Tool System**:
+- **Local Tools** (`LocalTools.kt` in `data` module): File operations, web fetch, system info
+- **Knowledge Tools**: RAG-based document search using vector embeddings (OpenAI/Gemini embedding APIs)
+- **MCP Tools** (`McpClient.kt`): External Model Context Protocol servers with SSE/HTTP transport
+- Tool execution is handled in `ChatRepositoryImpl` with automatic retry loop (max 10 iterations)
+- All three providers (OpenAI, Anthropic, Gemini) support tool calling
+
+**Message Variants**:
+- Regenerate AI responses with alternative outputs (stored in `variantsJson`)
+- Switch between variants without re-sending the message
+- UI shows variant selector (e.g., "< 1/3 >") when multiple variants exist
+
+**Regex Stream Processing**:
+- Real-time regex replacement during AI streaming (`RegexStreamProcessor`)
+- Applied per-assistant with ordered rules from `enabledRegexRuleIds`
+- Buffer management handles patterns that span chunk boundaries
+
+**Deep Research**:
+- Multi-step web research with iterative AI synthesis (`DeepResearchService.kt`)
+- Configurable breadth (queries per layer) and depth (recursion levels)
+- Uses Tavily or Firecrawl search APIs
+- Independent AI configuration separate from main chat settings
 
 ### Material You Design Guidelines
 

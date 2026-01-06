@@ -503,7 +503,10 @@ fun MainScreen(
                                 regexRules = emptyList(),
                                 assistants = groupAssistants,
                                 onDeepResearch = { query ->
-                                    if (query != null) {
+                                    if (isDeepResearching) {
+                                        // 深度研究进行中，直接导航到深度研究页面查看进度
+                                        currentNavState = MainNavState.DEEP_RESEARCH
+                                    } else if (query != null) {
                                         startDeepResearch(
                                             query = query,
                                             settingsManager = settingsManager,
@@ -634,7 +637,10 @@ fun MainScreen(
                                 regexRules = enabledRegexRules,
                                 // 深度研究支持
                                 onDeepResearch = { query ->
-                                    if (query != null) {
+                                    if (isDeepResearching) {
+                                        // 深度研究进行中，直接导航到深度研究页面查看进度
+                                        currentNavState = MainNavState.DEEP_RESEARCH
+                                    } else if (query != null) {
                                         // 有输入内容，直接开始研究
                                         startDeepResearch(
                                             query = query,
