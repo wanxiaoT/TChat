@@ -2,10 +2,14 @@ package com.tchat.wanxiaot.ui.settings
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tchat.data.database.AppDatabase
+import com.tchat.data.database.entity.KnowledgeBaseEntity
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.wanxiaot.util.ExportData
 import com.tchat.wanxiaot.util.ExportImportManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +26,7 @@ class ExportImportViewModel(
 ) : ViewModel() {
 
     private val exportImportManager = ExportImportManager(context)
+    private val database = AppDatabase.getInstance(context)
 
     private val _uiState = MutableStateFlow<ExportImportUiState>(ExportImportUiState.Idle)
     val uiState: StateFlow<ExportImportUiState> = _uiState.asStateFlow()
@@ -32,12 +37,29 @@ class ExportImportViewModel(
     private val _selectedProviderIds = MutableStateFlow<Set<String>>(emptySet())
     val selectedProviderIds: StateFlow<Set<String>> = _selectedProviderIds.asStateFlow()
 
+    private val _knowledgeBases = MutableStateFlow<List<KnowledgeBaseEntity>>(emptyList())
+    val knowledgeBases: StateFlow<List<KnowledgeBaseEntity>> = _knowledgeBases.asStateFlow()
+
     init {
         viewModelScope.launch {
             settingsManager.settings.collect { settings ->
                 _providers.value = settings.providers
             }
         }
+
+        viewModelScope.launch {
+            database.knowledgeBaseDao().getAllBases().collect { bases ->
+                _knowledgeBases.value = bases
+            }
+        }
+    }
+
+    private fun writeTempFileToUri(tempFile: File, uri: Uri) {
+        context.contentResolver.openOutputStream(uri)?.use { output ->
+            tempFile.inputStream().use { input ->
+                input.copyTo(output)
+            }
+        } ?: throw IllegalArgumentException("无法写入所选文件")
     }
 
     // ============= 供应商配置导出导入 =============
@@ -50,6 +72,31 @@ class ExportImportViewModel(
                 _uiState.value = ExportImportUiState.Success("成功导出 ${providerIds.size} 个供应商配置")
             } catch (e: Exception) {
                 _uiState.value = ExportImportUiState.Error("导出失败: ${e.message}")
+            }
+        }
+    }
+
+    fun exportProvidersToUri(providerIds: List<String>, uri: Uri, encrypted: Boolean, password: String?) {
+        viewModelScope.launch {
+            if (providerIds.isEmpty()) {
+                _uiState.value = ExportImportUiState.Error("请选择要导出的供应商")
+                return@launch
+            }
+            if (encrypted && password.isNullOrBlank()) {
+                _uiState.value = ExportImportUiState.Error("请输入加密密码")
+                return@launch
+            }
+
+            _uiState.value = ExportImportUiState.Loading("导出供应商配置...")
+            val tempFile = File(context.cacheDir, "providers_export_${System.currentTimeMillis()}.json")
+            try {
+                exportImportManager.exportProvidersToFile(providerIds, tempFile, encrypted, password)
+                writeTempFileToUri(tempFile, uri)
+                _uiState.value = ExportImportUiState.Success("成功导出 ${providerIds.size} 个供应商配置")
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("导出失败: ${e.message}")
+            } finally {
+                tempFile.delete()
             }
         }
     }
@@ -95,6 +142,18 @@ class ExportImportViewModel(
         }
     }
 
+    fun importProvidersFromExportData(exportData: ExportData) {
+        viewModelScope.launch {
+            _uiState.value = ExportImportUiState.Loading("从二维码导入...")
+            try {
+                val count = exportImportManager.importProvidersFromExportData(exportData)
+                _uiState.value = ExportImportUiState.Success("成功导入 $count 个供应商配置")
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("导入失败: ${e.message}")
+            }
+        }
+    }
+
     // ============= 模型列表导出导入 =============
 
     fun exportModelsToFile(providerId: String, outputFile: File, encrypted: Boolean, password: String?) {
@@ -105,6 +164,27 @@ class ExportImportViewModel(
                 _uiState.value = ExportImportUiState.Success("成功导出模型列表")
             } catch (e: Exception) {
                 _uiState.value = ExportImportUiState.Error("导出失败: ${e.message}")
+            }
+        }
+    }
+
+    fun exportModelsToUri(providerId: String, uri: Uri, encrypted: Boolean, password: String?) {
+        viewModelScope.launch {
+            if (encrypted && password.isNullOrBlank()) {
+                _uiState.value = ExportImportUiState.Error("请输入加密密码")
+                return@launch
+            }
+
+            _uiState.value = ExportImportUiState.Loading("导出模型列表...")
+            val tempFile = File(context.cacheDir, "models_export_${System.currentTimeMillis()}.json")
+            try {
+                exportImportManager.exportModelsToFile(providerId, tempFile, encrypted, password)
+                writeTempFileToUri(tempFile, uri)
+                _uiState.value = ExportImportUiState.Success("成功导出模型列表")
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("导出失败: ${e.message}")
+            } finally {
+                tempFile.delete()
             }
         }
     }
@@ -138,6 +218,18 @@ class ExportImportViewModel(
         }
     }
 
+    fun importModelsFromExportData(exportData: ExportData, targetProviderId: String) {
+        viewModelScope.launch {
+            _uiState.value = ExportImportUiState.Loading("从二维码导入...")
+            try {
+                exportImportManager.importModelsFromExportData(exportData, targetProviderId)
+                _uiState.value = ExportImportUiState.Success("成功导入模型列表")
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("导入失败: ${e.message}")
+            }
+        }
+    }
+
     // ============= API配置导出导入 =============
 
     fun exportApiConfigToFile(providerId: String, outputFile: File, encrypted: Boolean = true, password: String?) {
@@ -148,6 +240,27 @@ class ExportImportViewModel(
                 _uiState.value = ExportImportUiState.Success("成功导出API配置")
             } catch (e: Exception) {
                 _uiState.value = ExportImportUiState.Error("导出失败: ${e.message}")
+            }
+        }
+    }
+
+    fun exportApiConfigToUri(providerId: String, uri: Uri, encrypted: Boolean = true, password: String?) {
+        viewModelScope.launch {
+            if (encrypted && password.isNullOrBlank()) {
+                _uiState.value = ExportImportUiState.Error("请输入加密密码")
+                return@launch
+            }
+
+            _uiState.value = ExportImportUiState.Loading("导出API配置...")
+            val tempFile = File(context.cacheDir, "api_config_export_${System.currentTimeMillis()}.json")
+            try {
+                exportImportManager.exportApiConfigToFile(providerId, tempFile, encrypted, password)
+                writeTempFileToUri(tempFile, uri)
+                _uiState.value = ExportImportUiState.Success("成功导出API配置")
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("导出失败: ${e.message}")
+            } finally {
+                tempFile.delete()
             }
         }
     }
@@ -181,6 +294,18 @@ class ExportImportViewModel(
         }
     }
 
+    fun importApiConfigFromExportData(exportData: ExportData) {
+        viewModelScope.launch {
+            _uiState.value = ExportImportUiState.Loading("从二维码导入...")
+            try {
+                val provider = exportImportManager.importApiConfigFromExportData(exportData)
+                _uiState.value = ExportImportUiState.Success("成功导入API配置: ${provider.name}")
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("导入失败: ${e.message}")
+            }
+        }
+    }
+
     // ============= 知识库导出导入 =============
 
     fun exportKnowledgeBaseToFile(knowledgeBaseId: String, outputFile: File) {
@@ -195,11 +320,39 @@ class ExportImportViewModel(
         }
     }
 
+    fun exportKnowledgeBaseToUri(knowledgeBaseId: String, uri: Uri) {
+        viewModelScope.launch {
+            _uiState.value = ExportImportUiState.Loading("导出知识库...")
+            val tempFile = File(context.cacheDir, "knowledge_base_export_${System.currentTimeMillis()}.json")
+            try {
+                exportImportManager.exportKnowledgeBaseToFile(knowledgeBaseId, tempFile)
+                writeTempFileToUri(tempFile, uri)
+                _uiState.value = ExportImportUiState.Success("成功导出知识库")
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("导出失败: ${e.message}")
+            } finally {
+                tempFile.delete()
+            }
+        }
+    }
+
     fun importKnowledgeBaseFromFile(inputFile: File) {
         viewModelScope.launch {
             _uiState.value = ExportImportUiState.Loading("导入知识库...")
             try {
                 val newId = exportImportManager.importKnowledgeBaseFromFile(inputFile)
+                _uiState.value = ExportImportUiState.Success("成功导入知识库 (ID: $newId)")
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("导入失败: ${e.message}")
+            }
+        }
+    }
+
+    fun importKnowledgeBaseFromExportData(exportData: ExportData) {
+        viewModelScope.launch {
+            _uiState.value = ExportImportUiState.Loading("从二维码导入...")
+            try {
+                val newId = exportImportManager.importKnowledgeBaseFromExportData(exportData)
                 _uiState.value = ExportImportUiState.Success("成功导入知识库 (ID: $newId)")
             } catch (e: Exception) {
                 _uiState.value = ExportImportUiState.Error("导入失败: ${e.message}")

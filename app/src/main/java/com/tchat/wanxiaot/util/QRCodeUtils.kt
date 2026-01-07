@@ -149,17 +149,14 @@ object QRCodeUtils {
      * @return 解析后的ExportData，失败返回null
      */
     fun qrCodeToExportData(bitmap: Bitmap, password: String? = null): ExportData? {
-        val content = if (password != null) {
-            decodeEncryptedQRCode(bitmap, password)
-        } else {
-            decodeQRCode(bitmap)
-        } ?: return null
+        val raw = decodeQRCode(bitmap) ?: return null
 
-        return try {
-            ExportData.fromJson(content)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
+        // 先尝试按明文解析（兼容：即使传了password也能解析未加密二维码）
+        runCatching { ExportData.fromJson(raw) }.getOrNull()?.let { return it }
+
+        // 再尝试按加密内容解密解析
+        val normalizedPassword = password?.takeIf { it.isNotBlank() } ?: return null
+        val decrypted = runCatching { EncryptionUtils.decrypt(raw, normalizedPassword) }.getOrNull() ?: return null
+        return runCatching { ExportData.fromJson(decrypted) }.getOrNull()
     }
 }

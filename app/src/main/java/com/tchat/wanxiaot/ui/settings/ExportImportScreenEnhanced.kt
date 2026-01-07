@@ -1,8 +1,10 @@
 package com.tchat.wanxiaot.ui.settings
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -20,13 +22,13 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.FileProvider
 import com.composables.icons.lucide.*
+import com.tchat.data.database.entity.KnowledgeBaseEntity
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileOutputStream
 
 /**
  * 导出/导入设置页面（增强版）
@@ -47,6 +49,7 @@ fun ExportImportScreenEnhanced(
     val uiState by viewModel.uiState.collectAsState()
     val providers by viewModel.providers.collectAsState()
     val selectedProviderIds by viewModel.selectedProviderIds.collectAsState()
+    val knowledgeBases by viewModel.knowledgeBases.collectAsState()
 
     // 状态管理
     var showProviderSelection by remember { mutableStateOf(false) }
@@ -57,6 +60,7 @@ fun ExportImportScreenEnhanced(
     var showQRScanner by remember { mutableStateOf(false) }
     var selectedProviderId by remember { mutableStateOf<String?>(null) }
     var selectedKnowledgeBaseId by remember { mutableStateOf<String?>(null) }
+    var showKnowledgeBaseSelection by remember { mutableStateOf(false) }
     var showProviderSingleSelection by remember { mutableStateOf(false) }
     var pendingExportAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
@@ -67,20 +71,18 @@ fun ExportImportScreenEnhanced(
         uri?.let {
             when (currentExportType) {
                 ExportType.PROVIDERS -> {
-                    val file = uriToFile(context, it, "providers_export.json")
-                    viewModel.exportProvidersToFile(
+                    viewModel.exportProvidersToUri(
                         selectedProviderIds.toList(),
-                        file,
+                        it,
                         useEncryption,
                         encryptionPassword.takeIf { useEncryption }
                     )
                 }
                 ExportType.MODELS -> {
                     selectedProviderId?.let { providerId ->
-                        val file = uriToFile(context, it, "models_export.json")
-                        viewModel.exportModelsToFile(
+                        viewModel.exportModelsToUri(
                             providerId,
-                            file,
+                            it,
                             useEncryption,
                             encryptionPassword.takeIf { useEncryption }
                         )
@@ -88,10 +90,9 @@ fun ExportImportScreenEnhanced(
                 }
                 ExportType.API_CONFIG -> {
                     selectedProviderId?.let { providerId ->
-                        val file = uriToFile(context, it, "api_config_export.json")
-                        viewModel.exportApiConfigToFile(
+                        viewModel.exportApiConfigToUri(
                             providerId,
-                            file,
+                            it,
                             true, // 强制加密
                             encryptionPassword
                         )
@@ -99,8 +100,7 @@ fun ExportImportScreenEnhanced(
                 }
                 ExportType.KNOWLEDGE_BASE -> {
                     selectedKnowledgeBaseId?.let { kbId ->
-                        val file = uriToFile(context, it, "knowledge_base_export.json")
-                        viewModel.exportKnowledgeBaseToFile(kbId, file)
+                        viewModel.exportKnowledgeBaseToUri(kbId, it)
                     }
                 }
                 null -> {}
@@ -133,19 +133,6 @@ fun ExportImportScreenEnhanced(
                     viewModel.importKnowledgeBaseFromFile(file)
                 }
                 null -> {}
-            }
-        }
-    }
-
-    // 多文件选择器（用于批量导入）
-    val multiImportFileLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris: List<Uri> ->
-        if (uris.isNotEmpty()) {
-            // TODO: 实现批量导入逻辑
-            uris.forEachIndexed { index, uri ->
-                val file = uriToFile(context, uri, "import_$index.json")
-                viewModel.importProvidersFromFile(file, encryptionPassword.takeIf { it.isNotEmpty() })
             }
         }
     }
@@ -201,8 +188,13 @@ fun ExportImportScreenEnhanced(
                         title = "供应商配置",
                         description = "导出或导入AI供应商配置（包括模型列表和自定义参数）",
                         icon = Lucide.Server,
+                        encryptionEnabled = useEncryption,
+                        encryptionPassword = encryptionPassword,
+                        onEncryptionEnabledChange = { useEncryption = it },
+                        onEncryptionPasswordChange = { encryptionPassword = it },
                         onExportFile = {
                             currentExportType = ExportType.PROVIDERS
+                            pendingExportAction = null
                             showProviderSelection = true
                         },
                         onExportQRCode = {
@@ -215,6 +207,19 @@ fun ExportImportScreenEnhanced(
                                 ) { qrCode ->
                                     showQRCodeDialog = qrCode
                                 }
+                            } else {
+                                pendingExportAction = {
+                                    if (selectedProviderIds.isNotEmpty()) {
+                                        viewModel.exportProvidersToQRCode(
+                                            selectedProviderIds.toList(),
+                                            useEncryption,
+                                            encryptionPassword.takeIf { useEncryption }
+                                        ) { qrCode ->
+                                            showQRCodeDialog = qrCode
+                                        }
+                                    }
+                                }
+                                showProviderSelection = true
                             }
                         },
                         onImportFile = {
@@ -234,6 +239,10 @@ fun ExportImportScreenEnhanced(
                         title = "模型列表",
                         description = "导出或导入单个供应商的模型列表",
                         icon = Lucide.List,
+                        encryptionEnabled = useEncryption,
+                        encryptionPassword = encryptionPassword,
+                        onEncryptionEnabledChange = { useEncryption = it },
+                        onEncryptionPasswordChange = { encryptionPassword = it },
                         onExportFile = {
                             currentExportType = ExportType.MODELS
                             showProviderSingleSelection = true
@@ -269,7 +278,8 @@ fun ExportImportScreenEnhanced(
                         },
                         onImportQRCode = {
                             currentExportType = ExportType.MODELS
-                            showQRScanner = true
+                            showProviderSingleSelection = true
+                            pendingExportAction = { showQRScanner = true }
                         }
                     )
                 }
@@ -280,6 +290,10 @@ fun ExportImportScreenEnhanced(
                         title = "API配置",
                         description = "导出或导入API配置（包含API密钥，强烈建议加密）",
                         icon = Lucide.Key,
+                        encryptionEnabled = useEncryption,
+                        encryptionPassword = encryptionPassword,
+                        onEncryptionEnabledChange = { useEncryption = it },
+                        onEncryptionPasswordChange = { encryptionPassword = it },
                         onExportFile = {
                             currentExportType = ExportType.API_CONFIG
                             useEncryption = true // API配置强制加密
@@ -324,10 +338,13 @@ fun ExportImportScreenEnhanced(
                         title = "知识库",
                         description = "导出或导入知识库（包含原始文件、向量数据和配置）",
                         icon = Lucide.Database,
+                        encryptionEnabled = false,
+                        encryptionPassword = "",
+                        onEncryptionEnabledChange = {},
+                        onEncryptionPasswordChange = { encryptionPassword = it },
                         onExportFile = {
                             currentExportType = ExportType.KNOWLEDGE_BASE
-                            // TODO: 需要知识库列表选择对话框
-                            // showKnowledgeBaseSelection = true
+                            showKnowledgeBaseSelection = true
                         },
                         onImportFile = {
                             currentExportType = ExportType.KNOWLEDGE_BASE
@@ -364,10 +381,18 @@ fun ExportImportScreenEnhanced(
                 providers = providers,
                 selectedProviders = selectedProviderIds,
                 onProviderToggle = { viewModel.toggleProviderSelection(it) },
-                onDismiss = { showProviderSelection = false },
+                onDismiss = {
+                    showProviderSelection = false
+                    pendingExportAction = null
+                },
                 onConfirm = {
                     showProviderSelection = false
-                    exportFileLauncher.launch("providers_${System.currentTimeMillis()}.json")
+                    if (pendingExportAction != null) {
+                        pendingExportAction?.invoke()
+                        pendingExportAction = null
+                    } else {
+                        exportFileLauncher.launch("providers_${System.currentTimeMillis()}.json")
+                    }
                 }
             )
         }
@@ -379,8 +404,35 @@ fun ExportImportScreenEnhanced(
                 title = "导出二维码",
                 onDismiss = { showQRCodeDialog = null },
                 onShare = {
-                    // TODO: 实现分享功能
-                    // 可以使用Android的分享Intent
+                    val bitmap = showQRCodeDialog
+                    if (bitmap != null) {
+                        try {
+                            val shareDir = File(context.cacheDir, "share")
+                            if (!shareDir.exists()) shareDir.mkdirs()
+
+                            val file = File(shareDir, "TChat_Export_QRCode.png")
+                            FileOutputStream(file).use { output ->
+                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+                            }
+
+                            val uri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                file
+                            )
+
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "image/png"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                putExtra(Intent.EXTRA_TEXT, "TChat 导出二维码")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+
+                            context.startActivity(Intent.createChooser(shareIntent, "分享二维码"))
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "分享失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             )
         }
@@ -402,47 +454,38 @@ fun ExportImportScreenEnhanced(
             )
         }
 
+        // 知识库选择对话框
+        if (showKnowledgeBaseSelection) {
+            KnowledgeBaseSelectionDialog(
+                knowledgeBases = knowledgeBases,
+                onDismiss = { showKnowledgeBaseSelection = false },
+                onConfirm = { baseId ->
+                    selectedKnowledgeBaseId = baseId
+                    showKnowledgeBaseSelection = false
+                    exportFileLauncher.launch("knowledge_base_${System.currentTimeMillis()}.json")
+                }
+            )
+        }
+
         // 二维码扫描器
         if (showQRScanner) {
-            val scannerScope = rememberCoroutineScope()
-
             com.tchat.wanxiaot.ui.components.QRCodeScannerForImport(
                 onBack = { showQRScanner = false },
                 onDataScanned = { exportData ->
                     showQRScanner = false
-                    // ExportData包含了已经解析好的数据，直接使用viewModel的导入功能
-                    // 这里需要临时保存到文件，然后使用文件导入
-                    scannerScope.launch {
-                        try {
-                            val tempFile = File(context.cacheDir, "qr_import_${System.currentTimeMillis()}.json")
-                            tempFile.writeText(exportData.toJson())
-
-                            when (currentExportType) {
-                                ExportType.PROVIDERS -> {
-                                    viewModel.importProvidersFromFile(
-                                        tempFile,
-                                        encryptionPassword.takeIf { it.isNotEmpty() }
-                                    )
-                                }
-                                ExportType.MODELS -> {
-                                    selectedProviderId?.let { providerId ->
-                                        viewModel.importModelsFromFile(
-                                            tempFile,
-                                            providerId,
-                                            encryptionPassword.takeIf { it.isNotEmpty() }
-                                        )
-                                    }
-                                }
-                                ExportType.API_CONFIG -> {
-                                    viewModel.importApiConfigFromFile(tempFile, encryptionPassword)
-                                }
-                                else -> {}
-                            }
-
-                            tempFile.delete()
-                        } catch (e: Exception) {
-                            // 错误会通过ViewModel的uiState传递
+                    when (currentExportType) {
+                        ExportType.PROVIDERS -> {
+                            viewModel.importProvidersFromExportData(exportData)
                         }
+                        ExportType.MODELS -> {
+                            selectedProviderId?.let { providerId ->
+                                viewModel.importModelsFromExportData(exportData, providerId)
+                            }
+                        }
+                        ExportType.API_CONFIG -> {
+                            viewModel.importApiConfigFromExportData(exportData)
+                        }
+                        else -> {}
                     }
                 },
                 password = encryptionPassword.takeIf { it.isNotEmpty() }
@@ -459,6 +502,10 @@ private fun ExportImportSectionConnected(
     title: String,
     description: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    encryptionEnabled: Boolean,
+    encryptionPassword: String,
+    onEncryptionEnabledChange: (Boolean) -> Unit,
+    onEncryptionPasswordChange: (String) -> Unit,
     onExportFile: () -> Unit,
     onExportQRCode: (() -> Unit)? = null,
     onImportFile: () -> Unit,
@@ -532,7 +579,7 @@ private fun ExportImportSectionConnected(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedButton(
-                    onClick = onExportFile,
+                    onClick = { showExportOptions = true },
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(Lucide.Download, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -541,7 +588,7 @@ private fun ExportImportSectionConnected(
                 }
 
                 Button(
-                    onClick = onImportFile,
+                    onClick = { showImportOptions = true },
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(Lucide.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -551,6 +598,215 @@ private fun ExportImportSectionConnected(
             }
         }
     }
+
+    // 导出选项对话框
+    if (showExportOptions) {
+        ExportOptionsDialogConnected(
+            title = "导出$title",
+            supportsQRCode = supportsQRCode,
+            requiresEncryption = requiresEncryption,
+            initialEncryptionEnabled = if (requiresEncryption) true else encryptionEnabled,
+            initialPassword = encryptionPassword,
+            onDismiss = { showExportOptions = false },
+            onExportFile = { encrypted, password ->
+                onEncryptionEnabledChange(encrypted)
+                onEncryptionPasswordChange(password)
+                onExportFile()
+                showExportOptions = false
+            },
+            onExportQRCode = if (supportsQRCode && onExportQRCode != null) {
+                { encrypted, password ->
+                    onEncryptionEnabledChange(encrypted)
+                    onEncryptionPasswordChange(password)
+                    onExportQRCode()
+                    showExportOptions = false
+                }
+            } else {
+                null
+            }
+        )
+    }
+
+    // 导入选项对话框
+    if (showImportOptions) {
+        ImportOptionsDialogConnected(
+            title = "导入$title",
+            supportsQRCode = supportsQRCode,
+            initialPassword = encryptionPassword,
+            onDismiss = { showImportOptions = false },
+            onImportFile = { password ->
+                onEncryptionPasswordChange(password)
+                onImportFile()
+                showImportOptions = false
+            },
+            onImportQRCode = if (supportsQRCode && onImportQRCode != null) {
+                { password ->
+                    onEncryptionPasswordChange(password)
+                    onImportQRCode()
+                    showImportOptions = false
+                }
+            } else {
+                null
+            }
+        )
+    }
+}
+
+@Composable
+private fun ExportOptionsDialogConnected(
+    title: String,
+    supportsQRCode: Boolean,
+    requiresEncryption: Boolean,
+    initialEncryptionEnabled: Boolean,
+    initialPassword: String,
+    onDismiss: () -> Unit,
+    onExportFile: (encrypted: Boolean, password: String) -> Unit,
+    onExportQRCode: ((encrypted: Boolean, password: String) -> Unit)?
+) {
+    var useEncryption by remember { mutableStateOf(if (requiresEncryption) true else initialEncryptionEnabled) }
+    var password by remember { mutableStateOf(initialPassword) }
+
+    val effectiveEncryption = if (requiresEncryption) true else useEncryption
+    val passwordRequired = effectiveEncryption
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Lucide.Download, contentDescription = null) },
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("加密导出")
+                    Switch(
+                        checked = effectiveEncryption,
+                        onCheckedChange = { useEncryption = it },
+                        enabled = !requiresEncryption
+                    )
+                }
+
+                if (passwordRequired) {
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("密码") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                if (requiresEncryption) {
+                    Text(
+                        text = "此项导出包含敏感信息，必须加密。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val canProceed = !passwordRequired || password.isNotBlank()
+
+                Button(
+                    onClick = { onExportFile(effectiveEncryption, password) },
+                    enabled = canProceed,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Lucide.FileText, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("导出为文件")
+                }
+
+                if (supportsQRCode && onExportQRCode != null) {
+                    OutlinedButton(
+                        onClick = { onExportQRCode(effectiveEncryption, password) },
+                        enabled = canProceed,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Lucide.QrCode, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("生成二维码")
+                    }
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ImportOptionsDialogConnected(
+    title: String,
+    supportsQRCode: Boolean,
+    initialPassword: String,
+    onDismiss: () -> Unit,
+    onImportFile: (password: String) -> Unit,
+    onImportQRCode: ((password: String) -> Unit)?
+) {
+    var password by remember { mutableStateOf(initialPassword) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Lucide.Upload, contentDescription = null) },
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("解密密码（如果已加密）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = "选择导入方式：",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        },
+        confirmButton = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { onImportFile(password) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Lucide.FileText, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("从文件导入")
+                }
+
+                if (supportsQRCode && onImportQRCode != null) {
+                    OutlinedButton(
+                        onClick = { onImportQRCode(password) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Lucide.QrCode, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("扫描二维码")
+                    }
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }
 
 /**
@@ -617,6 +873,77 @@ private fun ProviderSingleSelectionDialog(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { selectedId?.let { onConfirm(it) } },
+                enabled = selectedId != null
+            ) {
+                Text("确定")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+/**
+ * 知识库选择对话框
+ */
+@Composable
+private fun KnowledgeBaseSelectionDialog(
+    knowledgeBases: List<KnowledgeBaseEntity>,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var selectedId by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Lucide.Database, contentDescription = null) },
+        title = { Text("选择知识库") },
+        text = {
+            if (knowledgeBases.isEmpty()) {
+                Text(
+                    text = "暂无知识库",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                LazyColumn {
+                    items(knowledgeBases) { base ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedId = base.id }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedId == base.id,
+                                onClick = { selectedId = base.id }
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = base.name,
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                base.description?.takeIf { it.isNotBlank() }?.let { desc ->
+                                    Text(
+                                        text = desc,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
                 }

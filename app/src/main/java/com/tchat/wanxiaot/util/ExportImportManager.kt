@@ -3,6 +3,7 @@ package com.tchat.wanxiaot.util
 import android.content.Context
 import android.graphics.Bitmap
 import com.tchat.data.database.AppDatabase
+import com.tchat.wanxiaot.settings.AppSettings
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +20,39 @@ class ExportImportManager(private val context: Context) {
     private val settingsManager = SettingsManager(context)
     private val database = AppDatabase.getInstance(context)
 
+    private fun normalizedPassword(password: String?): String? = password?.takeIf { it.isNotBlank() }
+
+    private fun normalizeImportedText(raw: String): String {
+        // `trim()` does not reliably remove BOM, so strip it explicitly first.
+        return raw.removePrefix("\uFEFF").trim()
+    }
+
+    private fun decryptImportPayload(raw: String, password: String): String {
+        val trimmed = raw.trim()
+        return try {
+            EncryptionUtils.decrypt(trimmed, password)
+        } catch (e: Exception) {
+            // Some sharing channels may inject whitespace/newlines into base64 payloads.
+            val compact = trimmed.filterNot(Char::isWhitespace)
+            EncryptionUtils.decrypt(compact, password)
+        }
+    }
+
+    private fun ensureCurrentProviderIsValid(settings: AppSettings, preferredProviderId: String? = null): AppSettings {
+        val hasValidCurrent = settings.currentProviderId.isNotBlank() &&
+                settings.providers.any { it.id == settings.currentProviderId }
+        if (hasValidCurrent) return settings
+
+        val chosenProvider = settings.providers.find { it.id == preferredProviderId }
+            ?: settings.providers.firstOrNull()
+            ?: return settings.copy(currentProviderId = "", currentModel = "")
+
+        val defaultModel = chosenProvider.selectedModel.ifEmpty {
+            chosenProvider.availableModels.firstOrNull() ?: ""
+        }
+        return settings.copy(currentProviderId = chosenProvider.id, currentModel = defaultModel)
+    }
+
     // ============= 供应商配置导出导入 =============
 
     /**
@@ -34,6 +68,10 @@ class ExportImportManager(private val context: Context) {
         encrypted: Boolean = false,
         password: String? = null
     ) = withContext(Dispatchers.IO) {
+        if (encrypted && normalizedPassword(password) == null) {
+            throw IllegalArgumentException("加密导出需要密码")
+        }
+
         val settings = settingsManager.settings.value
         val providers = settings.providers.filter { it.id in providerIds }
 
@@ -44,8 +82,8 @@ class ExportImportManager(private val context: Context) {
             data = exportData.toJson()
         )
 
-        val content = if (encrypted && password != null) {
-            EncryptionUtils.encrypt(wrappedData.toJson(), password)
+        val content = if (encrypted) {
+            EncryptionUtils.encrypt(wrappedData.toJson(), normalizedPassword(password)!!)
         } else {
             wrappedData.toJson()
         }
@@ -67,6 +105,10 @@ class ExportImportManager(private val context: Context) {
         password: String? = null,
         size: Int = 512
     ): Bitmap? = withContext(Dispatchers.Default) {
+        if (encrypted && normalizedPassword(password) == null) {
+            throw IllegalArgumentException("加密导出需要密码")
+        }
+
         val settings = settingsManager.settings.value
         val providers = settings.providers.filter { it.id in providerIds }
 
@@ -77,7 +119,8 @@ class ExportImportManager(private val context: Context) {
             data = exportData.toJson()
         )
 
-        QRCodeUtils.exportDataToQRCode(wrappedData, password, size)
+        val qrPassword = if (encrypted) normalizedPassword(password) else null
+        QRCodeUtils.exportDataToQRCode(wrappedData, qrPassword, size)
     }
 
     /**
@@ -90,19 +133,19 @@ class ExportImportManager(private val context: Context) {
         inputFile: File,
         password: String? = null
     ): Int = withContext(Dispatchers.IO) {
-        val content = inputFile.readText()
+        val content = normalizeImportedText(inputFile.readText())
 
-        val jsonContent = if (password != null) {
-            try {
-                EncryptionUtils.decrypt(content, password)
-            } catch (e: Exception) {
-                throw IllegalArgumentException("密码错误或文件损坏")
+        val wrappedData = runCatching { ExportData.fromJson(content) }.getOrNull()
+            ?: run {
+                val normalized = normalizedPassword(password)
+                    ?: throw IllegalArgumentException("文件可能已加密，请输入密码")
+                val decrypted = runCatching { decryptImportPayload(content, normalized) }.getOrElse {
+                    throw IllegalArgumentException("密码错误或文件损坏")
+                }
+                runCatching { ExportData.fromJson(decrypted) }.getOrElse {
+                    throw IllegalArgumentException("文件内容无效")
+                }
             }
-        } else {
-            content
-        }
-
-        val wrappedData = ExportData.fromJson(jsonContent)
         if (wrappedData.type != ExportDataType.PROVIDERS) {
             throw IllegalArgumentException("文件类型不匹配，期望: PROVIDERS，实际: ${wrappedData.type}")
         }
@@ -124,7 +167,12 @@ class ExportImportManager(private val context: Context) {
         val updatedSettings = settings.copy(
             providers = settings.providers + newProviders
         )
-        settingsManager.updateSettings(updatedSettings)
+        settingsManager.updateSettings(
+            ensureCurrentProviderIsValid(
+                settings = updatedSettings,
+                preferredProviderId = newProviders.firstOrNull()?.id
+            )
+        )
 
         newProviders.size
     }
@@ -139,19 +187,28 @@ class ExportImportManager(private val context: Context) {
         bitmap: Bitmap,
         password: String? = null
     ): Int = withContext(Dispatchers.Default) {
-        val wrappedData = QRCodeUtils.qrCodeToExportData(bitmap, password)
+        val wrappedData = QRCodeUtils.qrCodeToExportData(bitmap, normalizedPassword(password))
             ?: throw IllegalArgumentException("二维码解析失败")
 
-        if (wrappedData.type != ExportDataType.PROVIDERS) {
-            throw IllegalArgumentException("二维码类型不匹配，期望: PROVIDERS，实际: ${wrappedData.type}")
+        importProvidersFromExportData(wrappedData)
+    }
+
+    /**
+     * 从已解析的导出数据导入供应商配置（通常来自二维码扫描）
+     */
+    suspend fun importProvidersFromExportData(
+        exportData: ExportData
+    ): Int = withContext(Dispatchers.IO) {
+        if (exportData.type != ExportDataType.PROVIDERS) {
+            throw IllegalArgumentException("数据类型不匹配，期望: PROVIDERS，实际: ${exportData.type}")
         }
 
-        val exportData = ProvidersExportData.fromJson(wrappedData.data)
+        val providersData = ProvidersExportData.fromJson(exportData.data)
         val settings = settingsManager.settings.value
 
         // 合并供应商配置（防止ID冲突）
         val existingIds = settings.providers.map { it.id }.toSet()
-        val newProviders = exportData.providers.map { provider ->
+        val newProviders = providersData.providers.map { provider ->
             if (provider.id in existingIds) {
                 provider.copy(id = UUID.randomUUID().toString())
             } else {
@@ -162,7 +219,12 @@ class ExportImportManager(private val context: Context) {
         val updatedSettings = settings.copy(
             providers = settings.providers + newProviders
         )
-        settingsManager.updateSettings(updatedSettings)
+        settingsManager.updateSettings(
+            ensureCurrentProviderIsValid(
+                settings = updatedSettings,
+                preferredProviderId = newProviders.firstOrNull()?.id
+            )
+        )
 
         newProviders.size
     }
@@ -178,6 +240,10 @@ class ExportImportManager(private val context: Context) {
         encrypted: Boolean = false,
         password: String? = null
     ) = withContext(Dispatchers.IO) {
+        if (encrypted && normalizedPassword(password) == null) {
+            throw IllegalArgumentException("加密导出需要密码")
+        }
+
         val settings = settingsManager.settings.value
         val provider = settings.providers.find { it.id == providerId }
             ?: throw IllegalArgumentException("供应商不存在")
@@ -195,8 +261,8 @@ class ExportImportManager(private val context: Context) {
             data = exportData.toJson()
         )
 
-        val content = if (encrypted && password != null) {
-            EncryptionUtils.encrypt(wrappedData.toJson(), password)
+        val content = if (encrypted) {
+            EncryptionUtils.encrypt(wrappedData.toJson(), normalizedPassword(password)!!)
         } else {
             wrappedData.toJson()
         }
@@ -213,6 +279,10 @@ class ExportImportManager(private val context: Context) {
         password: String? = null,
         size: Int = 512
     ): Bitmap? = withContext(Dispatchers.Default) {
+        if (encrypted && normalizedPassword(password) == null) {
+            throw IllegalArgumentException("加密导出需要密码")
+        }
+
         val settings = settingsManager.settings.value
         val provider = settings.providers.find { it.id == providerId }
             ?: throw IllegalArgumentException("供应商不存在")
@@ -230,7 +300,8 @@ class ExportImportManager(private val context: Context) {
             data = exportData.toJson()
         )
 
-        QRCodeUtils.exportDataToQRCode(wrappedData, password, size)
+        val qrPassword = if (encrypted) normalizedPassword(password) else null
+        QRCodeUtils.exportDataToQRCode(wrappedData, qrPassword, size)
     }
 
     /**
@@ -241,19 +312,19 @@ class ExportImportManager(private val context: Context) {
         targetProviderId: String,
         password: String? = null
     ) = withContext(Dispatchers.IO) {
-        val content = inputFile.readText()
+        val content = normalizeImportedText(inputFile.readText())
 
-        val jsonContent = if (password != null) {
-            try {
-                EncryptionUtils.decrypt(content, password)
-            } catch (e: Exception) {
-                throw IllegalArgumentException("密码错误或文件损坏")
+        val wrappedData = runCatching { ExportData.fromJson(content) }.getOrNull()
+            ?: run {
+                val normalized = normalizedPassword(password)
+                    ?: throw IllegalArgumentException("文件可能已加密，请输入密码")
+                val decrypted = runCatching { decryptImportPayload(content, normalized) }.getOrElse {
+                    throw IllegalArgumentException("密码错误或文件损坏")
+                }
+                runCatching { ExportData.fromJson(decrypted) }.getOrElse {
+                    throw IllegalArgumentException("文件内容无效")
+                }
             }
-        } else {
-            content
-        }
-
-        val wrappedData = ExportData.fromJson(jsonContent)
         if (wrappedData.type != ExportDataType.MODELS) {
             throw IllegalArgumentException("文件类型不匹配")
         }
@@ -261,10 +332,45 @@ class ExportImportManager(private val context: Context) {
         val exportData = ModelsExportData.fromJson(wrappedData.data)
         val settings = settingsManager.settings.value
 
+        if (settings.providers.none { it.id == targetProviderId }) {
+            throw IllegalArgumentException("目标供应商不存在")
+        }
+
         val updatedProviders = settings.providers.map { provider ->
             if (provider.id == targetProviderId) {
                 // 合并模型列表（去重）
                 val mergedModels = (provider.availableModels + exportData.models).distinct()
+                provider.copy(availableModels = mergedModels)
+            } else {
+                provider
+            }
+        }
+
+        val updatedSettings = settings.copy(providers = updatedProviders)
+        settingsManager.updateSettings(updatedSettings)
+    }
+
+    /**
+     * 从已解析的导出数据导入模型列表到指定供应商（通常来自二维码扫描）
+     */
+    suspend fun importModelsFromExportData(
+        exportData: ExportData,
+        targetProviderId: String
+    ) = withContext(Dispatchers.IO) {
+        if (exportData.type != ExportDataType.MODELS) {
+            throw IllegalArgumentException("数据类型不匹配，期望: MODELS，实际: ${exportData.type}")
+        }
+
+        val modelsData = ModelsExportData.fromJson(exportData.data)
+        val settings = settingsManager.settings.value
+
+        if (settings.providers.none { it.id == targetProviderId }) {
+            throw IllegalArgumentException("目标供应商不存在")
+        }
+
+        val updatedProviders = settings.providers.map { provider ->
+            if (provider.id == targetProviderId) {
+                val mergedModels = (provider.availableModels + modelsData.models).distinct()
                 provider.copy(availableModels = mergedModels)
             } else {
                 provider
@@ -286,7 +392,7 @@ class ExportImportManager(private val context: Context) {
         encrypted: Boolean = true,
         password: String? = null
     ) = withContext(Dispatchers.IO) {
-        if (encrypted && password == null) {
+        if (encrypted && normalizedPassword(password) == null) {
             throw IllegalArgumentException("导出API配置时必须提供加密密码")
         }
 
@@ -301,8 +407,8 @@ class ExportImportManager(private val context: Context) {
             data = exportData.toJson()
         )
 
-        val content = if (encrypted && password != null) {
-            EncryptionUtils.encrypt(wrappedData.toJson(), password)
+        val content = if (encrypted) {
+            EncryptionUtils.encrypt(wrappedData.toJson(), normalizedPassword(password)!!)
         } else {
             wrappedData.toJson()
         }
@@ -319,7 +425,7 @@ class ExportImportManager(private val context: Context) {
         password: String? = null,
         size: Int = 512
     ): Bitmap? = withContext(Dispatchers.Default) {
-        if (encrypted && password == null) {
+        if (encrypted && normalizedPassword(password) == null) {
             throw IllegalArgumentException("导出API配置时必须提供加密密码")
         }
 
@@ -334,7 +440,8 @@ class ExportImportManager(private val context: Context) {
             data = exportData.toJson()
         )
 
-        QRCodeUtils.exportDataToQRCode(wrappedData, password, size)
+        val qrPassword = if (encrypted) normalizedPassword(password) else null
+        QRCodeUtils.exportDataToQRCode(wrappedData, qrPassword, size)
     }
 
     /**
@@ -344,16 +451,19 @@ class ExportImportManager(private val context: Context) {
         inputFile: File,
         password: String
     ): ProviderConfig = withContext(Dispatchers.IO) {
-        val content = inputFile.readText()
+        val content = normalizeImportedText(inputFile.readText())
 
-        val jsonContent = try {
-            EncryptionUtils.decrypt(content, password)
-        } catch (e: Exception) {
-            // 尝试不解密直接解析
-            content
-        }
-
-        val wrappedData = ExportData.fromJson(jsonContent)
+        val wrappedData = runCatching { ExportData.fromJson(content) }.getOrNull()
+            ?: run {
+                val normalized = normalizedPassword(password)
+                    ?: throw IllegalArgumentException("文件可能已加密，请输入密码")
+                val decrypted = runCatching { decryptImportPayload(content, normalized) }.getOrElse {
+                    throw IllegalArgumentException("密码错误或文件损坏")
+                }
+                runCatching { ExportData.fromJson(decrypted) }.getOrElse {
+                    throw IllegalArgumentException("文件内容无效")
+                }
+            }
         if (wrappedData.type != ExportDataType.API_CONFIG) {
             throw IllegalArgumentException("文件类型不匹配")
         }
@@ -369,10 +479,45 @@ class ExportImportManager(private val context: Context) {
             exportData.provider
         }
 
-        val updatedSettings = settings.copy(
-            providers = settings.providers + newProvider
+        val updatedSettings = settings.copy(providers = settings.providers + newProvider)
+        settingsManager.updateSettings(
+            ensureCurrentProviderIsValid(
+                settings = updatedSettings,
+                preferredProviderId = newProvider.id
+            )
         )
-        settingsManager.updateSettings(updatedSettings)
+
+        newProvider
+    }
+
+    /**
+     * 从已解析的导出数据导入API配置（通常来自二维码扫描）
+     */
+    suspend fun importApiConfigFromExportData(
+        exportData: ExportData
+    ): ProviderConfig = withContext(Dispatchers.IO) {
+        if (exportData.type != ExportDataType.API_CONFIG) {
+            throw IllegalArgumentException("数据类型不匹配，期望: API_CONFIG，实际: ${exportData.type}")
+        }
+
+        val apiData = ApiConfigExportData.fromJson(exportData.data)
+        val settings = settingsManager.settings.value
+
+        // 检查ID冲突
+        val existingIds = settings.providers.map { it.id }.toSet()
+        val newProvider = if (apiData.provider.id in existingIds) {
+            apiData.provider.copy(id = UUID.randomUUID().toString())
+        } else {
+            apiData.provider
+        }
+
+        val updatedSettings = settings.copy(providers = settings.providers + newProvider)
+        settingsManager.updateSettings(
+            ensureCurrentProviderIsValid(
+                settings = updatedSettings,
+                preferredProviderId = newProvider.id
+            )
+        )
 
         newProvider
     }
@@ -453,7 +598,7 @@ class ExportImportManager(private val context: Context) {
     suspend fun importKnowledgeBaseFromFile(
         inputFile: File
     ): String = withContext(Dispatchers.IO) {
-        val content = inputFile.readText()
+        val content = normalizeImportedText(inputFile.readText())
         val wrappedData = ExportData.fromJson(content)
 
         if (wrappedData.type != ExportDataType.KNOWLEDGE_BASE) {
@@ -503,6 +648,71 @@ class ExportImportManager(private val context: Context) {
 
         // 插入向量数据块
         exportData.chunks.forEach { chunk ->
+            val newItemId = idMapping[chunk.itemId] ?: return@forEach
+            val chunkEntity = com.tchat.data.database.entity.KnowledgeChunkEntity(
+                id = UUID.randomUUID().toString(),
+                itemId = newItemId,
+                knowledgeBaseId = newKbId,
+                content = chunk.content,
+                embedding = floatArrayToJson(chunk.embedding),
+                chunkIndex = chunk.chunkIndex,
+                createdAt = chunk.createdAt
+            )
+            chunkDao.insertChunk(chunkEntity)
+        }
+
+        newKbId
+    }
+
+    /**
+     * 从已解析的导出数据导入知识库（通常来自二维码扫描；知识库默认不支持二维码，但此方法保持通用）
+     */
+    suspend fun importKnowledgeBaseFromExportData(
+        exportData: ExportData
+    ): String = withContext(Dispatchers.IO) {
+        if (exportData.type != ExportDataType.KNOWLEDGE_BASE) {
+            throw IllegalArgumentException("数据类型不匹配，期望: KNOWLEDGE_BASE，实际: ${exportData.type}")
+        }
+
+        val kbData = KnowledgeBaseExportData.fromJson(exportData.data)
+        val kbDao = database.knowledgeBaseDao()
+        val itemDao = database.knowledgeItemDao()
+        val chunkDao = database.knowledgeChunkDao()
+
+        val newKbId = UUID.randomUUID().toString()
+        val kb = kbData.knowledgeBase
+
+        val kbEntity = com.tchat.data.database.entity.KnowledgeBaseEntity(
+            id = newKbId,
+            name = kb.name,
+            description = kb.description,
+            embeddingProviderId = kb.embeddingProviderId,
+            embeddingModelId = kb.embeddingModelId
+        )
+        kbDao.insertBase(kbEntity)
+
+        val idMapping = mutableMapOf<String, String>()
+        kbData.items.forEach { item ->
+            val newItemId = UUID.randomUUID().toString()
+            idMapping[item.id] = newItemId
+
+            val itemEntity = com.tchat.data.database.entity.KnowledgeItemEntity(
+                id = newItemId,
+                knowledgeBaseId = newKbId,
+                title = item.title,
+                content = item.content ?: "",
+                sourceType = item.sourceType.ifBlank { "text" },
+                sourceUri = item.sourceUri,
+                metadata = item.metadata,
+                status = item.status.ifBlank { "PENDING" },
+                errorMessage = item.errorMessage,
+                createdAt = item.createdAt,
+                updatedAt = item.updatedAt
+            )
+            itemDao.insertItem(itemEntity)
+        }
+
+        kbData.chunks.forEach { chunk ->
             val newItemId = idMapping[chunk.itemId] ?: return@forEach
             val chunkEntity = com.tchat.data.database.entity.KnowledgeChunkEntity(
                 id = UUID.randomUUID().toString(),

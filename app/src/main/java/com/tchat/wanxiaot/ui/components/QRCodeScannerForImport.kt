@@ -38,7 +38,6 @@ import com.google.zxing.*
 import com.google.zxing.common.HybridBinarizer
 import com.tchat.wanxiaot.util.ExportData
 import com.tchat.wanxiaot.util.QRCodeUtils
-import java.nio.ByteBuffer
 import java.util.concurrent.Executors
 
 /**
@@ -88,17 +87,21 @@ fun QRCodeScannerForImport(
 
                 val qrContent = QRCodeUtils.decodeQRCode(bitmap)
                 if (qrContent != null) {
-                    try {
-                        val exportData = ExportData.fromJson(qrContent)
-                        if (exportData.encrypted && password == null) {
-                            // 需要密码
-                            scannedEncryptedData = qrContent
-                            showPasswordDialog = true
+                    val trimmed = qrContent.trim()
+                    val exportData = runCatching { ExportData.fromJson(trimmed) }.getOrNull()
+                    if (exportData != null) {
+                        onDataScanned(exportData)
+                    } else if (password != null) {
+                        val decrypted = runCatching { com.tchat.wanxiaot.util.EncryptionUtils.decrypt(trimmed, password) }.getOrNull()
+                        val decryptedExportData = decrypted?.let { runCatching { ExportData.fromJson(it) }.getOrNull() }
+                        if (decryptedExportData != null) {
+                            onDataScanned(decryptedExportData)
                         } else {
-                            onDataScanned(exportData)
+                            Toast.makeText(context, "无法解析二维码（可能密码错误）", Toast.LENGTH_SHORT).show()
                         }
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "无效的二维码格式", Toast.LENGTH_SHORT).show()
+                    } else {
+                        scannedEncryptedData = trimmed
+                        showPasswordDialog = true
                     }
                 } else {
                     Toast.makeText(context, "无法识别二维码", Toast.LENGTH_SHORT).show()
@@ -164,18 +167,22 @@ fun QRCodeScannerForImport(
                     onCodeScanned = { code ->
                         if (isScanning) {
                             isScanning = false
-                            try {
-                                val exportData = ExportData.fromJson(code)
-                                if (exportData.encrypted && password == null) {
-                                    // 需要密码
-                                    scannedEncryptedData = code
-                                    showPasswordDialog = true
+                            val trimmed = code.trim()
+                            val exportData = runCatching { ExportData.fromJson(trimmed) }.getOrNull()
+                            if (exportData != null) {
+                                onDataScanned(exportData)
+                            } else if (password != null) {
+                                val decrypted = runCatching { com.tchat.wanxiaot.util.EncryptionUtils.decrypt(trimmed, password) }.getOrNull()
+                                val decryptedExportData = decrypted?.let { runCatching { ExportData.fromJson(it) }.getOrNull() }
+                                if (decryptedExportData != null) {
+                                    onDataScanned(decryptedExportData)
                                 } else {
-                                    onDataScanned(exportData)
+                                    Toast.makeText(context, "无法解析二维码（可能密码错误）", Toast.LENGTH_SHORT).show()
+                                    isScanning = true
                                 }
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "无效的二维码: ${e.message}", Toast.LENGTH_SHORT).show()
-                                isScanning = true
+                            } else {
+                                scannedEncryptedData = trimmed
+                                showPasswordDialog = true
                             }
                         }
                     }
@@ -320,28 +327,90 @@ private fun CameraPreviewWithQRScanner(
     )
 }
 
-private fun processImageProxy(imageProxy: ImageProxy, onCodeScanned: (String) -> Unit) {
-    try {
-        val buffer: ByteBuffer = imageProxy.planes[0].buffer
-        val bytes = ByteArray(buffer.remaining())
-        buffer.get(bytes)
+private fun buildLuminanceSource(imageProxy: ImageProxy): com.google.zxing.LuminanceSource? {
+    val width = imageProxy.width
+    val height = imageProxy.height
+    if (width <= 0 || height <= 0 || imageProxy.planes.isEmpty()) return null
 
-        val source = com.google.zxing.PlanarYUVLuminanceSource(
-            bytes,
-            imageProxy.width,
-            imageProxy.height,
+    val yPlane = imageProxy.planes[0]
+    val buffer = yPlane.buffer
+    val rowStride = yPlane.rowStride
+    val pixelStride = yPlane.pixelStride
+    if (rowStride <= 0 || pixelStride <= 0) return null
+
+    val yBytes = ByteArray(width * height)
+
+    return try {
+        buffer.rewind()
+
+        if (pixelStride == 1 && rowStride == width) {
+            if (buffer.remaining() < yBytes.size) return null
+            buffer.get(yBytes, 0, yBytes.size)
+        } else {
+            val rowData = ByteArray(rowStride)
+            var outputOffset = 0
+            for (row in 0 until height) {
+                if (buffer.remaining() < rowStride) return null
+                buffer.get(rowData, 0, rowStride)
+
+                if (pixelStride == 1) {
+                    System.arraycopy(rowData, 0, yBytes, outputOffset, width)
+                    outputOffset += width
+                } else {
+                    var inputOffset = 0
+                    for (col in 0 until width) {
+                        yBytes[outputOffset++] = rowData[inputOffset]
+                        inputOffset += pixelStride
+                    }
+                }
+            }
+        }
+
+        com.google.zxing.PlanarYUVLuminanceSource(
+            yBytes,
+            width,
+            height,
             0,
             0,
-            imageProxy.width,
-            imageProxy.height,
+            width,
+            height,
             false
         )
+    } catch (e: Exception) {
+        null
+    }
+}
 
-        val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
+private fun rotateLuminanceSource(
+    source: com.google.zxing.LuminanceSource,
+    rotationDegrees: Int
+): com.google.zxing.LuminanceSource {
+    if (!source.isRotateSupported) return source
+
+    val rotations = when (rotationDegrees) {
+        90 -> 3
+        180 -> 2
+        270 -> 1
+        else -> 0
+    }
+
+    var rotatedSource = source
+    repeat(rotations) {
+        rotatedSource = rotatedSource.rotateCounterClockwise()
+    }
+    return rotatedSource
+}
+
+private fun processImageProxy(imageProxy: ImageProxy, onCodeScanned: (String) -> Unit) {
+    try {
+        val source = buildLuminanceSource(imageProxy) ?: return
+        val rotated = rotateLuminanceSource(source, imageProxy.imageInfo.rotationDegrees)
+        val binaryBitmap = BinaryBitmap(HybridBinarizer(rotated))
         val reader = com.google.zxing.MultiFormatReader()
 
         val hints = hashMapOf<DecodeHintType, Any>(
             DecodeHintType.POSSIBLE_FORMATS to arrayListOf(BarcodeFormat.QR_CODE),
+            DecodeHintType.CHARACTER_SET to "UTF-8",
             DecodeHintType.TRY_HARDER to true
         )
 
