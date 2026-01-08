@@ -25,8 +25,186 @@ TChat的作者是大陸人，交流最好用簡體中文，如果不會使用那
 - 知識庫（RAG）功能
 - MCP（Model Context Protocol）工具伺服器支援
 - 深度研究（Deep Research）功能
+- **設定匯出/匯入**（檔案、二維碼、加密）
+- **聊天資料夾管理**（巢狀、智慧分組）
+- **助手群聊**（多助手協作對話）
 
 [自願贊助](https://tchat.wanxiaot.com/donate.html)
+
+
+
+# v1.7
+
+### 新增功能
+
+- **Token 統計增強**
+  - 按提供商分別統計 Token 使用量
+  - 顯示每個提供商的輸入/輸出 Token 和呼叫次數
+  - Token 記錄控制功能：
+    - **開始**：啟用 Token 記錄
+    - **暫停**：暫停記錄（保留已有資料）
+    - **關閉**：完全關閉記錄功能
+    - **清空**：清空所有統計資料（帶確認對話框）
+
+- **設定匯出/匯入系統**
+  - 供應商設定批次匯出/匯入（支援多選、檔案、二維碼）
+  - 單個供應商模型列表匯出/匯入
+  - API設定匯出/匯入（包含金鑰，強制加密）
+  - 知識庫完整匯出（原始檔案+向量資料+設定）
+  - AES-256-CBC 加密保護
+  - 二維碼分享支援（可選加密）
+  - 批次檔案匯入（自動防止ID衝突）
+
+- **聊天資料夾系統**
+  - 無限層級巢狀資料夾
+  - 資料夾圖示和顏色自訂
+  - 拖曳排序支援
+  - 智慧自動分組：
+    - 按時間分組（今天/昨天/本週/本月/更早）
+    - 按模型分組（根據使用的AI模型）
+    - 按助手分組（根據關聯的助手）
+  - 資料夾樹狀展示（支援展開/摺疊）
+  - 聊天快速分配到資料夾
+
+- **助手群聊功能**
+  - 多個助手在同一聊天中協作對話
+  - 4種訊息路由策略：
+    - **自然模式**：基於話語權智慧選擇
+    - **輪流模式**：按成員優先順序發言
+    - **隨機模式**：隨機選擇助手回覆
+    - **手動模式**：使用者手動選擇發言者
+  - 成員設定（優先順序、話語權、啟用/停用）
+  - 自動模式支援（助手自動連續對話）
+  - 群聊統計資訊
+
+---
+
+### 技術改進詳情
+
+#### 1. 匯出/匯入系統
+
+**功能**：完整的設定備份和遷移方案
+
+**實現**：
+- `ExportDataModels.kt` 定義匯出資料結構
+- `EncryptionUtils.kt` AES-256-CBC加密
+- `QRCodeUtils.kt` 二維碼生成/解析
+- `ExportImportManager.kt` 統一管理器
+- `ExportImportScreen.kt` Material 3 UI介面
+
+**安全特性**：
+- PBKDF2 金鑰派生（10000次迭代）
+- API金鑰強制加密匯出
+- 二維碼支援加密/非加密模式
+
+---
+
+#### 2. 聊天資料夾系統
+
+**功能**：組織和管理聊天記錄
+
+**實現**：
+- `ChatFolder.kt` 資料夾資料模型
+- `ChatFolderEntity.kt` 資料庫實體
+- `ChatFolderDao.kt` 資料存取層
+- `ChatFolderRepository.kt` 業務邏輯層
+- `ChatFolderManagementScreen.kt` 資料夾管理UI
+
+**核心演算法**：
+- 資料夾樹建構演算法（遞迴）
+- 循環參照偵測（移動資料夾時）
+- 智慧分組演算法（時間/模型/助手）
+
+---
+
+#### 3. 助手群聊系統
+
+**功能**：多助手協作對話
+
+**實現**：
+- `GroupChat.kt` 群聊資料模型
+- `GroupChatEntity.kt` + `GroupMemberEntity.kt` 資料庫實體
+- `GroupChatDao.kt` 資料存取層
+- `GroupChatRepository.kt` 業務邏輯層
+- `GroupChatScreen.kt` 群聊UI介面
+
+**訊息路由策略**：
+- **LIST模式**：按優先順序輪流發言
+- **POOLED模式**：隨機選擇成員
+- **NATURAL模式**：基於話語權加權隨機選擇
+- **MANUAL模式**：使用者手動選擇發言者
+
+---
+
+#### 4. 資料庫升級
+
+**修改**：
+- 資料庫版本 14 → 15
+- 新增4個實體表：
+  - `chat_folders` 聊天資料夾
+  - `chat_folder_relations` 聊天-資料夾關聯
+  - `group_chats` 群聊
+  - `group_members` 群聊成員
+- 完整的外鍵約束和索引最佳化
+
+---
+
+### 涉及檔案
+
+| 模組 | 檔案 | 說明 |
+|------|------|------|
+| app/util | ExportDataModels.kt | 匯出資料模型定義 |
+| app/util | EncryptionUtils.kt | AES-256-CBC加密工具 |
+| app/util | QRCodeUtils.kt | 二維碼生成/解析工具 |
+| app/util | ExportImportManager.kt | 匯出匯入統一管理器 |
+| app/ui/settings | ExportImportScreen.kt | 匯出匯入UI介面 |
+| app/ui/folder | ChatFolderManagementScreen.kt | 資料夾管理UI |
+| app/ui/groupchat | GroupChatScreen.kt | 群聊UI介面 |
+| data/model | ChatFolder.kt | 資料夾資料模型 |
+| data/model | GroupChat.kt | 群聊資料模型 |
+| data/database/entity | ChatFolderEntity.kt | 資料夾資料庫實體 |
+| data/database/entity | GroupChatEntity.kt | 群聊資料庫實體 |
+| data/database/dao | ChatFolderDao.kt | 資料夾DAO |
+| data/database/dao | GroupChatDao.kt | 群聊DAO |
+| data/repository | ChatFolderRepository.kt | 資料夾Repository介面 |
+| data/repository | GroupChatRepository.kt | 群聊Repository介面 |
+| data/repository/impl | ChatFolderRepositoryImpl.kt | 資料夾Repository實現 |
+| data/repository/impl | GroupChatRepositoryImpl.kt | 群聊Repository實現 |
+| data/database | AppDatabase.kt | 資料庫版本15遷移 |
+
+同步平板和手機模式的設定圖示
+ 同步平板模式和手機模式的設定圖示
+
+  修改內容
+
+  在 SettingsScreen.kt 的平板模式 SettingsListContent 函式中，添加了兩個缺失的圖示定義：
+
+  1. 助手群聊 (group_chat):
+    - 使用 Lucide.Users 圖示
+    - 與手機模式保持一致
+  2. 正規表示式 (regex_rules):
+    - 使用 Icons.Default.BugReport 圖示
+    - 與手機模式保持一致
+
+  當前圖示對應
+
+  | 設定項     | 圖示                    | 類型        |
+  |------------|-------------------------|-------------|
+  | 助手       | Icons.Default.Person    | Material    |
+  | 助手群聊   | Lucide.Users            | Lucide ✨   |
+  | 服務商     | Icons.Default.Settings  | Material    |
+  | 知識庫     | Lucide.BookOpen         | Lucide ✨   |
+  | MCP 伺服器 | Icons.Default.Cloud     | Material    |
+  | 深度研究   | Icons.Default.Search    | Material    |
+  | 正規表示式 | Icons.Default.BugReport | Material ✨ |
+  | 使用統計   | Icons.Default.BarChart  | Material    |
+  | 日誌檢視   | Lucide.ScrollText       | Lucide ✨   |
+  | 網路日誌   | Icons.Default.Cloud     | Material    |
+  | 關於       | Icons.Default.Info      | Material    |
+
+  現在平板模式和手機模式在設定頁面中顯示的圖示完全一致了！
+
+---
 
 
 # v1.6

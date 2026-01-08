@@ -25,8 +25,187 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
 - Knowledge Base (RAG) feature
 - MCP (Model Context Protocol) tool server support
 - Deep Research feature
+- **Configuration Export/Import** (file, QR code, encryption)
+- **Chat Folder Management** (nesting, smart grouping)
+- **Assistant Group Chat** (multi-assistant collaborative conversation)
 
 [Voluntary Donation](https://tchat.wanxiaot.com/donate.html)
+
+
+
+# v1.7
+
+### New Features
+
+- **Token Statistics Enhancement**
+  - Statistics by provider for Token usage
+  - Display input/output Tokens and call count for each provider
+  - Token recording control:
+    - **Start**: Enable Token recording
+    - **Pause**: Pause recording (keep existing data)
+    - **Stop**: Completely disable recording
+    - **Clear**: Clear all statistics data (with confirmation dialog)
+
+- **Configuration Export/Import System**
+  - Batch export/import provider configurations (multi-select, file, QR code)
+  - Single provider model list export/import
+  - API configuration export/import (includes keys, forced encryption)
+  - Complete knowledge base export (original files + vector data + config)
+  - AES-256-CBC encryption protection
+  - QR code sharing support (optional encryption)
+  - Batch file import (automatic ID conflict prevention)
+
+- **Chat Folder System**
+  - Unlimited nested folder levels
+  - Folder icon and color customization
+  - Drag-and-drop sorting support
+  - Smart auto-grouping:
+    - By time (Today/Yesterday/This Week/This Month/Earlier)
+    - By model (based on AI model used)
+    - By assistant (based on associated assistant)
+  - Folder tree display (expand/collapse support)
+  - Quick chat assignment to folders
+
+- **Assistant Group Chat Feature**
+  - Multiple assistants collaborate in the same chat
+  - 4 message routing strategies:
+    - **Natural mode**: Smart selection based on speaking weight
+    - **Round-robin mode**: Speak in member priority order
+    - **Random mode**: Randomly select assistant to reply
+    - **Manual mode**: User manually selects speaker
+  - Member configuration (priority, speaking weight, enable/disable)
+  - Auto mode support (assistants auto-continue conversation)
+  - Group chat statistics
+
+---
+
+### Technical Improvements
+
+#### 1. Export/Import System
+
+**Feature**: Complete configuration backup and migration solution
+
+**Implementation**:
+- `ExportDataModels.kt` defines export data structures
+- `EncryptionUtils.kt` AES-256-CBC encryption
+- `QRCodeUtils.kt` QR code generation/parsing
+- `ExportImportManager.kt` unified manager
+- `ExportImportScreen.kt` Material 3 UI interface
+
+**Security Features**:
+- PBKDF2 key derivation (10000 iterations)
+- API keys forced encryption export
+- QR code supports encrypted/non-encrypted modes
+
+---
+
+#### 2. Chat Folder System
+
+**Feature**: Organize and manage chat records
+
+**Implementation**:
+- `ChatFolder.kt` folder data model
+- `ChatFolderEntity.kt` database entity
+- `ChatFolderDao.kt` data access layer
+- `ChatFolderRepository.kt` business logic layer
+- `ChatFolderManagementScreen.kt` folder management UI
+
+**Core Algorithms**:
+- Folder tree construction algorithm (recursive)
+- Circular reference detection (when moving folders)
+- Smart grouping algorithm (time/model/assistant)
+
+---
+
+#### 3. Assistant Group Chat System
+
+**Feature**: Multi-assistant collaborative conversation
+
+**Implementation**:
+- `GroupChat.kt` group chat data model
+- `GroupChatEntity.kt` + `GroupMemberEntity.kt` database entities
+- `GroupChatDao.kt` data access layer
+- `GroupChatRepository.kt` business logic layer
+- `GroupChatScreen.kt` group chat UI interface
+
+**Message Routing Strategies**:
+- **LIST mode**: Round-robin speaking by priority order
+- **POOLED mode**: Random member selection
+- **NATURAL mode**: Weighted random selection based on speaking weight
+- **MANUAL mode**: User manually selects speaker
+
+---
+
+#### 4. Database Upgrade
+
+**Changes**:
+- Database version 14 → 15
+- Added 4 new entity tables:
+  - `chat_folders` chat folders
+  - `chat_folder_relations` chat-folder associations
+  - `group_chats` group chats
+  - `group_members` group chat members
+- Complete foreign key constraints and index optimization
+
+---
+
+### Files Involved
+
+| Module | File | Description |
+|------|------|------|
+| app/util | ExportDataModels.kt | Export data model definitions |
+| app/util | EncryptionUtils.kt | AES-256-CBC encryption utility |
+| app/util | QRCodeUtils.kt | QR code generation/parsing utility |
+| app/util | ExportImportManager.kt | Export import unified manager |
+| app/ui/settings | ExportImportScreen.kt | Export import UI interface |
+| app/ui/folder | ChatFolderManagementScreen.kt | Folder management UI |
+| app/ui/groupchat | GroupChatScreen.kt | Group chat UI interface |
+| data/model | ChatFolder.kt | Folder data model |
+| data/model | GroupChat.kt | Group chat data model |
+| data/database/entity | ChatFolderEntity.kt | Folder database entity |
+| data/database/entity | GroupChatEntity.kt | Group chat database entity |
+| data/database/dao | ChatFolderDao.kt | Folder DAO |
+| data/database/dao | GroupChatDao.kt | Group chat DAO |
+| data/repository | ChatFolderRepository.kt | Folder Repository interface |
+| data/repository | GroupChatRepository.kt | Group chat Repository interface |
+| data/repository/impl | ChatFolderRepositoryImpl.kt | Folder Repository implementation |
+| data/repository/impl | GroupChatRepositoryImpl.kt | Group chat Repository implementation |
+| data/database | AppDatabase.kt | Database version 15 migration |
+
+Sync tablet and phone mode settings icons
+ Sync tablet mode and phone mode settings icons
+
+  Changes
+
+  In SettingsScreen.kt tablet mode SettingsListContent function, added two missing icon definitions:
+
+  1. Assistant Group Chat (group_chat):
+    - Uses Lucide.Users icon
+    - Consistent with phone mode
+  2. Regular Expression (regex_rules):
+    - Uses Icons.Default.BugReport icon
+    - Consistent with phone mode
+
+  Current Icon Mapping
+
+  | Setting Item | Icon | Type |
+  |------------|-------------------------|-------------|
+  | Assistants | Icons.Default.Person | Material |
+  | Group Chat | Lucide.Users | Lucide ✨ |
+  | Providers | Icons.Default.Settings | Material |
+  | Knowledge Base | Lucide.BookOpen | Lucide ✨ |
+  | MCP Servers | Icons.Default.Cloud | Material |
+  | Deep Research | Icons.Default.Search | Material |
+  | Regex Rules | Icons.Default.BugReport | Material ✨ |
+  | Usage Stats | Icons.Default.BarChart | Material |
+  | Log Viewer | Lucide.ScrollText | Lucide ✨ |
+  | Network Log | Icons.Default.Cloud | Material |
+  | About | Icons.Default.Info | Material |
+
+  Now tablet mode and phone mode display identical icons in the settings page!
+
+---
+
 
 # v1.6
 

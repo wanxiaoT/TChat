@@ -24,9 +24,224 @@ TChat嘅作者係大陸人，交流最好用簡體中文，如果唔識用就用
 - Material 3 UI 配合 Jetpack Compose
 - 知識庫（RAG）功能
 - MCP（Model Context Protocol）工具伺服器支援
+- 深度研究（Deep Research）功能
+- **設定匯出/匯入**（檔案、二維碼、加密）
+- **聊天資料夾管理**（巢狀、智能分組）
+- **助手群聊**（多助手協作對話）
 
 [自願贊助](https://tchat.wanxiaot.com/donate.html)
 
+
+
+# v1.7
+
+### 新增功能
+
+- **Token 統計增強**
+  - 按提供商分別統計 Token 使用量
+  - 顯示每個提供商嘅輸入/輸出 Token 同調用次數
+  - Token 記錄控制功能：
+    - **開始**：啟用 Token 記錄
+    - **暫停**：暫停記錄（保留已有數據）
+    - **關閉**：完全關閉記錄功能
+    - **清空**：清空所有統計數據（帶確認對話框）
+
+- **設定匯出/匯入系統**
+  - 供應商設定批量匯出/匯入（支援多選、檔案、二維碼）
+  - 單個供應商模型列表匯出/匯入
+  - API設定匯出/匯入（包含密鑰，強制加密）
+  - 知識庫完整匯出（原始檔案+向量數據+設定）
+  - AES-256-CBC 加密保護
+  - 二維碼分享支援（可選加密）
+  - 批量檔案匯入（自動防止ID衝突）
+
+- **聊天資料夾系統**
+  - 無限層級巢狀資料夾
+  - 資料夾圖示同顏色自訂
+  - 拖曳排序支援
+  - 智能自動分組：
+    - 按時間分組（今日/尋日/今個禮拜/今個月/更早）
+    - 按模型分組（根據使用嘅AI模型）
+    - 按助手分組（根據關聯嘅助手）
+  - 資料夾樹狀展示（支援展開/摺疊）
+  - 聊天快速分配到資料夾
+
+- **助手群聊功能**
+  - 多個助手喺同一聊天中協作對話
+  - 4種訊息路由策略：
+    - **自然模式**：基於話語權智能選擇
+    - **輪流模式**：按成員優先順序發言
+    - **隨機模式**：隨機揀助手回覆
+    - **手動模式**：用戶手動揀發言者
+  - 成員設定（優先順序、話語權、啟用/停用）
+  - 自動模式支援（助手自動連續對話）
+  - 群聊統計資訊
+
+---
+
+### 技術改進詳情
+
+#### 1. 匯出/匯入系統
+
+**功能**：完整嘅設定備份同遷移方案
+
+**實現**：
+- `ExportDataModels.kt` 定義匯出數據結構
+- `EncryptionUtils.kt` AES-256-CBC加密
+- `QRCodeUtils.kt` 二維碼生成/解析
+- `ExportImportManager.kt` 統一管理器
+- `ExportImportScreen.kt` Material 3 UI介面
+
+**安全特性**：
+- PBKDF2 密鑰派生（10000次迭代）
+- API密鑰強制加密匯出
+- 二維碼支援加密/非加密模式
+
+---
+
+#### 2. 聊天資料夾系統
+
+**功能**：組織同管理聊天記錄
+
+**實現**：
+- `ChatFolder.kt` 資料夾數據模型
+- `ChatFolderEntity.kt` 數據庫實體
+- `ChatFolderDao.kt` 數據存取層
+- `ChatFolderRepository.kt` 業務邏輯層
+- `ChatFolderManagementScreen.kt` 資料夾管理UI
+
+**核心演算法**：
+- 資料夾樹建構演算法（遞迴）
+- 循環參照偵測（移動資料夾時）
+- 智能分組演算法（時間/模型/助手）
+
+---
+
+#### 3. 助手群聊系統
+
+**功能**：多助手協作對話
+
+**實現**：
+- `GroupChat.kt` 群聊數據模型
+- `GroupChatEntity.kt` + `GroupMemberEntity.kt` 數據庫實體
+- `GroupChatDao.kt` 數據存取層
+- `GroupChatRepository.kt` 業務邏輯層
+- `GroupChatScreen.kt` 群聊UI介面
+
+**訊息路由策略**：
+- **LIST模式**：按優先順序輪流發言
+- **POOLED模式**：隨機揀成員
+- **NATURAL模式**：基於話語權加權隨機選擇
+- **MANUAL模式**：用戶手動揀發言者
+
+---
+
+#### 4. 數據庫升級
+
+**修改**：
+- 數據庫版本 14 → 15
+- 新增4個實體表：
+  - `chat_folders` 聊天資料夾
+  - `chat_folder_relations` 聊天-資料夾關聯
+  - `group_chats` 群聊
+  - `group_members` 群聊成員
+- 完整嘅外鍵約束同索引優化
+
+---
+
+### 涉及檔案
+
+| 模組 | 檔案 | 說明 |
+|------|------|------|
+| app/util | ExportDataModels.kt | 匯出數據模型定義 |
+| app/util | EncryptionUtils.kt | AES-256-CBC加密工具 |
+| app/util | QRCodeUtils.kt | 二維碼生成/解析工具 |
+| app/util | ExportImportManager.kt | 匯出匯入統一管理器 |
+| app/ui/settings | ExportImportScreen.kt | 匯出匯入UI介面 |
+| app/ui/folder | ChatFolderManagementScreen.kt | 資料夾管理UI |
+| app/ui/groupchat | GroupChatScreen.kt | 群聊UI介面 |
+| data/model | ChatFolder.kt | 資料夾數據模型 |
+| data/model | GroupChat.kt | 群聊數據模型 |
+| data/database/entity | ChatFolderEntity.kt | 資料夾數據庫實體 |
+| data/database/entity | GroupChatEntity.kt | 群聊數據庫實體 |
+| data/database/dao | ChatFolderDao.kt | 資料夾DAO |
+| data/database/dao | GroupChatDao.kt | 群聊DAO |
+| data/repository | ChatFolderRepository.kt | 資料夾Repository介面 |
+| data/repository | GroupChatRepository.kt | 群聊Repository介面 |
+| data/repository/impl | ChatFolderRepositoryImpl.kt | 資料夾Repository實現 |
+| data/repository/impl | GroupChatRepositoryImpl.kt | 群聊Repository實現 |
+| data/database | AppDatabase.kt | 數據庫版本15遷移 |
+
+同步平板同手機模式嘅設定圖示
+ 同步平板模式同手機模式嘅設定圖示
+
+  修改內容
+
+  喺 SettingsScreen.kt 嘅平板模式 SettingsListContent 函數中，添加咗兩個缺失嘅圖示定義：
+
+  1. 助手群聊 (group_chat):
+    - 使用 Lucide.Users 圖示
+    - 同手機模式保持一致
+  2. 正則表達式 (regex_rules):
+    - 使用 Icons.Default.BugReport 圖示
+    - 同手機模式保持一致
+
+  當前圖示對應
+
+  | 設定項     | 圖示                    | 類型        |
+  |------------|-------------------------|-------------|
+  | 助手       | Icons.Default.Person    | Material    |
+  | 助手群聊   | Lucide.Users            | Lucide ✨   |
+  | 服務商     | Icons.Default.Settings  | Material    |
+  | 知識庫     | Lucide.BookOpen         | Lucide ✨   |
+  | MCP 伺服器 | Icons.Default.Cloud     | Material    |
+  | 深度研究   | Icons.Default.Search    | Material    |
+  | 正則表達式 | Icons.Default.BugReport | Material ✨ |
+  | 使用統計   | Icons.Default.BarChart  | Material    |
+  | 日誌查看   | Lucide.ScrollText       | Lucide ✨   |
+  | 網絡日誌   | Icons.Default.Cloud     | Material    |
+  | 關於       | Icons.Default.Info      | Material    |
+
+  而家平板模式同手機模式喺設定頁面中顯示嘅圖示完全一致喇！
+
+---
+
+
+# v1.6
+
+### 新增功能
+
+- **軟件內更新支援**
+  - 應用程式內檢查更新、下載同安裝
+  - 橫屏平板模式下選單列正常使用
+
+- **正則表達式功能**
+  - 根據社區建議新增正則表達式支援
+
+- **服務商頁面列佈局選擇**
+  - 支援一列、二列、三列顯示模式切換
+
+- **網絡請求查看功能**
+  - 新增網絡請求調試/查看入口
+
+- **本地工具 - Sleep 工具**
+  - AI 可調用 sleep 工具暫停一段時間後發送通知
+
+---
+
+### Bug 修復
+
+- **修復 thinking 標籤解析問題**
+  - 解決部分模型（如 Kimi-K2-Thinking）返回嘅 `<thinking>` 標籤無法正常解析嘅問題
+
+- **修復工具調用問題**
+  - 解決工具調用過程中嘅若干問題
+
+- **優化本地文件系統工具描述**
+  - 修復 LLM 唔知道系統係 Android 導致文件儲存路徑錯誤嘅問題
+  - 改進本地工具-文件系統對於 LLM 嘅描述
+
+---
 
 # v1.5
 
