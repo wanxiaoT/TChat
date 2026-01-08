@@ -2,21 +2,70 @@ package com.tchat.wanxiaot.settings
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.tchat.data.database.AppDatabase
+import com.tchat.data.database.entity.AppSettingsEntity
 import com.tchat.data.deepresearch.service.WebSearchProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 
 class SettingsManager(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+    private val database = AppDatabase.getInstance(context)
+    private val settingsDao = database.appSettingsDao()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val _settings = MutableStateFlow(loadSettings())
+    // 用于从 SharedPreferences 迁移数据
+    private val prefs: SharedPreferences = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+    private val migrationKey = "settings_migrated_to_room"
+
+    private val _settings = MutableStateFlow(loadSettingsBlocking())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
-    private fun loadSettings(): AppSettings {
-        return try {
+    init {
+        // 监听数据库变化
+        scope.launch {
+            settingsDao.getSettingsFlow().collect { entity ->
+                if (entity != null) {
+                    _settings.value = entityToAppSettings(entity)
+                }
+            }
+        }
+    }
+
+    /**
+     * 阻塞式加载设置（用于初始化）
+     */
+    private fun loadSettingsBlocking(): AppSettings {
+        return runBlocking(Dispatchers.IO) {
+            // 检查是否需要从 SharedPreferences 迁移
+            if (!prefs.getBoolean(migrationKey, false)) {
+                migrateFromSharedPreferences()
+            }
+
+            val entity = settingsDao.getSettings()
+            if (entity != null) {
+                entityToAppSettings(entity)
+            } else {
+                // 如果数据库中没有设置，创建默认设置
+                val defaultEntity = AppSettingsEntity()
+                settingsDao.insertOrReplace(defaultEntity)
+                AppSettings()
+            }
+        }
+    }
+
+    /**
+     * 从 SharedPreferences 迁移数据到 Room
+     */
+    private suspend fun migrateFromSharedPreferences() {
+        try {
             val currentProviderId = prefs.getString("current_provider_id", "") ?: ""
             val currentModel = prefs.getString("current_model", "") ?: ""
             val currentAssistantId = prefs.getString("current_assistant_id", "") ?: ""
@@ -25,23 +74,61 @@ class SettingsManager(context: Context) {
             val providerGridColumnCount = prefs.getInt("provider_grid_column_count", 1)
             val regexRulesJson = prefs.getString("regex_rules", "[]") ?: "[]"
 
-            val providers = parseProviders(providersJson)
-            val deepResearchSettings = parseDeepResearchSettings(deepResearchJson)
-            val regexRules = parseRegexRules(regexRulesJson)
-
-            AppSettings(
+            val entity = AppSettingsEntity(
+                id = 1,
                 currentProviderId = currentProviderId,
                 currentModel = currentModel,
                 currentAssistantId = currentAssistantId,
-                providers = providers,
-                deepResearchSettings = deepResearchSettings,
+                providersJson = providersJson,
+                deepResearchSettingsJson = deepResearchJson,
                 providerGridColumnCount = providerGridColumnCount,
-                regexRules = regexRules
+                regexRulesJson = regexRulesJson
             )
+
+            settingsDao.insertOrReplace(entity)
+
+            // 标记迁移完成
+            prefs.edit().putBoolean(migrationKey, true).apply()
         } catch (e: Exception) {
             e.printStackTrace()
-            AppSettings()
         }
+    }
+
+    /**
+     * 将数据库实体转换为 AppSettings
+     */
+    private fun entityToAppSettings(entity: AppSettingsEntity): AppSettings {
+        return AppSettings(
+            currentProviderId = entity.currentProviderId,
+            currentModel = entity.currentModel,
+            currentAssistantId = entity.currentAssistantId,
+            providers = parseProviders(entity.providersJson),
+            deepResearchSettings = parseDeepResearchSettings(entity.deepResearchSettingsJson),
+            providerGridColumnCount = entity.providerGridColumnCount,
+            regexRules = parseRegexRules(entity.regexRulesJson),
+            tokenRecordingStatus = try {
+                TokenRecordingStatus.valueOf(entity.tokenRecordingStatus)
+            } catch (e: Exception) {
+                TokenRecordingStatus.ENABLED
+            }
+        )
+    }
+
+    /**
+     * 将 AppSettings 转换为数据库实体
+     */
+    private fun appSettingsToEntity(settings: AppSettings): AppSettingsEntity {
+        return AppSettingsEntity(
+            id = 1,
+            currentProviderId = settings.currentProviderId,
+            currentModel = settings.currentModel,
+            currentAssistantId = settings.currentAssistantId,
+            providersJson = serializeProviders(settings.providers),
+            deepResearchSettingsJson = serializeDeepResearchSettings(settings.deepResearchSettings),
+            providerGridColumnCount = settings.providerGridColumnCount,
+            regexRulesJson = serializeRegexRules(settings.regexRules),
+            tokenRecordingStatus = settings.tokenRecordingStatus.name
+        )
     }
 
     private fun parseDeepResearchSettings(json: String): DeepResearchSettings {
@@ -234,16 +321,10 @@ class SettingsManager(context: Context) {
     }
 
     fun updateSettings(settings: AppSettings) {
-        prefs.edit().apply {
-            putString("current_provider_id", settings.currentProviderId)
-            putString("current_model", settings.currentModel)
-            putString("current_assistant_id", settings.currentAssistantId)
-            putString("providers", serializeProviders(settings.providers))
-            putString("deep_research_settings", serializeDeepResearchSettings(settings.deepResearchSettings))
-            putString("regex_rules", serializeRegexRules(settings.regexRules))
-            apply()
-        }
         _settings.value = settings
+        scope.launch {
+            settingsDao.insertOrReplace(appSettingsToEntity(settings))
+        }
     }
 
     /**
@@ -335,7 +416,6 @@ class SettingsManager(context: Context) {
     fun updateProviderGridColumnCount(columnCount: Int) {
         val currentSettings = _settings.value
         val validColumnCount = columnCount.coerceIn(1, 3)
-        prefs.edit().putInt("provider_grid_column_count", validColumnCount).apply()
         updateSettings(currentSettings.copy(providerGridColumnCount = validColumnCount))
     }
 
@@ -427,5 +507,22 @@ class SettingsManager(context: Context) {
             }
         }
         updateSettings(currentSettings.copy(providers = newProviders))
+    }
+
+    // ==================== Token 记录状态管理 ====================
+
+    /**
+     * 更新 Token 记录状态
+     */
+    fun updateTokenRecordingStatus(status: TokenRecordingStatus) {
+        val currentSettings = _settings.value
+        updateSettings(currentSettings.copy(tokenRecordingStatus = status))
+    }
+
+    /**
+     * 检查是否应该记录 Token
+     */
+    fun shouldRecordTokens(): Boolean {
+        return _settings.value.tokenRecordingStatus == TokenRecordingStatus.ENABLED
     }
 }

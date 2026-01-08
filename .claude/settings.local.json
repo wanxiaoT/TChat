@@ -33,7 +33,11 @@
       "Bash(./gradlew.bat :app:dependencies)",
       "Bash(.gradlew.bat:*)",
       "Bash(del:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(gradlew.bat:*)",
+      "Bash(C:UsersAdministratorAndroidStudioProjectsTChatgradlew.bat :data:compileDebugKotlin :app:compileDebugKotlin --no-daemon)",
+      "Bash(powershell -Command \"cd C:\\\\Users\\\\Administrator\\\\AndroidStudioProjects\\\\TChat; .\\\\gradlew.bat assembleDebug 2>&1\")",
+      "Bash(powershell -Command:*)"
     ]
   }
 }

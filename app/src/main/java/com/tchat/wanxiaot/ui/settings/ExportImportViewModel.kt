@@ -9,6 +9,7 @@ import com.tchat.data.database.AppDatabase
 import com.tchat.data.database.entity.KnowledgeBaseEntity
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.wanxiaot.util.DatabaseBackupManager
 import com.tchat.wanxiaot.util.ExportData
 import com.tchat.wanxiaot.util.ExportImportManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +26,8 @@ class ExportImportViewModel(
     private val settingsManager: SettingsManager
 ) : ViewModel() {
 
-    private val exportImportManager = ExportImportManager(context)
+    private val exportImportManager = ExportImportManager(context, settingsManager)
+    private val databaseBackupManager = DatabaseBackupManager(context)
     private val database = AppDatabase.getInstance(context)
 
     private val _uiState = MutableStateFlow<ExportImportUiState>(ExportImportUiState.Idle)
@@ -148,82 +150,6 @@ class ExportImportViewModel(
             try {
                 val count = exportImportManager.importProvidersFromExportData(exportData)
                 _uiState.value = ExportImportUiState.Success("成功导入 $count 个供应商配置")
-            } catch (e: Exception) {
-                _uiState.value = ExportImportUiState.Error("导入失败: ${e.message}")
-            }
-        }
-    }
-
-    // ============= 模型列表导出导入 =============
-
-    fun exportModelsToFile(providerId: String, outputFile: File, encrypted: Boolean, password: String?) {
-        viewModelScope.launch {
-            _uiState.value = ExportImportUiState.Loading("导出模型列表...")
-            try {
-                exportImportManager.exportModelsToFile(providerId, outputFile, encrypted, password)
-                _uiState.value = ExportImportUiState.Success("成功导出模型列表")
-            } catch (e: Exception) {
-                _uiState.value = ExportImportUiState.Error("导出失败: ${e.message}")
-            }
-        }
-    }
-
-    fun exportModelsToUri(providerId: String, uri: Uri, encrypted: Boolean, password: String?) {
-        viewModelScope.launch {
-            if (encrypted && password.isNullOrBlank()) {
-                _uiState.value = ExportImportUiState.Error("请输入加密密码")
-                return@launch
-            }
-
-            _uiState.value = ExportImportUiState.Loading("导出模型列表...")
-            val tempFile = File(context.cacheDir, "models_export_${System.currentTimeMillis()}.json")
-            try {
-                exportImportManager.exportModelsToFile(providerId, tempFile, encrypted, password)
-                writeTempFileToUri(tempFile, uri)
-                _uiState.value = ExportImportUiState.Success("成功导出模型列表")
-            } catch (e: Exception) {
-                _uiState.value = ExportImportUiState.Error("导出失败: ${e.message}")
-            } finally {
-                tempFile.delete()
-            }
-        }
-    }
-
-    fun exportModelsToQRCode(providerId: String, encrypted: Boolean, password: String?, onSuccess: (Bitmap) -> Unit) {
-        viewModelScope.launch {
-            _uiState.value = ExportImportUiState.Loading("生成二维码...")
-            try {
-                val qrCode = exportImportManager.exportModelsToQRCode(providerId, encrypted, password)
-                if (qrCode != null) {
-                    onSuccess(qrCode)
-                    _uiState.value = ExportImportUiState.Idle
-                } else {
-                    _uiState.value = ExportImportUiState.Error("生成二维码失败")
-                }
-            } catch (e: Exception) {
-                _uiState.value = ExportImportUiState.Error("生成二维码失败: ${e.message}")
-            }
-        }
-    }
-
-    fun importModelsFromFile(inputFile: File, targetProviderId: String, password: String?) {
-        viewModelScope.launch {
-            _uiState.value = ExportImportUiState.Loading("导入模型列表...")
-            try {
-                exportImportManager.importModelsFromFile(inputFile, targetProviderId, password)
-                _uiState.value = ExportImportUiState.Success("成功导入模型列表")
-            } catch (e: Exception) {
-                _uiState.value = ExportImportUiState.Error("导入失败: ${e.message}")
-            }
-        }
-    }
-
-    fun importModelsFromExportData(exportData: ExportData, targetProviderId: String) {
-        viewModelScope.launch {
-            _uiState.value = ExportImportUiState.Loading("从二维码导入...")
-            try {
-                exportImportManager.importModelsFromExportData(exportData, targetProviderId)
-                _uiState.value = ExportImportUiState.Success("成功导入模型列表")
             } catch (e: Exception) {
                 _uiState.value = ExportImportUiState.Error("导入失败: ${e.message}")
             }
@@ -356,6 +282,82 @@ class ExportImportViewModel(
                 _uiState.value = ExportImportUiState.Success("成功导入知识库 (ID: $newId)")
             } catch (e: Exception) {
                 _uiState.value = ExportImportUiState.Error("导入失败: ${e.message}")
+            }
+        }
+    }
+
+    // ============= 数据库备份恢复 =============
+
+    /**
+     * 生成备份文件名
+     */
+    fun generateBackupFileName(): String {
+        return databaseBackupManager.generateBackupFileName()
+    }
+
+    /**
+     * 备份数据库到 URI
+     */
+    fun backupDatabaseToUri(uri: Uri) {
+        viewModelScope.launch {
+            _uiState.value = ExportImportUiState.Loading("正在备份数据库...")
+            val tempFile = File(context.cacheDir, "database_backup_${System.currentTimeMillis()}.zip")
+            try {
+                val result = databaseBackupManager.backupDatabase(tempFile)
+                result.fold(
+                    onSuccess = { backupInfo ->
+                        // 将临时文件写入用户选择的位置
+                        context.contentResolver.openOutputStream(uri)?.use { output ->
+                            tempFile.inputStream().use { input ->
+                                input.copyTo(output)
+                            }
+                        } ?: throw IllegalArgumentException("无法写入所选文件")
+                        _uiState.value = ExportImportUiState.Success(
+                            "备份成功！包含 ${backupInfo.fileCount} 个文件"
+                        )
+                    },
+                    onFailure = { error ->
+                        _uiState.value = ExportImportUiState.Error("备份失败: ${error.message}")
+                    }
+                )
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("备份失败: ${e.message}")
+            } finally {
+                tempFile.delete()
+            }
+        }
+    }
+
+    /**
+     * 从 URI 恢复数据库
+     */
+    fun restoreDatabaseFromUri(uri: Uri) {
+        viewModelScope.launch {
+            _uiState.value = ExportImportUiState.Loading("正在恢复数据库...")
+            val tempFile = File(context.cacheDir, "database_restore_${System.currentTimeMillis()}.zip")
+            try {
+                // 将用户选择的文件复制到临时位置
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    tempFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                } ?: throw IllegalArgumentException("无法读取所选文件")
+
+                val result = databaseBackupManager.restoreDatabase(tempFile)
+                result.fold(
+                    onSuccess = { restoreInfo ->
+                        _uiState.value = ExportImportUiState.Success(
+                            "恢复成功！已恢复 ${restoreInfo.restoredFileCount} 个文件，请重启应用"
+                        )
+                    },
+                    onFailure = { error ->
+                        _uiState.value = ExportImportUiState.Error("恢复失败: ${error.message}")
+                    }
+                )
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("恢复失败: ${e.message}")
+            } finally {
+                tempFile.delete()
             }
         }
     }

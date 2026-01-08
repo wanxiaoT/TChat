@@ -16,8 +16,10 @@ import java.util.UUID
  * 导出导入管理器
  * 统一管理所有数据的导出和导入
  */
-class ExportImportManager(private val context: Context) {
-    private val settingsManager = SettingsManager(context)
+class ExportImportManager(
+    private val context: Context,
+    private val settingsManager: SettingsManager = SettingsManager(context)
+) {
     private val database = AppDatabase.getInstance(context)
 
     private fun normalizedPassword(password: String?): String? = password?.takeIf { it.isNotBlank() }
@@ -227,158 +229,6 @@ class ExportImportManager(private val context: Context) {
         )
 
         newProviders.size
-    }
-
-    // ============= 单个供应商模型列表导出导入 =============
-
-    /**
-     * 导出单个供应商的模型列表到文件
-     */
-    suspend fun exportModelsToFile(
-        providerId: String,
-        outputFile: File,
-        encrypted: Boolean = false,
-        password: String? = null
-    ) = withContext(Dispatchers.IO) {
-        if (encrypted && normalizedPassword(password) == null) {
-            throw IllegalArgumentException("加密导出需要密码")
-        }
-
-        val settings = settingsManager.settings.value
-        val provider = settings.providers.find { it.id == providerId }
-            ?: throw IllegalArgumentException("供应商不存在")
-
-        val exportData = ModelsExportData(
-            providerId = provider.id,
-            providerName = provider.name,
-            providerType = provider.providerType.name,
-            models = provider.availableModels
-        )
-
-        val wrappedData = ExportData(
-            type = ExportDataType.MODELS,
-            encrypted = encrypted,
-            data = exportData.toJson()
-        )
-
-        val content = if (encrypted) {
-            EncryptionUtils.encrypt(wrappedData.toJson(), normalizedPassword(password)!!)
-        } else {
-            wrappedData.toJson()
-        }
-
-        outputFile.writeText(content)
-    }
-
-    /**
-     * 导出单个供应商的模型列表到二维码
-     */
-    suspend fun exportModelsToQRCode(
-        providerId: String,
-        encrypted: Boolean = false,
-        password: String? = null,
-        size: Int = 512
-    ): Bitmap? = withContext(Dispatchers.Default) {
-        if (encrypted && normalizedPassword(password) == null) {
-            throw IllegalArgumentException("加密导出需要密码")
-        }
-
-        val settings = settingsManager.settings.value
-        val provider = settings.providers.find { it.id == providerId }
-            ?: throw IllegalArgumentException("供应商不存在")
-
-        val exportData = ModelsExportData(
-            providerId = provider.id,
-            providerName = provider.name,
-            providerType = provider.providerType.name,
-            models = provider.availableModels
-        )
-
-        val wrappedData = ExportData(
-            type = ExportDataType.MODELS,
-            encrypted = encrypted,
-            data = exportData.toJson()
-        )
-
-        val qrPassword = if (encrypted) normalizedPassword(password) else null
-        QRCodeUtils.exportDataToQRCode(wrappedData, qrPassword, size)
-    }
-
-    /**
-     * 从文件导入模型列表到指定供应商
-     */
-    suspend fun importModelsFromFile(
-        inputFile: File,
-        targetProviderId: String,
-        password: String? = null
-    ) = withContext(Dispatchers.IO) {
-        val content = normalizeImportedText(inputFile.readText())
-
-        val wrappedData = runCatching { ExportData.fromJson(content) }.getOrNull()
-            ?: run {
-                val normalized = normalizedPassword(password)
-                    ?: throw IllegalArgumentException("文件可能已加密，请输入密码")
-                val decrypted = runCatching { decryptImportPayload(content, normalized) }.getOrElse {
-                    throw IllegalArgumentException("密码错误或文件损坏")
-                }
-                runCatching { ExportData.fromJson(decrypted) }.getOrElse {
-                    throw IllegalArgumentException("文件内容无效")
-                }
-            }
-        if (wrappedData.type != ExportDataType.MODELS) {
-            throw IllegalArgumentException("文件类型不匹配")
-        }
-
-        val exportData = ModelsExportData.fromJson(wrappedData.data)
-        val settings = settingsManager.settings.value
-
-        if (settings.providers.none { it.id == targetProviderId }) {
-            throw IllegalArgumentException("目标供应商不存在")
-        }
-
-        val updatedProviders = settings.providers.map { provider ->
-            if (provider.id == targetProviderId) {
-                // 合并模型列表（去重）
-                val mergedModels = (provider.availableModels + exportData.models).distinct()
-                provider.copy(availableModels = mergedModels)
-            } else {
-                provider
-            }
-        }
-
-        val updatedSettings = settings.copy(providers = updatedProviders)
-        settingsManager.updateSettings(updatedSettings)
-    }
-
-    /**
-     * 从已解析的导出数据导入模型列表到指定供应商（通常来自二维码扫描）
-     */
-    suspend fun importModelsFromExportData(
-        exportData: ExportData,
-        targetProviderId: String
-    ) = withContext(Dispatchers.IO) {
-        if (exportData.type != ExportDataType.MODELS) {
-            throw IllegalArgumentException("数据类型不匹配，期望: MODELS，实际: ${exportData.type}")
-        }
-
-        val modelsData = ModelsExportData.fromJson(exportData.data)
-        val settings = settingsManager.settings.value
-
-        if (settings.providers.none { it.id == targetProviderId }) {
-            throw IllegalArgumentException("目标供应商不存在")
-        }
-
-        val updatedProviders = settings.providers.map { provider ->
-            if (provider.id == targetProviderId) {
-                val mergedModels = (provider.availableModels + modelsData.models).distinct()
-                provider.copy(availableModels = mergedModels)
-            } else {
-                provider
-            }
-        }
-
-        val updatedSettings = settings.copy(providers = updatedProviders)
-        settingsManager.updateSettings(updatedSettings)
     }
 
     // ============= API配置（含密钥）导出导入 =============

@@ -37,6 +37,8 @@ data class MessageEntity(
     val firstTokenLatency: Long = 0,
     // 模型名称
     val modelName: String? = null,
+    // 提供商ID（用于按提供商统计token）
+    val providerId: String? = null,
     // 变体支持（JSON 格式存储）
     val variantsJson: String? = null,
     val selectedVariantIndex: Int = 0

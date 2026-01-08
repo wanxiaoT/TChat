@@ -42,6 +42,10 @@ fun ChatScreen(
     systemPrompt: String? = null,
     // 正则规则
     regexRules: List<RegexRuleData> = emptyList(),
+    // 提供商ID（用于按提供商统计token）
+    providerId: String? = null,
+    // 是否记录token统计
+    shouldRecordTokens: Boolean = true,
     // 深度研究支持
     onDeepResearch: ((String?) -> Unit)? = null,
     isDeepResearching: Boolean = false
@@ -76,16 +80,16 @@ fun ChatScreen(
     }
 
     // 当工具状态变化时更新ViewModel的配置
-    LaunchedEffect(enabledTools, currentTools, systemPrompt, currentModel, regexRules) {
+    LaunchedEffect(enabledTools, currentTools, systemPrompt, currentModel, regexRules, providerId, shouldRecordTokens) {
         // 只要有工具或系统提示，就设置配置
         val hasTools = currentTools.isNotEmpty()
         val hasSystemPrompt = !systemPrompt.isNullOrEmpty()
 
         if (hasTools || hasSystemPrompt) {
-            viewModel.setTools(currentTools, systemPrompt, currentModel, regexRules)
+            viewModel.setTools(currentTools, systemPrompt, currentModel, providerId, shouldRecordTokens, regexRules)
         } else {
             // 即使没有工具和系统提示，也设置一个空配置，确保消息可以正常发送
-            viewModel.setTools(emptyList(), null, currentModel, regexRules)
+            viewModel.setTools(emptyList(), null, currentModel, providerId, shouldRecordTokens, regexRules)
         }
     }
 

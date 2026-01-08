@@ -55,6 +55,14 @@ interface MessageDao {
 
     @Query("SELECT modelName, COUNT(*) as count FROM messages WHERE role = 'assistant' AND modelName IS NOT NULL GROUP BY modelName")
     suspend fun getModelUsageStats(): List<ModelUsageStat>
+
+    // 按提供商统计查询
+    @Query("SELECT providerId, SUM(inputTokens) as inputTokens, SUM(outputTokens) as outputTokens, COUNT(*) as messageCount FROM messages WHERE role = 'assistant' AND providerId IS NOT NULL GROUP BY providerId")
+    suspend fun getProviderUsageStats(): List<ProviderUsageStat>
+
+    // 清空所有token统计数据
+    @Query("UPDATE messages SET inputTokens = 0, outputTokens = 0, tokensPerSecond = 0.0, firstTokenLatency = 0 WHERE role = 'assistant'")
+    suspend fun clearAllTokenStats()
 }
 
 /**
@@ -63,4 +71,14 @@ interface MessageDao {
 data class ModelUsageStat(
     val modelName: String,
     val count: Int
+)
+
+/**
+ * 提供商使用统计数据类
+ */
+data class ProviderUsageStat(
+    val providerId: String,
+    val inputTokens: Long,
+    val outputTokens: Long,
+    val messageCount: Int
 )

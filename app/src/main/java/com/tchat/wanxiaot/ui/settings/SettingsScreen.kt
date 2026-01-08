@@ -412,10 +412,17 @@ private fun TabletSettingsLayout(
                         )
                     }
                     is SettingsSubPage.USAGE_STATS -> {
+                        val settings by settingsManager.settings.collectAsState()
                         UsageStatsScreen(
                             messageDao = database.messageDao(),
                             onBack = { onSubPageChange(SettingsSubPage.MAIN) },
-                            showTopBar = false
+                            showTopBar = false,
+                            providers = settings.providers,
+                            tokenRecordingStatus = settings.tokenRecordingStatus,
+                            onTokenRecordingStatusChange = { status ->
+                                settingsManager.updateTokenRecordingStatus(status)
+                            },
+                            onClearTokenStats = { }
                         )
                     }
                     is SettingsSubPage.DEEP_RESEARCH -> {
@@ -650,9 +657,16 @@ private fun PhoneSettingsLayout(
                 )
             }
             is SettingsSubPage.USAGE_STATS -> {
+                val settings by settingsManager.settings.collectAsState()
                 UsageStatsScreen(
                     messageDao = database.messageDao(),
-                    onBack = { onSubPageChange(SettingsSubPage.MAIN) }
+                    onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                    providers = settings.providers,
+                    tokenRecordingStatus = settings.tokenRecordingStatus,
+                    onTokenRecordingStatusChange = { status ->
+                        settingsManager.updateTokenRecordingStatus(status)
+                    },
+                    onClearTokenStats = { }
                 )
             }
             is SettingsSubPage.DEEP_RESEARCH -> {

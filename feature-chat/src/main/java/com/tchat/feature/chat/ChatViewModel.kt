@@ -110,12 +110,16 @@ class ChatViewModel(
         tools: List<Tool>,
         systemPrompt: String? = null,
         modelName: String? = null,
+        providerId: String? = null,
+        shouldRecordTokens: Boolean = true,
         regexRules: List<RegexRuleData> = emptyList()
     ) {
         val config = ChatConfig(
             systemPrompt = systemPrompt,
             tools = tools,
             modelName = modelName,
+            providerId = providerId,
+            shouldRecordTokens = shouldRecordTokens,
             regexRules = regexRules
         )
         setChatConfig(config)

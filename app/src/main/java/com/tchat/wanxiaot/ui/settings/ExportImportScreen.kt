@@ -60,19 +60,6 @@ fun ExportImportScreen(
                 )
             }
 
-            // 模型列表
-            item {
-                ExportImportSection(
-                    title = "模型列表",
-                    description = "导出或导入单个供应商的模型列表",
-                    icon = Lucide.List,
-                    onExportFile = { /* TODO */ },
-                    onExportQRCode = { /* TODO */ },
-                    onImportFile = { /* TODO */ },
-                    onImportQRCode = { /* TODO */ }
-                )
-            }
-
             // API配置（含密钥）
             item {
                 ExportImportSection(

@@ -9,6 +9,15 @@ import com.tchat.data.deepresearch.service.WebSearchProvider
 import java.util.UUID
 
 /**
+ * Token 记录状态
+ */
+enum class TokenRecordingStatus {
+    ENABLED,   // 启用记录
+    PAUSED,    // 暂停记录
+    DISABLED   // 关闭记录
+}
+
+/**
  * 模型自定义参数配置
  * 用于配置 AI 请求体中的额外参数
  */
@@ -100,7 +109,8 @@ data class AppSettings(
     val providers: List<ProviderConfig> = emptyList(),
     val deepResearchSettings: DeepResearchSettings = DeepResearchSettings(),
     val providerGridColumnCount: Int = 1,  // 服务商列表网格列数（1-3）
-    val regexRules: List<RegexRule> = emptyList()  // 全局正则表达式规则
+    val regexRules: List<RegexRule> = emptyList(),  // 全局正则表达式规则
+    val tokenRecordingStatus: TokenRecordingStatus = TokenRecordingStatus.ENABLED  // Token 记录状态
 ) {
     // 兼容旧代码
     val defaultProviderId: String get() = currentProviderId

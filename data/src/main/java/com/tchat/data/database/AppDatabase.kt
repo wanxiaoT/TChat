@@ -17,6 +17,7 @@ import com.tchat.data.database.dao.McpServerDao
 import com.tchat.data.database.dao.DeepResearchHistoryDao
 import com.tchat.data.database.dao.ChatFolderDao
 import com.tchat.data.database.dao.GroupChatDao
+import com.tchat.data.database.dao.AppSettingsDao
 import com.tchat.data.database.entity.ChatEntity
 import com.tchat.data.database.entity.MessageEntity
 import com.tchat.data.database.entity.KnowledgeBaseEntity
@@ -30,6 +31,7 @@ import com.tchat.data.database.entity.ChatFolderRelationEntity
 import com.tchat.data.database.entity.GroupChatEntity
 import com.tchat.data.database.entity.GroupMemberEntity
 import com.tchat.data.database.entity.LocalToolOptionConverter
+import com.tchat.data.database.entity.AppSettingsEntity
 
 /**
  * TChat数据库
@@ -49,9 +51,10 @@ import com.tchat.data.database.entity.LocalToolOptionConverter
         ChatFolderEntity::class,
         ChatFolderRelationEntity::class,
         GroupChatEntity::class,
-        GroupMemberEntity::class
+        GroupMemberEntity::class,
+        AppSettingsEntity::class
     ],
-    version = 15,
+    version = 17,
     exportSchema = false
 )
 @TypeConverters(LocalToolOptionConverter::class)
@@ -67,6 +70,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun deepResearchHistoryDao(): DeepResearchHistoryDao
     abstract fun chatFolderDao(): ChatFolderDao
     abstract fun groupChatDao(): GroupChatDao
+    abstract fun appSettingsDao(): AppSettingsDao
 
     companion object {
         @Volatile
@@ -349,6 +353,34 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // 迁移:添加应用设置表
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS app_settings (
+                        id INTEGER PRIMARY KEY NOT NULL DEFAULT 1,
+                        currentProviderId TEXT NOT NULL DEFAULT '',
+                        currentModel TEXT NOT NULL DEFAULT '',
+                        currentAssistantId TEXT NOT NULL DEFAULT '',
+                        providersJson TEXT NOT NULL DEFAULT '[]',
+                        deepResearchSettingsJson TEXT NOT NULL DEFAULT '{}',
+                        providerGridColumnCount INTEGER NOT NULL DEFAULT 1,
+                        regexRulesJson TEXT NOT NULL DEFAULT '[]'
+                    )
+                """.trimIndent())
+            }
+        }
+
+        // 迁移:为消息添加提供商ID字段（用于按提供商统计token）
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 为消息表添加提供商ID字段
+                db.execSQL("ALTER TABLE messages ADD COLUMN providerId TEXT DEFAULT NULL")
+                // 为应用设置表添加token记录状态字段
+                db.execSQL("ALTER TABLE app_settings ADD COLUMN tokenRecordingStatus TEXT NOT NULL DEFAULT 'ENABLED'")
+            }
+        }
+
         // 迁移:采用 MessagePart 架构，将旧字段迁移到 partsJson
         private val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -490,7 +522,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                         MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
-                        MIGRATION_13_14, MIGRATION_14_15
+                        MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17
                     )
                     .build()
                 INSTANCE = instance

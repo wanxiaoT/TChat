@@ -145,6 +145,8 @@ class ChatRepositoryImpl(
                 tools = config?.tools ?: emptyList(),
                 toolDefinitions = toolDefinitions,
                 modelName = config?.modelName,
+                providerId = config?.providerId,
+                shouldRecordTokens = config?.shouldRecordTokens ?: true,
                 regexRules = config?.regexRules ?: emptyList(),
                 onStreamingUpdate = { msg -> emit(Result.Success(msg)) }
             )
@@ -226,6 +228,8 @@ class ChatRepositoryImpl(
                 tools = config?.tools ?: emptyList(),
                 toolDefinitions = toolDefinitions,
                 modelName = config?.modelName,
+                providerId = config?.providerId,
+                shouldRecordTokens = config?.shouldRecordTokens ?: true,
                 regexRules = config?.regexRules ?: emptyList(),
                 onStreamingUpdate = { msg -> emit(Result.Success(MessageResult(chatId, msg))) }
             )
@@ -248,6 +252,8 @@ class ChatRepositoryImpl(
         tools: List<Tool>,
         toolDefinitions: List<ToolDefinition>,
         modelName: String? = null,
+        providerId: String? = null,
+        shouldRecordTokens: Boolean = true,
         regexRules: List<RegexRuleData> = emptyList(),
         onStreamingUpdate: suspend (Message) -> Unit
     ): Message {
@@ -462,11 +468,12 @@ class ChatRepositoryImpl(
             role = MessageRole.ASSISTANT,
             parts = finalParts,
             isStreaming = false,
-            inputTokens = inputTokens,
-            outputTokens = outputTokens,
-            tokensPerSecond = tokensPerSecond,
-            firstTokenLatency = firstTokenLatency,
-            modelName = modelName
+            inputTokens = if (shouldRecordTokens) inputTokens else 0,
+            outputTokens = if (shouldRecordTokens) outputTokens else 0,
+            tokensPerSecond = if (shouldRecordTokens) tokensPerSecond else 0.0,
+            firstTokenLatency = if (shouldRecordTokens) firstTokenLatency else 0,
+            modelName = modelName,
+            providerId = if (shouldRecordTokens) providerId else null
         )
 
         println("finalMessage.parts 数量: ${finalMessage.parts.size}")
@@ -811,6 +818,7 @@ class ChatRepositoryImpl(
             tokensPerSecond = message.tokensPerSecond,
             firstTokenLatency = message.firstTokenLatency,
             modelName = message.modelName,
+            providerId = message.providerId,
             variantsJson = if (message.variants.isNotEmpty()) variantsToJson(message.variants) else null,
             selectedVariantIndex = message.selectedVariantIndex
         )
@@ -933,6 +941,7 @@ class ChatRepositoryImpl(
             tokensPerSecond = currentVariant?.tokensPerSecond ?: tokensPerSecond,
             firstTokenLatency = currentVariant?.firstTokenLatency ?: firstTokenLatency,
             modelName = modelName,
+            providerId = providerId,
             variants = variants,
             selectedVariantIndex = selectedVariantIndex
         )

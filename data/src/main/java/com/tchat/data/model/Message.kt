@@ -94,6 +94,8 @@ data class Message(
     val firstTokenLatency: Long = 0,
     // 模型名称
     val modelName: String? = null,
+    // 提供商ID（用于按提供商统计token）
+    val providerId: String? = null,
     // 变体支持（仅 AI 消息使用）
     val variants: List<MessageVariant> = emptyList(),
     val selectedVariantIndex: Int = 0

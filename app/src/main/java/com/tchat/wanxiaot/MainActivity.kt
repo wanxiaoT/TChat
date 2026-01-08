@@ -501,6 +501,8 @@ fun MainScreen(
                                 extraTools = emptyList(),
                                 systemPrompt = null,
                                 regexRules = emptyList(),
+                                providerId = settings.currentProviderId,
+                                shouldRecordTokens = settings.tokenRecordingStatus == com.tchat.wanxiaot.settings.TokenRecordingStatus.ENABLED,
                                 assistants = groupAssistants,
                                 onDeepResearch = { query ->
                                     if (isDeepResearching) {
@@ -635,6 +637,9 @@ fun MainScreen(
                                 systemPrompt = currentAssistant?.systemPrompt,
                                 // 正则规则
                                 regexRules = enabledRegexRules,
+                                // 提供商ID和token记录设置
+                                providerId = settings.currentProviderId,
+                                shouldRecordTokens = settings.tokenRecordingStatus == com.tchat.wanxiaot.settings.TokenRecordingStatus.ENABLED,
                                 // 深度研究支持
                                 onDeepResearch = { query ->
                                     if (isDeepResearching) {

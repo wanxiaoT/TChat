@@ -9,7 +9,6 @@ import org.json.JSONObject
  */
 enum class ExportDataType {
     PROVIDERS,           // 供应商配置
-    MODELS,              // 模型列表
     API_CONFIG,          // API配置
     KNOWLEDGE_BASE,      // 知识库
     CHAT_FOLDERS,        // 聊天文件夹
@@ -152,42 +151,6 @@ data class ProvidersExportData(
             }
 
             return ProvidersExportData(providers)
-        }
-    }
-}
-
-/**
- * 模型列表导出数据
- */
-data class ModelsExportData(
-    val providerId: String,
-    val providerName: String,
-    val providerType: String,
-    val models: List<String>
-) {
-    fun toJson(): String {
-        val json = JSONObject()
-        json.put("providerId", providerId)
-        json.put("providerName", providerName)
-        json.put("providerType", providerType)
-        json.put("models", JSONArray(models))
-        return json.toString()
-    }
-
-    companion object {
-        fun fromJson(jsonString: String): ModelsExportData {
-            val json = JSONObject(jsonString)
-            val modelsArray = json.getJSONArray("models")
-            val models = mutableListOf<String>()
-            for (i in 0 until modelsArray.length()) {
-                models.add(modelsArray.getString(i))
-            }
-            return ModelsExportData(
-                providerId = json.getString("providerId"),
-                providerName = json.getString("providerName"),
-                providerType = json.getString("providerType"),
-                models = models
-            )
         }
     }
 }

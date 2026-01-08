@@ -64,6 +64,24 @@ fun ExportImportScreenEnhanced(
     var showProviderSingleSelection by remember { mutableStateOf(false) }
     var pendingExportAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
+    // 文件选择器 - 数据库备份（保存 zip 文件）
+    val backupFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri: Uri? ->
+        uri?.let {
+            viewModel.backupDatabaseToUri(it)
+        }
+    }
+
+    // 文件选择器 - 数据库恢复（打开 zip 文件）
+    val restoreFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let {
+            viewModel.restoreDatabaseFromUri(it)
+        }
+    }
+
     // 文件选择器 - 导出（保存文件）
     val exportFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -77,16 +95,6 @@ fun ExportImportScreenEnhanced(
                         useEncryption,
                         encryptionPassword.takeIf { useEncryption }
                     )
-                }
-                ExportType.MODELS -> {
-                    selectedProviderId?.let { providerId ->
-                        viewModel.exportModelsToUri(
-                            providerId,
-                            it,
-                            useEncryption,
-                            encryptionPassword.takeIf { useEncryption }
-                        )
-                    }
                 }
                 ExportType.API_CONFIG -> {
                     selectedProviderId?.let { providerId ->
@@ -117,12 +125,6 @@ fun ExportImportScreenEnhanced(
                 ExportType.PROVIDERS -> {
                     val file = uriToFile(context, it, "providers_import.json")
                     viewModel.importProvidersFromFile(file, encryptionPassword.takeIf { it.isNotEmpty() })
-                }
-                ExportType.MODELS -> {
-                    selectedProviderId?.let { providerId ->
-                        val file = uriToFile(context, it, "models_import.json")
-                        viewModel.importModelsFromFile(file, providerId, encryptionPassword.takeIf { it.isNotEmpty() })
-                    }
                 }
                 ExportType.API_CONFIG -> {
                     val file = uriToFile(context, it, "api_config_import.json")
@@ -182,6 +184,18 @@ fun ExportImportScreenEnhanced(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // 数据库备份
+                item {
+                    DatabaseBackupSection(
+                        onBackup = {
+                            backupFileLauncher.launch(viewModel.generateBackupFileName())
+                        },
+                        onRestore = {
+                            restoreFileLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*"))
+                        }
+                    )
+                }
+
                 // 供应商配置
                 item {
                     ExportImportSectionConnected(
@@ -229,57 +243,6 @@ fun ExportImportScreenEnhanced(
                         onImportQRCode = {
                             currentExportType = ExportType.PROVIDERS
                             showQRScanner = true
-                        }
-                    )
-                }
-
-                // 模型列表
-                item {
-                    ExportImportSectionConnected(
-                        title = "模型列表",
-                        description = "导出或导入单个供应商的模型列表",
-                        icon = Lucide.List,
-                        encryptionEnabled = useEncryption,
-                        encryptionPassword = encryptionPassword,
-                        onEncryptionEnabledChange = { useEncryption = it },
-                        onEncryptionPasswordChange = { encryptionPassword = it },
-                        onExportFile = {
-                            currentExportType = ExportType.MODELS
-                            showProviderSingleSelection = true
-                            pendingExportAction = {
-                                selectedProviderId?.let { id ->
-                                    exportFileLauncher.launch("models_${System.currentTimeMillis()}.json")
-                                }
-                            }
-                        },
-                        onExportQRCode = {
-                            currentExportType = ExportType.MODELS
-                            showProviderSingleSelection = true
-                            pendingExportAction = {
-                                selectedProviderId?.let { id ->
-                                    viewModel.exportModelsToQRCode(
-                                        id,
-                                        useEncryption,
-                                        encryptionPassword.takeIf { useEncryption }
-                                    ) { qrCode ->
-                                        showQRCodeDialog = qrCode
-                                    }
-                                }
-                            }
-                        },
-                        onImportFile = {
-                            currentExportType = ExportType.MODELS
-                            showProviderSingleSelection = true
-                            pendingExportAction = {
-                                selectedProviderId?.let { id ->
-                                    importFileLauncher.launch(arrayOf("application/json", "*/*"))
-                                }
-                            }
-                        },
-                        onImportQRCode = {
-                            currentExportType = ExportType.MODELS
-                            showProviderSingleSelection = true
-                            pendingExportAction = { showQRScanner = true }
                         }
                     )
                 }
@@ -476,11 +439,6 @@ fun ExportImportScreenEnhanced(
                     when (currentExportType) {
                         ExportType.PROVIDERS -> {
                             viewModel.importProvidersFromExportData(exportData)
-                        }
-                        ExportType.MODELS -> {
-                            selectedProviderId?.let { providerId ->
-                                viewModel.importModelsFromExportData(exportData, providerId)
-                            }
                         }
                         ExportType.API_CONFIG -> {
                             viewModel.importApiConfigFromExportData(exportData)
@@ -814,7 +772,6 @@ private fun ImportOptionsDialogConnected(
  */
 enum class ExportType {
     PROVIDERS,
-    MODELS,
     API_CONFIG,
     KNOWLEDGE_BASE
 }
@@ -834,7 +791,7 @@ private fun uriToFile(context: Context, uri: Uri, defaultFileName: String): File
 }
 
 /**
- * 供应商单选对话框（用于模型列表和API配置）
+ * 供应商单选对话框（用于API配置）
  */
 @Composable
 private fun ProviderSingleSelectionDialog(
@@ -963,4 +920,148 @@ private fun KnowledgeBaseSelectionDialog(
             }
         }
     )
+}
+
+/**
+ * 数据库备份模块
+ */
+@Composable
+private fun DatabaseBackupSection(
+    onBackup: () -> Unit,
+    onRestore: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showRestoreConfirmDialog by remember { mutableStateOf(false) }
+
+    ElevatedCard(
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // 标题和图标
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    imageVector = Lucide.HardDrive,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "数据库备份",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "备份或恢复整个数据库（包含所有聊天记录、助手、知识库等）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // 警告提示
+            Surface(
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                shape = MaterialTheme.shapes.small
+            ) {
+                Row(
+                    modifier = Modifier.padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Lucide.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "恢复数据库将覆盖当前所有数据，请谨慎操作",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
+            }
+
+            // 操作按钮
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onBackup,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Lucide.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("备份")
+                }
+
+                Button(
+                    onClick = { showRestoreConfirmDialog = true },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Icon(Lucide.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("恢复")
+                }
+            }
+        }
+    }
+
+    // 恢复确认对话框
+    if (showRestoreConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreConfirmDialog = false },
+            icon = {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("确认恢复数据库") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("恢复数据库将会：")
+                    Text("• 覆盖当前所有聊天记录")
+                    Text("• 覆盖所有助手配置")
+                    Text("• 覆盖所有知识库数据")
+                    Text("• 覆盖所有其他数据")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "此操作不可撤销，请确保已备份当前数据！",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showRestoreConfirmDialog = false
+                        onRestore()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("确认恢复")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreConfirmDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
 }
