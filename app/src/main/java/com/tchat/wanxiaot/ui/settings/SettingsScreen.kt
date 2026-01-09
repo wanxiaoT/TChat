@@ -13,18 +13,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
+import com.composables.icons.lucide.ArrowLeft
+import com.composables.icons.lucide.ChartColumn
+import com.composables.icons.lucide.Bot
+import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.Cloud
+import com.composables.icons.lucide.Info
+import com.composables.icons.lucide.Network
+import com.composables.icons.lucide.Regex
+import com.composables.icons.lucide.Search
+import com.composables.icons.lucide.Server
+import com.composables.icons.lucide.Sparkles
+import com.composables.icons.lucide.Telescope
+import com.composables.icons.lucide.X
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,7 +103,7 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         group = "通用",
         title = "助手",
         subtitle = "管理AI助手和本地工具",
-        icon = SettingsIcon.Material(Icons.Default.Person),
+        icon = SettingsIcon.Lucide(Lucide.Bot),
         targetPage = SettingsSubPage.ASSISTANTS
     ),
     SettingsItemData(
@@ -117,7 +119,7 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         group = "通用",
         title = "服务商",
         subtitle = "管理 AI 服务商配置",
-        icon = SettingsIcon.Material(Icons.Default.Settings),
+        icon = SettingsIcon.Lucide(Lucide.Server),
         targetPage = SettingsSubPage.PROVIDERS
     ),
     SettingsItemData(
@@ -133,7 +135,7 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         group = "通用",
         title = "MCP 服务器",
         subtitle = "管理 MCP 工具服务器连接",
-        icon = SettingsIcon.Material(Icons.Default.Cloud),
+        icon = SettingsIcon.Lucide(Lucide.Cloud),
         targetPage = SettingsSubPage.MCP
     ),
     SettingsItemData(
@@ -141,7 +143,7 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         group = "通用",
         title = "深度研究",
         subtitle = "AI 驱动的迭代式深度研究",
-        icon = SettingsIcon.Material(Icons.Default.Search),
+        icon = SettingsIcon.Lucide(Lucide.Telescope),
         targetPage = SettingsSubPage.DEEP_RESEARCH
     ),
     SettingsItemData(
@@ -149,7 +151,7 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         group = "通用",
         title = "正则表达式",
         subtitle = "管理 AI 输出内容清理规则",
-        icon = SettingsIcon.Material(Icons.Default.BugReport),
+        icon = SettingsIcon.Lucide(Lucide.Regex),
         targetPage = SettingsSubPage.REGEX_RULES
     ),
     SettingsItemData(
@@ -157,7 +159,7 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         group = "通用",
         title = "Skills",
         subtitle = "管理 AI Skills 和自动触发规则",
-        icon = SettingsIcon.Material(Icons.Default.Settings),
+        icon = SettingsIcon.Lucide(Lucide.Sparkles),
         targetPage = SettingsSubPage.SKILLS
     ),
     // 其他分组
@@ -166,7 +168,7 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         group = "其他",
         title = "使用统计",
         subtitle = "查看 Token 和模型调用统计",
-        icon = SettingsIcon.Material(Icons.Default.BarChart),
+        icon = SettingsIcon.Lucide(Lucide.ChartColumn),
         targetPage = SettingsSubPage.USAGE_STATS
     ),
     SettingsItemData(
@@ -190,7 +192,7 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         group = "其他",
         title = "网络日志",
         subtitle = "查看 API 请求和响应信息",
-        icon = SettingsIcon.Material(Icons.Default.Cloud),
+        icon = SettingsIcon.Lucide(Lucide.Network),
         targetPage = SettingsSubPage.NETWORK_LOG
     ),
     SettingsItemData(
@@ -198,7 +200,7 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         group = "其他",
         title = "关于",
         subtitle = "版本信息与开发者",
-        icon = SettingsIcon.Material(Icons.Default.Info),
+        icon = SettingsIcon.Lucide(Lucide.Info),
         targetPage = SettingsSubPage.ABOUT
     )
 )
@@ -423,7 +425,7 @@ private fun TabletSettingsLayout(
                             }
                         }) {
                             Icon(
-                                imageVector = if (showSearchBar) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                                imageVector = if (showSearchBar) Lucide.X else Lucide.ArrowLeft,
                                 contentDescription = if (showSearchBar) "关闭搜索" else "返回"
                             )
                         }
@@ -432,7 +434,7 @@ private fun TabletSettingsLayout(
                         if (!showSearchBar) {
                             IconButton(onClick = { showSearchBar = true }) {
                                 Icon(
-                                    imageVector = Icons.Default.Search,
+                                    imageVector = Lucide.Search,
                                     contentDescription = "搜索"
                                 )
                             }
@@ -986,7 +988,7 @@ private fun SettingsMainContent(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            imageVector = Lucide.ArrowLeft,
                             contentDescription = "返回"
                         )
                     }
@@ -1084,7 +1086,7 @@ private fun SettingsCardItem(
             }
 
             Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                Lucide.ChevronRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1232,7 +1234,7 @@ private fun SettingsListItemFromData(
             }
 
             Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                Lucide.ChevronRight,
                 contentDescription = null,
                 tint = if (isSelected) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
             )
