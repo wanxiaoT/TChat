@@ -110,7 +110,8 @@ class SettingsManager(context: Context) {
                 TokenRecordingStatus.valueOf(entity.tokenRecordingStatus)
             } catch (e: Exception) {
                 TokenRecordingStatus.ENABLED
-            }
+            },
+            ttsSettings = parseTtsSettings(entity.ttsSettingsJson)
         )
     }
 
@@ -127,7 +128,8 @@ class SettingsManager(context: Context) {
             deepResearchSettingsJson = serializeDeepResearchSettings(settings.deepResearchSettings),
             providerGridColumnCount = settings.providerGridColumnCount,
             regexRulesJson = serializeRegexRules(settings.regexRules),
-            tokenRecordingStatus = settings.tokenRecordingStatus.name
+            tokenRecordingStatus = settings.tokenRecordingStatus.name,
+            ttsSettingsJson = serializeTtsSettings(settings.ttsSettings)
         )
     }
 
@@ -390,6 +392,31 @@ class SettingsManager(context: Context) {
             jsonArray.put(obj)
         }
         return jsonArray.toString()
+    }
+
+    private fun parseTtsSettings(json: String): TtsSettings {
+        return try {
+            val obj = JSONObject(json)
+            TtsSettings(
+                enabled = obj.optBoolean("enabled", false),
+                autoSpeak = obj.optBoolean("autoSpeak", false),
+                speechRate = obj.optDouble("speechRate", 1.0).toFloat(),
+                pitch = obj.optDouble("pitch", 1.0).toFloat(),
+                language = obj.optString("language", "zh-CN")
+            )
+        } catch (e: Exception) {
+            TtsSettings()
+        }
+    }
+
+    private fun serializeTtsSettings(settings: TtsSettings): String {
+        val obj = JSONObject()
+        obj.put("enabled", settings.enabled)
+        obj.put("autoSpeak", settings.autoSpeak)
+        obj.put("speechRate", settings.speechRate.toDouble())
+        obj.put("pitch", settings.pitch.toDouble())
+        obj.put("language", settings.language)
+        return obj.toString()
     }
 
     fun updateSettings(settings: AppSettings) {

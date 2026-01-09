@@ -18,5 +18,6 @@ data class AppSettingsEntity(
     val deepResearchSettingsJson: String = "{}", // JSON序列化的深度研究设置
     val providerGridColumnCount: Int = 1,
     val regexRulesJson: String = "[]", // JSON序列化的正则规则列表
-    val tokenRecordingStatus: String = "ENABLED" // Token记录状态: ENABLED, PAUSED, DISABLED
+    val tokenRecordingStatus: String = "ENABLED", // Token记录状态: ENABLED, PAUSED, DISABLED
+    val ttsSettingsJson: String = "{}" // JSON序列化的TTS设置
 )

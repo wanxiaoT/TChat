@@ -18,6 +18,17 @@ enum class TokenRecordingStatus {
 }
 
 /**
+ * TTS 设置
+ */
+data class TtsSettings(
+    val enabled: Boolean = false,           // 是否启用 TTS
+    val autoSpeak: Boolean = false,         // AI 回复完成后自动朗读
+    val speechRate: Float = 1.0f,           // 语速 (0.1 - 3.0)
+    val pitch: Float = 1.0f,                // 音调 (0.1 - 2.0)
+    val language: String = "zh-CN"          // 语言代码
+)
+
+/**
  * 模型自定义参数配置
  * 用于配置 AI 请求体中的额外参数
  */
@@ -209,7 +220,8 @@ data class AppSettings(
     val deepResearchSettings: DeepResearchSettings = DeepResearchSettings(),
     val providerGridColumnCount: Int = 1,  // 服务商列表网格列数（1-3）
     val regexRules: List<RegexRule> = emptyList(),  // 全局正则表达式规则
-    val tokenRecordingStatus: TokenRecordingStatus = TokenRecordingStatus.ENABLED  // Token 记录状态
+    val tokenRecordingStatus: TokenRecordingStatus = TokenRecordingStatus.ENABLED,  // Token 记录状态
+    val ttsSettings: TtsSettings = TtsSettings()  // TTS 语音朗读设置
 ) {
     // 兼容旧代码
     val defaultProviderId: String get() = currentProviderId

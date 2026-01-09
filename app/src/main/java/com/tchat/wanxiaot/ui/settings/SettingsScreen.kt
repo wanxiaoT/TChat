@@ -26,6 +26,7 @@ import com.composables.icons.lucide.Search
 import com.composables.icons.lucide.Server
 import com.composables.icons.lucide.Sparkles
 import com.composables.icons.lucide.Telescope
+import com.composables.icons.lucide.Volume2
 import com.composables.icons.lucide.X
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,6 +45,7 @@ import com.tchat.data.database.AppDatabase
 import com.tchat.data.repository.impl.AssistantRepositoryImpl
 import com.tchat.data.repository.impl.KnowledgeRepositoryImpl
 import com.tchat.data.service.KnowledgeService
+import com.tchat.data.tts.TtsService
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.assistant.AssistantDetailScreen
 import com.tchat.wanxiaot.ui.assistant.AssistantDetailViewModel
@@ -162,6 +164,14 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         icon = SettingsIcon.Lucide(Lucide.Sparkles),
         targetPage = SettingsSubPage.SKILLS
     ),
+    SettingsItemData(
+        id = "tts",
+        group = "通用",
+        title = "语音朗读",
+        subtitle = "TTS 语音合成设置",
+        icon = SettingsIcon.Lucide(Lucide.Volume2),
+        targetPage = SettingsSubPage.TTS
+    ),
     // 其他分组
     SettingsItemData(
         id = "usage_stats",
@@ -218,6 +228,7 @@ private fun isSettingsItemSelected(itemId: String, currentSubPage: SettingsSubPa
         "deep_research" -> currentSubPage is SettingsSubPage.DEEP_RESEARCH
         "regex_rules" -> currentSubPage is SettingsSubPage.REGEX_RULES
         "skills" -> currentSubPage is SettingsSubPage.SKILLS || currentSubPage is SettingsSubPage.SKILL_DETAIL
+        "tts" -> currentSubPage is SettingsSubPage.TTS
         "usage_stats" -> currentSubPage is SettingsSubPage.USAGE_STATS
         "export_import" -> currentSubPage is SettingsSubPage.EXPORT_IMPORT
         "logcat" -> currentSubPage is SettingsSubPage.LOGCAT
@@ -250,6 +261,7 @@ private sealed class SettingsSubPage {
     data object EXPORT_IMPORT : SettingsSubPage()
     data object SKILLS : SettingsSubPage()
     data class SKILL_DETAIL(val id: String?) : SettingsSubPage()
+    data object TTS : SettingsSubPage()
 }
 
 /**
@@ -698,6 +710,25 @@ private fun TabletSettingsLayout(
                             showTopBar = true
                         )
                     }
+                    is SettingsSubPage.TTS -> {
+                        val settings by settingsManager.settings.collectAsState()
+                        val ttsService = remember { TtsService.getInstanceOrNull() }
+                        TtsSettingsScreen(
+                            ttsSettings = settings.ttsSettings,
+                            ttsService = ttsService,
+                            onSettingsChange = { newTtsSettings ->
+                                settingsManager.updateSettings(settings.copy(ttsSettings = newTtsSettings))
+                                // 同步更新 TtsService 设置
+                                ttsService?.updateSettings(
+                                    rate = newTtsSettings.speechRate,
+                                    pitchValue = newTtsSettings.pitch,
+                                    locale = java.util.Locale.forLanguageTag(newTtsSettings.language)
+                                )
+                            },
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            showTopBar = false
+                        )
+                    }
                 }
             }
         }
@@ -961,6 +992,24 @@ private fun PhoneSettingsLayout(
                     },
                     onDelete = { id -> viewModel.deleteSkill(id) },
                     onBack = { onSubPageChange(SettingsSubPage.SKILLS) }
+                )
+            }
+            is SettingsSubPage.TTS -> {
+                val settings by settingsManager.settings.collectAsState()
+                val ttsService = remember { TtsService.getInstanceOrNull() }
+                TtsSettingsScreen(
+                    ttsSettings = settings.ttsSettings,
+                    ttsService = ttsService,
+                    onSettingsChange = { newTtsSettings ->
+                        settingsManager.updateSettings(settings.copy(ttsSettings = newTtsSettings))
+                        // 同步更新 TtsService 设置
+                        ttsService?.updateSettings(
+                            rate = newTtsSettings.speechRate,
+                            pitchValue = newTtsSettings.pitch,
+                            locale = java.util.Locale.forLanguageTag(newTtsSettings.language)
+                        )
+                    },
+                    onBack = { onSubPageChange(SettingsSubPage.MAIN) }
                 )
             }
         }

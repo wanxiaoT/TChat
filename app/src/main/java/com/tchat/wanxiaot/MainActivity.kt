@@ -38,6 +38,7 @@ import com.tchat.data.tool.LocalTools
 import com.tchat.data.tool.Tool
 import com.tchat.data.mcp.McpToolService
 import com.tchat.data.repository.impl.McpServerRepositoryImpl
+import com.tchat.data.tts.TtsService
 import com.tchat.feature.chat.ChatScreen
 import com.tchat.feature.chat.ChatViewModel
 import com.tchat.feature.chat.GroupChatScreen
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity() {
     // Application 级别的 CoroutineScope，不会因为 Activity 重建而取消
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var messageSender: MessageSender
+    private lateinit var ttsService: TtsService
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -89,6 +91,27 @@ class MainActivity : ComponentActivity() {
 
         // 初始化 MessageSender 单例
         messageSender = MessageSender.getInstance(applicationScope)
+
+        // 初始化 TTS 服务
+        ttsService = TtsService.getInstance(this)
+
+        // 同步 TTS 设置
+        applicationScope.launch {
+            settingsManager.settings.collect { settings ->
+                val ttsSettings = settings.ttsSettings
+                // 更新 MessageSender 的 TTS 设置
+                messageSender.updateTtsSettings(
+                    enabled = ttsSettings.enabled,
+                    autoSpeak = ttsSettings.autoSpeak
+                )
+                // 更新 TtsService 的设置
+                ttsService.updateSettings(
+                    rate = ttsSettings.speechRate,
+                    pitchValue = ttsSettings.pitch,
+                    locale = java.util.Locale.forLanguageTag(ttsSettings.language)
+                )
+            }
+        }
 
         // 确保默认助手存在
         applicationScope.launch(Dispatchers.IO) {
@@ -103,6 +126,14 @@ class MainActivity : ComponentActivity() {
                     messageSender = messageSender
                 )
             }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // 释放 TTS 资源
+        if (isFinishing) {
+            ttsService.shutdown()
         }
     }
 

@@ -5,6 +5,7 @@ import com.tchat.data.model.Message
 import com.tchat.data.model.MessageRole
 import com.tchat.data.repository.ChatConfig
 import com.tchat.data.repository.ChatRepository
+import com.tchat.data.tts.TtsService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +20,7 @@ import kotlinx.coroutines.launch
  * - 切换聊天时继续接收 AI 响应
  * - 多个聊天同时进行流式响应
  * - 工具调用循环
+ * - TTS 语音朗读
  */
 class MessageSender(
     private val scope: CoroutineScope
@@ -39,8 +41,24 @@ class MessageSender(
     private val _errors = MutableStateFlow<Pair<String, Throwable>?>(null)
     val errors: StateFlow<Pair<String, Throwable>?> = _errors.asStateFlow()
 
+    // 消息完成回调（用于 TTS 等功能）
+    private val _completedMessages = MutableStateFlow<Message?>(null)
+    val completedMessages: StateFlow<Message?> = _completedMessages.asStateFlow()
+
+    // TTS 设置
+    private var ttsEnabled: Boolean = false
+    private var ttsAutoSpeak: Boolean = false
+
     fun init(repository: ChatRepository) {
         this.repository = repository
+    }
+
+    /**
+     * 更新 TTS 设置
+     */
+    fun updateTtsSettings(enabled: Boolean, autoSpeak: Boolean) {
+        ttsEnabled = enabled
+        ttsAutoSpeak = autoSpeak
     }
 
     /**
@@ -48,6 +66,28 @@ class MessageSender(
      */
     fun setConfig(config: ChatConfig?) {
         this.currentConfig = config
+    }
+
+    /**
+     * 处理消息完成（触发 TTS 等）
+     */
+    private fun onMessageCompleted(message: Message) {
+        _completedMessages.value = message
+
+        // 如果启用了自动朗读，触发 TTS
+        if (ttsEnabled && ttsAutoSpeak && message.role == MessageRole.ASSISTANT) {
+            val textContent = message.getTextContent()
+            if (textContent.isNotBlank()) {
+                TtsService.getInstanceOrNull()?.speak(textContent, message.id)
+            }
+        }
+    }
+
+    /**
+     * 清除已完成消息状态
+     */
+    fun clearCompletedMessage() {
+        _completedMessages.value = null
     }
 
     /**
@@ -73,6 +113,8 @@ class MessageSender(
                                 // 流式结束，更新为最终消息状态（保留 toolResults 等信息）
                                 // 不立即移除，让数据库 Flow 有时间更新
                                 updateStreamingMessage(chatId, message)
+                                // 触发消息完成回调（TTS 等）
+                                onMessageCompleted(message)
                             }
                         }
                     }
@@ -125,6 +167,8 @@ class MessageSender(
                                 updateStreamingMessage(messageResult.chatId, message)
                             } else {
                                 removeStreamingMessage(messageResult.chatId)
+                                // 触发消息完成回调（TTS 等）
+                                onMessageCompleted(message)
                             }
                         }
                     }
@@ -182,6 +226,8 @@ class MessageSender(
                             updateStreamingMessage(chatId, message)
                         } else {
                             removeStreamingMessage(chatId)
+                            // 触发消息完成回调（TTS 等）
+                            onMessageCompleted(message)
                         }
                     }
                     is Result.Error -> {
