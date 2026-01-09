@@ -1,6 +1,9 @@
 package com.tchat.wanxiaot.util
 
 import com.tchat.wanxiaot.settings.ProviderConfig
+import com.tchat.wanxiaot.settings.ApiKeyEntry
+import com.tchat.wanxiaot.settings.ApiKeyStatus
+import com.tchat.wanxiaot.settings.KeySelectionStrategy
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -12,7 +15,8 @@ enum class ExportDataType {
     API_CONFIG,          // API配置
     KNOWLEDGE_BASE,      // 知识库
     CHAT_FOLDERS,        // 聊天文件夹
-    ASSISTANTS           // 助手配置
+    ASSISTANTS,          // 助手配置
+    SKILLS               // Skills 配置
 }
 
 /**
@@ -85,6 +89,32 @@ data class ProvidersExportData(
                 paramsJson.put(modelName, paramObj)
             }
             providerJson.put("modelCustomParams", paramsJson)
+
+            // 多 Key 配置（清理运行时统计字段，避免导出过大）
+            providerJson.put("multiKeyEnabled", provider.multiKeyEnabled)
+            providerJson.put("keySelectionStrategy", provider.keySelectionStrategy.name)
+            providerJson.put("maxFailuresBeforeDisable", provider.maxFailuresBeforeDisable)
+            providerJson.put("autoRecoveryMinutes", provider.autoRecoveryMinutes)
+
+            val apiKeysArray = JSONArray()
+            provider.apiKeys.forEach { key ->
+                val keyObj = JSONObject()
+                keyObj.put("id", key.id)
+                keyObj.put("key", key.key)
+                keyObj.put("name", key.name)
+                keyObj.put("isEnabled", key.isEnabled)
+                keyObj.put("priority", key.priority)
+                // reset runtime fields
+                keyObj.put("status", ApiKeyStatus.ACTIVE.name)
+                keyObj.put("requestCount", 0)
+                keyObj.put("successCount", 0)
+                keyObj.put("failureCount", 0)
+                keyObj.put("lastUsedAt", 0)
+                keyObj.put("statusChangedAt", 0)
+                apiKeysArray.put(keyObj)
+            }
+            providerJson.put("apiKeys", apiKeysArray)
+            providerJson.put("roundRobinIndex", 0)
             providersArray.put(providerJson)
         }
         json.put("providers", providersArray)
@@ -137,6 +167,50 @@ data class ProvidersExportData(
                     com.tchat.wanxiaot.settings.AIProviderType.OPENAI
                 }
 
+                // 解析多 Key 配置
+                val multiKeyEnabled = providerJson.optBoolean("multiKeyEnabled", false)
+                val keySelectionStrategy = try {
+                    KeySelectionStrategy.valueOf(providerJson.optString("keySelectionStrategy", "ROUND_ROBIN"))
+                } catch (e: Exception) {
+                    KeySelectionStrategy.ROUND_ROBIN
+                }
+                val maxFailuresBeforeDisable = providerJson.optInt("maxFailuresBeforeDisable", 3)
+                val autoRecoveryMinutes = providerJson.optInt("autoRecoveryMinutes", 5)
+                val roundRobinIndex = providerJson.optInt("roundRobinIndex", 0)
+
+                val apiKeys = mutableListOf<ApiKeyEntry>()
+                val apiKeysArray = providerJson.optJSONArray("apiKeys")
+                if (apiKeysArray != null) {
+                    for (j in 0 until apiKeysArray.length()) {
+                        val keyObj = apiKeysArray.optJSONObject(j) ?: continue
+                        val keyValue = keyObj.optString("key", "").trim()
+                        if (keyValue.isBlank()) continue
+
+                        val status = try {
+                            ApiKeyStatus.valueOf(keyObj.optString("status", ApiKeyStatus.ACTIVE.name))
+                        } catch (e: Exception) {
+                            ApiKeyStatus.ACTIVE
+                        }
+
+                        apiKeys.add(
+                            ApiKeyEntry(
+                                id = keyObj.optString("id", java.util.UUID.randomUUID().toString()),
+                                key = keyValue,
+                                name = keyObj.optString("name", ""),
+                                isEnabled = keyObj.optBoolean("isEnabled", true),
+                                priority = keyObj.optInt("priority", 5).coerceIn(1, 10),
+                                requestCount = keyObj.optInt("requestCount", 0),
+                                successCount = keyObj.optInt("successCount", 0),
+                                failureCount = keyObj.optInt("failureCount", 0),
+                                lastUsedAt = keyObj.optLong("lastUsedAt", 0),
+                                lastError = keyObj.optString("lastError", "").takeIf { it.isNotEmpty() },
+                                status = status,
+                                statusChangedAt = keyObj.optLong("statusChangedAt", 0)
+                            )
+                        )
+                    }
+                }
+
                 val provider = ProviderConfig(
                     id = providerJson.getString("id"),
                     name = providerJson.getString("name"),
@@ -145,7 +219,14 @@ data class ProvidersExportData(
                     endpoint = providerJson.getString("endpoint"),
                     selectedModel = providerJson.getString("selectedModel"),
                     availableModels = availableModels,
-                    modelCustomParams = modelCustomParams
+                    modelCustomParams = modelCustomParams,
+                    // 多 Key 管理
+                    apiKeys = apiKeys,
+                    multiKeyEnabled = multiKeyEnabled,
+                    keySelectionStrategy = keySelectionStrategy,
+                    roundRobinIndex = roundRobinIndex,
+                    maxFailuresBeforeDisable = maxFailuresBeforeDisable,
+                    autoRecoveryMinutes = autoRecoveryMinutes
                 )
                 providers.add(provider)
             }
@@ -188,6 +269,32 @@ data class ApiConfigExportData(
             paramsJson.put(modelName, paramObj)
         }
         json.put("modelCustomParams", paramsJson)
+
+        // 多 Key 配置（完整导出，包含运行时状态）
+        json.put("multiKeyEnabled", provider.multiKeyEnabled)
+        json.put("keySelectionStrategy", provider.keySelectionStrategy.name)
+        json.put("roundRobinIndex", provider.roundRobinIndex)
+        json.put("maxFailuresBeforeDisable", provider.maxFailuresBeforeDisable)
+        json.put("autoRecoveryMinutes", provider.autoRecoveryMinutes)
+
+        val apiKeysArray = JSONArray()
+        provider.apiKeys.forEach { key ->
+            val keyObj = JSONObject()
+            keyObj.put("id", key.id)
+            keyObj.put("key", key.key)
+            keyObj.put("name", key.name)
+            keyObj.put("isEnabled", key.isEnabled)
+            keyObj.put("priority", key.priority)
+            keyObj.put("requestCount", key.requestCount)
+            keyObj.put("successCount", key.successCount)
+            keyObj.put("failureCount", key.failureCount)
+            keyObj.put("lastUsedAt", key.lastUsedAt)
+            key.lastError?.let { keyObj.put("lastError", it) }
+            keyObj.put("status", key.status.name)
+            keyObj.put("statusChangedAt", key.statusChangedAt)
+            apiKeysArray.put(keyObj)
+        }
+        json.put("apiKeys", apiKeysArray)
         return json.toString()
     }
 
@@ -232,6 +339,50 @@ data class ApiConfigExportData(
                 com.tchat.wanxiaot.settings.AIProviderType.OPENAI
             }
 
+            // 解析多 Key 配置
+            val multiKeyEnabled = json.optBoolean("multiKeyEnabled", false)
+            val keySelectionStrategy = try {
+                KeySelectionStrategy.valueOf(json.optString("keySelectionStrategy", "ROUND_ROBIN"))
+            } catch (e: Exception) {
+                KeySelectionStrategy.ROUND_ROBIN
+            }
+            val roundRobinIndex = json.optInt("roundRobinIndex", 0)
+            val maxFailuresBeforeDisable = json.optInt("maxFailuresBeforeDisable", 3)
+            val autoRecoveryMinutes = json.optInt("autoRecoveryMinutes", 5)
+
+            val apiKeys = mutableListOf<ApiKeyEntry>()
+            val apiKeysArray = json.optJSONArray("apiKeys")
+            if (apiKeysArray != null) {
+                for (i in 0 until apiKeysArray.length()) {
+                    val keyObj = apiKeysArray.optJSONObject(i) ?: continue
+                    val keyValue = keyObj.optString("key", "").trim()
+                    if (keyValue.isBlank()) continue
+
+                    val status = try {
+                        ApiKeyStatus.valueOf(keyObj.optString("status", ApiKeyStatus.ACTIVE.name))
+                    } catch (e: Exception) {
+                        ApiKeyStatus.ACTIVE
+                    }
+
+                    apiKeys.add(
+                        ApiKeyEntry(
+                            id = keyObj.optString("id", java.util.UUID.randomUUID().toString()),
+                            key = keyValue,
+                            name = keyObj.optString("name", ""),
+                            isEnabled = keyObj.optBoolean("isEnabled", true),
+                            priority = keyObj.optInt("priority", 5).coerceIn(1, 10),
+                            requestCount = keyObj.optInt("requestCount", 0),
+                            successCount = keyObj.optInt("successCount", 0),
+                            failureCount = keyObj.optInt("failureCount", 0),
+                            lastUsedAt = keyObj.optLong("lastUsedAt", 0),
+                            lastError = keyObj.optString("lastError", "").takeIf { it.isNotEmpty() },
+                            status = status,
+                            statusChangedAt = keyObj.optLong("statusChangedAt", 0)
+                        )
+                    )
+                }
+            }
+
             val provider = ProviderConfig(
                 id = json.getString("id"),
                 name = json.getString("name"),
@@ -240,7 +391,14 @@ data class ApiConfigExportData(
                 endpoint = json.getString("endpoint"),
                 selectedModel = json.getString("selectedModel"),
                 availableModels = availableModels,
-                modelCustomParams = modelCustomParams
+                modelCustomParams = modelCustomParams,
+                // 多 Key 管理
+                apiKeys = apiKeys,
+                multiKeyEnabled = multiKeyEnabled,
+                keySelectionStrategy = keySelectionStrategy,
+                roundRobinIndex = roundRobinIndex,
+                maxFailuresBeforeDisable = maxFailuresBeforeDisable,
+                autoRecoveryMinutes = autoRecoveryMinutes
             )
 
             return ApiConfigExportData(provider)
@@ -439,4 +597,89 @@ data class KnowledgeChunkInfo(
     val embedding: FloatArray,
     val chunkIndex: Int,
     val createdAt: Long
+)
+
+/**
+ * Skills 导出数据
+ */
+data class SkillsExportData(
+    val skills: List<SkillExportInfo>
+) {
+    fun toJson(): String {
+        val json = JSONObject()
+        val skillsArray = JSONArray()
+        skills.forEach { skill ->
+            val skillJson = JSONObject()
+            skillJson.put("id", skill.id)
+            skillJson.put("name", skill.name)
+            skillJson.put("displayName", skill.displayName)
+            skillJson.put("description", skill.description)
+            skillJson.put("content", skill.content)
+            skillJson.put("triggerKeywords", JSONArray(skill.triggerKeywords))
+            skillJson.put("priority", skill.priority)
+            skillJson.put("enabled", skill.enabled)
+            skillJson.put("isBuiltIn", skill.isBuiltIn)
+            skillJson.put("createdAt", skill.createdAt)
+            skillJson.put("updatedAt", skill.updatedAt)
+            skillsArray.put(skillJson)
+        }
+        json.put("skills", skillsArray)
+        return json.toString()
+    }
+
+    companion object {
+        fun fromJson(jsonString: String): SkillsExportData {
+            val json = JSONObject(jsonString)
+            val skillsArray = json.getJSONArray("skills")
+            val skills = mutableListOf<SkillExportInfo>()
+
+            for (i in 0 until skillsArray.length()) {
+                val skillJson = skillsArray.getJSONObject(i)
+
+                // 解析触发关键词
+                val keywordsArray = skillJson.optJSONArray("triggerKeywords")
+                val triggerKeywords = mutableListOf<String>()
+                if (keywordsArray != null) {
+                    for (j in 0 until keywordsArray.length()) {
+                        triggerKeywords.add(keywordsArray.getString(j))
+                    }
+                }
+
+                skills.add(
+                    SkillExportInfo(
+                        id = skillJson.getString("id"),
+                        name = skillJson.getString("name"),
+                        displayName = skillJson.getString("displayName"),
+                        description = skillJson.getString("description"),
+                        content = skillJson.getString("content"),
+                        triggerKeywords = triggerKeywords,
+                        priority = skillJson.optInt("priority", 0),
+                        enabled = skillJson.optBoolean("enabled", false),
+                        isBuiltIn = skillJson.optBoolean("isBuiltIn", false),
+                        createdAt = skillJson.optLong("createdAt", System.currentTimeMillis()),
+                        updatedAt = skillJson.optLong("updatedAt", System.currentTimeMillis())
+                    )
+                )
+            }
+
+            return SkillsExportData(skills)
+        }
+    }
+}
+
+/**
+ * Skill 导出信息
+ */
+data class SkillExportInfo(
+    val id: String,
+    val name: String,
+    val displayName: String,
+    val description: String,
+    val content: String,
+    val triggerKeywords: List<String>,
+    val priority: Int,
+    val enabled: Boolean,
+    val isBuiltIn: Boolean,
+    val createdAt: Long,
+    val updatedAt: Long
 )

@@ -199,7 +199,18 @@ class SettingsManager(context: Context) {
                         endpoint = obj.optString("endpoint", ""),
                         selectedModel = obj.optString("selectedModel", ""),
                         availableModels = parseStringList(obj.optJSONArray("availableModels")),
-                        modelCustomParams = parseModelCustomParams(obj.optJSONObject("modelCustomParams"))
+                        modelCustomParams = parseModelCustomParams(obj.optJSONObject("modelCustomParams")),
+                        // 多 Key 支持
+                        apiKeys = parseApiKeys(obj.optJSONArray("apiKeys")),
+                        multiKeyEnabled = obj.optBoolean("multiKeyEnabled", false),
+                        keySelectionStrategy = try {
+                            KeySelectionStrategy.valueOf(obj.optString("keySelectionStrategy", "ROUND_ROBIN"))
+                        } catch (e: Exception) {
+                            KeySelectionStrategy.ROUND_ROBIN
+                        },
+                        roundRobinIndex = obj.optInt("roundRobinIndex", 0),
+                        maxFailuresBeforeDisable = obj.optInt("maxFailuresBeforeDisable", 3),
+                        autoRecoveryMinutes = obj.optInt("autoRecoveryMinutes", 5)
                     )
                 )
             }
@@ -207,6 +218,39 @@ class SettingsManager(context: Context) {
             e.printStackTrace()
         }
         return providers
+    }
+
+    private fun parseApiKeys(jsonArray: JSONArray?): List<ApiKeyEntry> {
+        if (jsonArray == null) return emptyList()
+        val keys = mutableListOf<ApiKeyEntry>()
+        try {
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                keys.add(
+                    ApiKeyEntry(
+                        id = obj.optString("id", java.util.UUID.randomUUID().toString()),
+                        key = obj.optString("key", ""),
+                        name = obj.optString("name", ""),
+                        isEnabled = obj.optBoolean("isEnabled", true),
+                        priority = obj.optInt("priority", 5),
+                        requestCount = obj.optInt("requestCount", 0),
+                        successCount = obj.optInt("successCount", 0),
+                        failureCount = obj.optInt("failureCount", 0),
+                        lastUsedAt = obj.optLong("lastUsedAt", 0),
+                        lastError = obj.optString("lastError", "").takeIf { it.isNotEmpty() },
+                        status = try {
+                            ApiKeyStatus.valueOf(obj.optString("status", "ACTIVE"))
+                        } catch (e: Exception) {
+                            ApiKeyStatus.ACTIVE
+                        },
+                        statusChangedAt = obj.optLong("statusChangedAt", 0)
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return keys
     }
 
     private fun parseModelCustomParams(jsonObj: JSONObject?): Map<String, ModelCustomParams> {
@@ -256,9 +300,37 @@ class SettingsManager(context: Context) {
             obj.put("selectedModel", provider.selectedModel)
             obj.put("availableModels", JSONArray(provider.availableModels))
             obj.put("modelCustomParams", serializeModelCustomParams(provider.modelCustomParams))
+            // 多 Key 管理字段
+            obj.put("apiKeys", serializeApiKeys(provider.apiKeys))
+            obj.put("multiKeyEnabled", provider.multiKeyEnabled)
+            obj.put("keySelectionStrategy", provider.keySelectionStrategy.name)
+            obj.put("roundRobinIndex", provider.roundRobinIndex)
+            obj.put("maxFailuresBeforeDisable", provider.maxFailuresBeforeDisable)
+            obj.put("autoRecoveryMinutes", provider.autoRecoveryMinutes)
             jsonArray.put(obj)
         }
         return jsonArray.toString()
+    }
+
+    private fun serializeApiKeys(apiKeys: List<ApiKeyEntry>): JSONArray {
+        val jsonArray = JSONArray()
+        apiKeys.forEach { key ->
+            val obj = JSONObject()
+            obj.put("id", key.id)
+            obj.put("key", key.key)
+            obj.put("name", key.name)
+            obj.put("isEnabled", key.isEnabled)
+            obj.put("priority", key.priority)
+            obj.put("requestCount", key.requestCount)
+            obj.put("successCount", key.successCount)
+            obj.put("failureCount", key.failureCount)
+            obj.put("lastUsedAt", key.lastUsedAt)
+            key.lastError?.let { obj.put("lastError", it) }
+            obj.put("status", key.status.name)
+            obj.put("statusChangedAt", key.statusChangedAt)
+            jsonArray.put(obj)
+        }
+        return jsonArray
     }
 
     private fun serializeModelCustomParams(params: Map<String, ModelCustomParams>): JSONObject {

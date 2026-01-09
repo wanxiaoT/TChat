@@ -9,6 +9,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
@@ -18,6 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tchat.wanxiaot.settings.AIProviderType
+import com.tchat.wanxiaot.settings.ApiKeyEntry
+import com.tchat.wanxiaot.settings.ApiKeyStatus
+import com.tchat.wanxiaot.settings.KeySelectionStrategy
 import com.tchat.wanxiaot.settings.ModelCustomParams
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
@@ -52,6 +56,20 @@ fun ProviderEditScreen(
     var selectedModel by remember {
         mutableStateOf(provider?.selectedModel ?: savedModels.firstOrNull() ?: "")
     }
+
+    // 多 Key 管理
+    var apiKeys by remember { mutableStateOf(provider?.apiKeys ?: emptyList()) }
+    var multiKeyEnabled by remember { mutableStateOf(provider?.multiKeyEnabled ?: false) }
+    var keySelectionStrategy by remember { mutableStateOf(provider?.keySelectionStrategy ?: KeySelectionStrategy.ROUND_ROBIN) }
+    var roundRobinIndex by remember { mutableStateOf(provider?.roundRobinIndex ?: 0) }
+    var maxFailuresBeforeDisable by remember { mutableStateOf(provider?.maxFailuresBeforeDisable ?: 3) }
+    var autoRecoveryMinutes by remember { mutableStateOf(provider?.autoRecoveryMinutes ?: 5) }
+
+    // 多 Key UI 状态
+    var showAddKeyDialog by remember { mutableStateOf(false) }
+    var editingKey by remember { mutableStateOf<ApiKeyEntry?>(null) }
+    var deletingKey by remember { mutableStateOf<ApiKeyEntry?>(null) }
+    var strategyExpanded by remember { mutableStateOf(false) }
     var customModel by remember { mutableStateOf("") }
 
     var fetchedModels by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -110,6 +128,262 @@ fun ProviderEditScreen(
         QRCodeDialog(
             provider = provider,
             onDismiss = { showQRDialog = false }
+        )
+    }
+
+    // ==================== 多 Key 管理对话框 ====================
+
+    if (showAddKeyDialog) {
+        var keysText by remember { mutableStateOf("") }
+        var nameText by remember { mutableStateOf("") }
+        var enabled by remember { mutableStateOf(true) }
+        var priority by remember { mutableStateOf(5f) }
+        var errorText by remember { mutableStateOf<String?>(null) }
+
+        AlertDialog(
+            onDismissRequest = { showAddKeyDialog = false },
+            icon = { Icon(Icons.Default.Add, contentDescription = null) },
+            title = { Text("添加 API Key") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = keysText,
+                        onValueChange = { keysText = it; errorText = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Key（可多条）") },
+                        placeholder = { Text("sk-xxxx...") },
+                        supportingText = { Text("可用空格/换行/逗号分隔，一次添加多条") },
+                        minLines = 2,
+                        maxLines = 4
+                    )
+
+                    OutlinedTextField(
+                        value = nameText,
+                        onValueChange = { nameText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("名称（可选）") },
+                        placeholder = { Text("如：备用 Key 1") },
+                        singleLine = true
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Switch(checked = enabled, onCheckedChange = { enabled = it })
+                            Text("启用")
+                        }
+
+                        Text("优先级: ${priority.toInt()}")
+                    }
+
+                    Slider(
+                        value = priority,
+                        onValueChange = { priority = it },
+                        valueRange = 1f..10f,
+                        steps = 8
+                    )
+
+                    if (errorText != null) {
+                        Text(
+                            text = errorText!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val parsed = splitApiKeys(keysText)
+                        if (parsed.isEmpty()) {
+                            errorText = "请输入至少一个 Key"
+                            return@Button
+                        }
+
+                        val existing = apiKeys.map { it.key.trim() }.toSet()
+                        val newKeys = parsed.filter { it.trim() !in existing }
+                        if (newKeys.isEmpty()) {
+                            errorText = "这些 Key 已存在"
+                            return@Button
+                        }
+
+                        val effectiveName = nameText.trim()
+                        val prio = priority.toInt().coerceIn(1, 10)
+                        val newEntries = newKeys.map { keyValue ->
+                            ApiKeyEntry(
+                                key = keyValue.trim(),
+                                name = if (parsed.size == 1) effectiveName else "",
+                                isEnabled = enabled,
+                                priority = prio
+                            )
+                        }
+
+                        apiKeys = apiKeys + newEntries
+                        multiKeyEnabled = true
+                        showAddKeyDialog = false
+                    }
+                ) {
+                    Text("添加")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showAddKeyDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    editingKey?.let { keyToEdit ->
+        var keyText by remember(keyToEdit.id) { mutableStateOf(keyToEdit.key) }
+        var nameText by remember(keyToEdit.id) { mutableStateOf(keyToEdit.name) }
+        var enabled by remember(keyToEdit.id) { mutableStateOf(keyToEdit.isEnabled) }
+        var priority by remember(keyToEdit.id) { mutableStateOf(keyToEdit.priority.toFloat()) }
+        var errorText by remember(keyToEdit.id) { mutableStateOf<String?>(null) }
+
+        AlertDialog(
+            onDismissRequest = { editingKey = null },
+            icon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+            title = { Text("编辑 API Key") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = keyText,
+                        onValueChange = { keyText = it; errorText = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Key") },
+                        placeholder = { Text("sk-xxxx...") },
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = nameText,
+                        onValueChange = { nameText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("名称（可选）") },
+                        placeholder = { Text("如：主 Key") },
+                        singleLine = true
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Switch(checked = enabled, onCheckedChange = { enabled = it })
+                            Text("启用")
+                        }
+
+                        Text("优先级: ${priority.toInt()}")
+                    }
+
+                    Slider(
+                        value = priority,
+                        onValueChange = { priority = it },
+                        valueRange = 1f..10f,
+                        steps = 8
+                    )
+
+                    Text(
+                        text = "状态: ${keyToEdit.status.displayLabel()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (errorText != null) {
+                        Text(
+                            text = errorText!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmedKey = keyText.trim()
+                        if (trimmedKey.isBlank()) {
+                            errorText = "Key 不能为空"
+                            return@Button
+                        }
+
+                        val hasDuplicate = apiKeys.any { it.id != keyToEdit.id && it.key.trim() == trimmedKey }
+                        if (hasDuplicate) {
+                            errorText = "该 Key 已存在"
+                            return@Button
+                        }
+
+                        val changed = trimmedKey != keyToEdit.key
+                        val prio = priority.toInt().coerceIn(1, 10)
+                        val updated = keyToEdit.copy(
+                            key = trimmedKey,
+                            name = nameText.trim(),
+                            isEnabled = enabled,
+                            priority = prio,
+                            requestCount = if (changed) 0 else keyToEdit.requestCount,
+                            successCount = if (changed) 0 else keyToEdit.successCount,
+                            failureCount = if (changed) 0 else keyToEdit.failureCount,
+                            lastUsedAt = if (changed) 0 else keyToEdit.lastUsedAt,
+                            lastError = if (changed) null else keyToEdit.lastError,
+                            status = if (changed) ApiKeyStatus.ACTIVE else keyToEdit.status,
+                            statusChangedAt = if (changed) 0 else keyToEdit.statusChangedAt
+                        )
+
+                        apiKeys = apiKeys.map { if (it.id == keyToEdit.id) updated else it }
+                        editingKey = null
+                    }
+                ) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { editingKey = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    deletingKey?.let { keyToDelete ->
+        AlertDialog(
+            onDismissRequest = { deletingKey = null },
+            icon = {
+                Icon(
+                    Icons.Outlined.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("删除 API Key") },
+            text = { Text("确定要删除 \"${keyToDelete.getDisplayName()}\" 吗？") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        apiKeys = apiKeys.filterNot { it.id == keyToDelete.id }
+                        deletingKey = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("删除")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { deletingKey = null }) {
+                    Text("取消")
+                }
+            }
         )
     }
 
@@ -272,7 +546,14 @@ fun ProviderEditScreen(
                         endpoint = endpoint.trim(),
                         selectedModel = selectedModel,
                         availableModels = savedModels,
-                        modelCustomParams = modelCustomParams
+                        modelCustomParams = modelCustomParams,
+                        // 多 Key 管理
+                        apiKeys = apiKeys,
+                        multiKeyEnabled = multiKeyEnabled,
+                        keySelectionStrategy = keySelectionStrategy,
+                        roundRobinIndex = roundRobinIndex,
+                        maxFailuresBeforeDisable = maxFailuresBeforeDisable,
+                        autoRecoveryMinutes = autoRecoveryMinutes
                     )
                     onSave(newProvider)
                     if (isNew) {
@@ -400,7 +681,15 @@ fun ProviderEditScreen(
                         onValueChange = { apiKey = it },
                         label = { Text("API Key") },
                         placeholder = { Text("sk-xxxxxxxxxxxxxxxxxxxxxxxx") },
-                        supportingText = { Text("需要保密，请妥善保管") },
+                        supportingText = {
+                            Text(
+                                if (multiKeyEnabled && apiKeys.isNotEmpty()) {
+                                    "已启用多 Key，聊天将使用下方 Key 列表（此处作为备用）"
+                                } else {
+                                    "需要保密，请妥善保管"
+                                }
+                            )
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -417,6 +706,199 @@ fun ProviderEditScreen(
                 }
             }
 
+            // 多 Key 管理卡片
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "多 Key 管理",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "启用多 Key",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "同一服务商配置多个 Key，自动轮询与故障切换",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = multiKeyEnabled,
+                            onCheckedChange = { enabled ->
+                                multiKeyEnabled = enabled
+                                if (enabled && apiKeys.isEmpty()) {
+                                    val migrated = splitApiKeys(apiKey)
+                                    if (migrated.isNotEmpty()) {
+                                        apiKeys = migrated.map { key -> ApiKeyEntry(key = key) }
+                                    }
+                                }
+                            }
+                        )
+                    }
+
+                    if (multiKeyEnabled) {
+                        // 策略选择
+                        ExposedDropdownMenuBox(
+                            expanded = strategyExpanded,
+                            onExpandedChange = { strategyExpanded = !strategyExpanded }
+                        ) {
+                            OutlinedTextField(
+                                value = keySelectionStrategy.displayLabel(),
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("选择策略") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = strategyExpanded) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                            )
+                            ExposedDropdownMenu(
+                                expanded = strategyExpanded,
+                                onDismissRequest = { strategyExpanded = false }
+                            ) {
+                                KeySelectionStrategy.entries.forEach { strategy ->
+                                    DropdownMenuItem(
+                                        text = { Text(strategy.displayLabel()) },
+                                        onClick = {
+                                            keySelectionStrategy = strategy
+                                            strategyExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "失败阈值: $maxFailuresBeforeDisable（达到后标记为错误）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Slider(
+                                value = maxFailuresBeforeDisable.toFloat(),
+                                onValueChange = { maxFailuresBeforeDisable = it.toInt().coerceIn(1, 10) },
+                                valueRange = 1f..10f,
+                                steps = 8
+                            )
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "自动恢复: $autoRecoveryMinutes 分钟（错误 Key 冷却后重新启用）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Slider(
+                                value = autoRecoveryMinutes.toFloat(),
+                                onValueChange = { autoRecoveryMinutes = it.toInt().coerceIn(1, 30) },
+                                valueRange = 1f..30f,
+                                steps = 28
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val availableCount = apiKeys.count { it.isEnabled && it.status == ApiKeyStatus.ACTIVE }
+                            Text(
+                                text = "可用 Key：$availableCount / ${apiKeys.size}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedButton(onClick = { showAddKeyDialog = true }) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("添加 Key")
+                            }
+                        }
+
+                        if (apiKeys.isEmpty()) {
+                            Text(
+                                text = "暂无 Key，请点击“添加 Key”",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                apiKeys.forEach { key ->
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = MaterialTheme.shapes.medium,
+                                        color = MaterialTheme.colorScheme.surfaceContainerLow
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = key.getDisplayName(),
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "${key.getMaskedKey()} · 优先级 ${key.priority} · ${key.status.displayLabel()}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Switch(
+                                                    checked = key.isEnabled,
+                                                    onCheckedChange = { enabled ->
+                                                        apiKeys = apiKeys.map {
+                                                            if (it.id == key.id) it.copy(isEnabled = enabled) else it
+                                                        }
+                                                    }
+                                                )
+                                                IconButton(onClick = { editingKey = key }) {
+                                                    Icon(Icons.Outlined.Edit, contentDescription = "编辑")
+                                                }
+                                                IconButton(onClick = { deletingKey = key }) {
+                                                    Icon(
+                                                        Icons.Outlined.Delete,
+                                                        contentDescription = "删除",
+                                                        tint = MaterialTheme.colorScheme.error
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // 模型配置卡片
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth()
@@ -425,6 +907,14 @@ fun ProviderEditScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    val modelFetchKey = remember(apiKey, multiKeyEnabled, apiKeys) {
+                        if (multiKeyEnabled && apiKeys.isNotEmpty()) {
+                            apiKeys.firstOrNull { it.isEnabled }?.key ?: apiKey
+                        } else {
+                            apiKey
+                        }
+                    }.trim()
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -444,7 +934,7 @@ fun ProviderEditScreen(
                                         val models = fetchModelsFromApi(
                                             httpClient = httpClient,
                                             endpoint = endpoint,
-                                            apiKey = apiKey,
+                                            apiKey = modelFetchKey,
                                             providerType = providerType
                                         )
                                         fetchedModels = models
@@ -455,7 +945,7 @@ fun ProviderEditScreen(
                                     isFetchingModels = false
                                 }
                             },
-                            enabled = !isFetchingModels && apiKey.isNotBlank() && endpoint.isNotBlank()
+                            enabled = !isFetchingModels && modelFetchKey.isNotBlank() && endpoint.isNotBlank()
                         ) {
                             if (isFetchingModels) {
                                 CircularProgressIndicator(
@@ -965,5 +1455,33 @@ private fun ParamInputItem(
             modifier = Modifier.width(100.dp),
             singleLine = true
         )
+    }
+}
+
+private val API_KEY_SPLIT_REGEX = "[\\s,]+".toRegex()
+
+private fun splitApiKeys(raw: String): List<String> {
+    return raw
+        .split(API_KEY_SPLIT_REGEX)
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+}
+
+private fun ApiKeyStatus.displayLabel(): String {
+    return when (this) {
+        ApiKeyStatus.ACTIVE -> "正常"
+        ApiKeyStatus.DISABLED -> "禁用"
+        ApiKeyStatus.ERROR -> "错误"
+        ApiKeyStatus.RATE_LIMITED -> "限流"
+    }
+}
+
+private fun KeySelectionStrategy.displayLabel(): String {
+    return when (this) {
+        KeySelectionStrategy.ROUND_ROBIN -> "轮询"
+        KeySelectionStrategy.PRIORITY -> "优先级"
+        KeySelectionStrategy.RANDOM -> "随机"
+        KeySelectionStrategy.LEAST_USED -> "最少使用"
     }
 }

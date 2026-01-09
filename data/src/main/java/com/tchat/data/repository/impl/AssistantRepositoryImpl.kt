@@ -74,6 +74,15 @@ class AssistantRepositoryImpl(
             emptyList()
         }
 
+        val skillIds: List<String> = try {
+            val jsonArray = JSONArray(enabledSkillIds)
+            (0 until jsonArray.length()).map { i ->
+                jsonArray.getString(i)
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+
         return Assistant(
             id = id,
             name = name,
@@ -88,6 +97,7 @@ class AssistantRepositoryImpl(
             knowledgeBaseId = knowledgeBaseId,
             mcpServerIds = mcpIds,
             enabledRegexRuleIds = regexRuleIds,
+            enabledSkillIds = skillIds,
             createdAt = createdAt,
             updatedAt = updatedAt
         )
@@ -109,6 +119,10 @@ class AssistantRepositoryImpl(
             enabledRegexRuleIds.forEach { put(it) }
         }.toString()
 
+        val skillIdsJson = JSONArray().apply {
+            enabledSkillIds.forEach { put(it) }
+        }.toString()
+
         return AssistantEntity(
             id = id,
             name = name,
@@ -123,6 +137,7 @@ class AssistantRepositoryImpl(
             knowledgeBaseId = knowledgeBaseId,
             mcpServerIds = mcpIdsJson,
             enabledRegexRuleIds = regexRuleIdsJson,
+            enabledSkillIds = skillIdsJson,
             createdAt = createdAt,
             updatedAt = System.currentTimeMillis()
         )

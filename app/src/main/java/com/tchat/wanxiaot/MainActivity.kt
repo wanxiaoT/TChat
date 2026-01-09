@@ -52,6 +52,7 @@ import com.tchat.wanxiaot.ui.settings.SettingsScreen
 import com.tchat.wanxiaot.ui.deepresearch.DeepResearchScreen
 import com.tchat.wanxiaot.ui.deepresearch.DeepResearchViewModel
 import com.tchat.wanxiaot.ui.theme.TChatTheme
+import com.tchat.wanxiaot.util.MultiKeyAIProvider
 import com.tchat.data.deepresearch.DeepResearchManager
 import com.tchat.data.deepresearch.ResearchState
 import com.tchat.data.deepresearch.model.DeepResearchConfig
@@ -231,31 +232,69 @@ fun MainScreen(
     }
 
     // 初始化 Repository（当服务商或模型改变时重新创建）
-    val currentModel = settings.currentModel
-    LaunchedEffect(currentProvider, currentModel) {
+    val activeModel = settings.getActiveModel()
+    val providerTypeKey = currentProvider?.providerType
+    val endpointKey = currentProvider?.endpoint
+    val apiKeyKey = currentProvider?.apiKey
+    val multiKeyEnabledKey = currentProvider?.multiKeyEnabled
+    val apiKeysCountKey = currentProvider?.apiKeys?.size ?: 0
+
+    LaunchedEffect(
+        settings.currentProviderId,
+        activeModel,
+        providerTypeKey,
+        endpointKey,
+        apiKeyKey,
+        multiKeyEnabledKey,
+        apiKeysCountKey
+    ) {
         try {
-            if (currentProvider != null && currentProvider.apiKey.isNotBlank()) {
+            val hasCredential = currentProvider != null && (
+                currentProvider.apiKey.isNotBlank() ||
+                    (currentProvider.multiKeyEnabled && currentProvider.apiKeys.isNotEmpty())
+                )
+
+            if (currentProvider != null && hasCredential) {
                 println("=== 当前服务商 ===")
                 println("Name: ${currentProvider.name}")
                 println("Type: ${currentProvider.providerType.displayName}")
-                println("API Key: ${currentProvider.apiKey.take(10)}...")
+                if (currentProvider.multiKeyEnabled && currentProvider.apiKeys.isNotEmpty()) {
+                    val enabledCount = currentProvider.apiKeys.count { it.isEnabled && it.status == com.tchat.wanxiaot.settings.ApiKeyStatus.ACTIVE }
+                    println("API Keys: ${currentProvider.apiKeys.size} (enabled: $enabledCount)")
+                } else {
+                    println("API Key: ${currentProvider.apiKey.take(10)}...")
+                }
                 println("Endpoint: ${currentProvider.endpoint}")
-                println("Model: ${currentProvider.selectedModel}")
+                println("Model: $activeModel")
                 println("==================")
 
-                val selectedModel = settings.getActiveModel()
+                val selectedModel = activeModel
 
-                val providerConfig = AIProviderFactory.ProviderConfig(
-                    type = when (currentProvider.providerType) {
-                        AIProviderType.OPENAI -> AIProviderFactory.ProviderType.OPENAI
-                        AIProviderType.ANTHROPIC -> AIProviderFactory.ProviderType.ANTHROPIC
-                        AIProviderType.GEMINI -> AIProviderFactory.ProviderType.GEMINI
-                    },
-                    apiKey = currentProvider.apiKey,
-                    baseUrl = currentProvider.endpoint,
-                    model = selectedModel
-                )
-                val aiProvider = AIProviderFactory.create(providerConfig)
+                val mappedType = when (currentProvider.providerType) {
+                    AIProviderType.OPENAI -> AIProviderFactory.ProviderType.OPENAI
+                    AIProviderType.ANTHROPIC -> AIProviderFactory.ProviderType.ANTHROPIC
+                    AIProviderType.GEMINI -> AIProviderFactory.ProviderType.GEMINI
+                }
+
+                val aiProvider = if (currentProvider.multiKeyEnabled && currentProvider.apiKeys.isNotEmpty()) {
+                    MultiKeyAIProvider(
+                        settingsManager = settingsManager,
+                        providerId = currentProvider.id,
+                        providerType = mappedType,
+                        baseUrl = currentProvider.endpoint,
+                        model = selectedModel
+                    )
+                } else {
+                    AIProviderFactory.create(
+                        AIProviderFactory.ProviderConfig(
+                            type = mappedType,
+                            apiKey = currentProvider.apiKey,
+                            baseUrl = currentProvider.endpoint,
+                            model = selectedModel
+                        )
+                    )
+                }
+
                 val newRepo = ChatRepositoryImpl(aiProvider, chatDao, messageDao)
                 repository = newRepo
                 // 初始化 MessageSender 的 repository

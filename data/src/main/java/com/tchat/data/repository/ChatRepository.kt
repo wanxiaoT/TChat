@@ -27,7 +27,8 @@ data class ChatConfig(
     val modelName: String? = null,  // 模型名称（用于统计）
     val providerId: String? = null,  // 提供商ID（用于按提供商统计token）
     val shouldRecordTokens: Boolean = true,  // 是否记录token统计
-    val regexRules: List<RegexRuleData> = emptyList()  // 正则规则（用于流式处理）
+    val regexRules: List<RegexRuleData> = emptyList(),  // 正则规则（用于流式处理）
+    val enabledSkillIds: List<String> = emptyList()  // 启用的技能ID列表
 )
 
 interface ChatRepository {

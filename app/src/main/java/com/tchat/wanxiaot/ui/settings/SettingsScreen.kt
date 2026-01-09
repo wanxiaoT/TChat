@@ -59,12 +59,171 @@ import com.tchat.data.deepresearch.repository.DeepResearchHistoryRepository
 import com.tchat.data.repository.impl.GroupChatRepositoryImpl
 import com.tchat.wanxiaot.ui.groupchat.GroupChatListScreen
 import com.tchat.wanxiaot.ui.groupchat.CreateGroupChatScreen
+import com.tchat.data.repository.impl.SkillRepositoryImpl
+import com.tchat.wanxiaot.ui.skill.SkillScreen
+import com.tchat.wanxiaot.ui.skill.SkillDetailScreen
+import com.tchat.wanxiaot.ui.skill.SkillViewModel
 import kotlinx.coroutines.launch
 
 // 平板模式的最小宽度阈值
 private val TABLET_MIN_WIDTH = 840.dp
 // 平板模式下左侧列表的宽度
 private val TABLET_LIST_WIDTH = 360.dp
+
+/**
+ * 设置项图标类型
+ */
+private sealed class SettingsIcon {
+    data class Material(val icon: androidx.compose.ui.graphics.vector.ImageVector) : SettingsIcon()
+    data class Lucide(val icon: androidx.compose.ui.graphics.vector.ImageVector) : SettingsIcon()
+}
+
+/**
+ * 设置项数据模型 - 手机和平板共享
+ */
+private data class SettingsItemData(
+    val id: String,
+    val group: String,
+    val title: String,
+    val subtitle: String,
+    val icon: SettingsIcon,
+    val targetPage: SettingsSubPage
+)
+
+/**
+ * 获取所有设置项列表 - 单一数据源
+ * 修改此列表会同时影响手机和平板模式
+ */
+private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
+    // 通用分组
+    SettingsItemData(
+        id = "assistants",
+        group = "通用",
+        title = "助手",
+        subtitle = "管理AI助手和本地工具",
+        icon = SettingsIcon.Material(Icons.Default.Person),
+        targetPage = SettingsSubPage.ASSISTANTS
+    ),
+    SettingsItemData(
+        id = "group_chat",
+        group = "通用",
+        title = "助手群聊",
+        subtitle = "创建多助手协作对话",
+        icon = SettingsIcon.Lucide(Lucide.Users),
+        targetPage = SettingsSubPage.GROUP_CHAT
+    ),
+    SettingsItemData(
+        id = "providers",
+        group = "通用",
+        title = "服务商",
+        subtitle = "管理 AI 服务商配置",
+        icon = SettingsIcon.Material(Icons.Default.Settings),
+        targetPage = SettingsSubPage.PROVIDERS
+    ),
+    SettingsItemData(
+        id = "knowledge",
+        group = "通用",
+        title = "知识库",
+        subtitle = "管理RAG知识库和向量检索",
+        icon = SettingsIcon.Lucide(Lucide.BookOpen),
+        targetPage = SettingsSubPage.KNOWLEDGE
+    ),
+    SettingsItemData(
+        id = "mcp",
+        group = "通用",
+        title = "MCP 服务器",
+        subtitle = "管理 MCP 工具服务器连接",
+        icon = SettingsIcon.Material(Icons.Default.Cloud),
+        targetPage = SettingsSubPage.MCP
+    ),
+    SettingsItemData(
+        id = "deep_research",
+        group = "通用",
+        title = "深度研究",
+        subtitle = "AI 驱动的迭代式深度研究",
+        icon = SettingsIcon.Material(Icons.Default.Search),
+        targetPage = SettingsSubPage.DEEP_RESEARCH
+    ),
+    SettingsItemData(
+        id = "regex_rules",
+        group = "通用",
+        title = "正则表达式",
+        subtitle = "管理 AI 输出内容清理规则",
+        icon = SettingsIcon.Material(Icons.Default.BugReport),
+        targetPage = SettingsSubPage.REGEX_RULES
+    ),
+    SettingsItemData(
+        id = "skills",
+        group = "通用",
+        title = "Skills",
+        subtitle = "管理 AI Skills 和自动触发规则",
+        icon = SettingsIcon.Material(Icons.Default.Settings),
+        targetPage = SettingsSubPage.SKILLS
+    ),
+    // 其他分组
+    SettingsItemData(
+        id = "usage_stats",
+        group = "其他",
+        title = "使用统计",
+        subtitle = "查看 Token 和模型调用统计",
+        icon = SettingsIcon.Material(Icons.Default.BarChart),
+        targetPage = SettingsSubPage.USAGE_STATS
+    ),
+    SettingsItemData(
+        id = "export_import",
+        group = "其他",
+        title = "导出/导入",
+        subtitle = "导出或导入配置、知识库等数据",
+        icon = SettingsIcon.Lucide(Lucide.Download),
+        targetPage = SettingsSubPage.EXPORT_IMPORT
+    ),
+    SettingsItemData(
+        id = "logcat",
+        group = "其他",
+        title = "日志查看",
+        subtitle = "查看应用运行日志",
+        icon = SettingsIcon.Lucide(Lucide.ScrollText),
+        targetPage = SettingsSubPage.LOGCAT
+    ),
+    SettingsItemData(
+        id = "network_log",
+        group = "其他",
+        title = "网络日志",
+        subtitle = "查看 API 请求和响应信息",
+        icon = SettingsIcon.Material(Icons.Default.Cloud),
+        targetPage = SettingsSubPage.NETWORK_LOG
+    ),
+    SettingsItemData(
+        id = "about",
+        group = "其他",
+        title = "关于",
+        subtitle = "版本信息与开发者",
+        icon = SettingsIcon.Material(Icons.Default.Info),
+        targetPage = SettingsSubPage.ABOUT
+    )
+)
+
+/**
+ * 检查设置项是否被选中
+ */
+private fun isSettingsItemSelected(itemId: String, currentSubPage: SettingsSubPage): Boolean {
+    return when (itemId) {
+        "assistants" -> currentSubPage is SettingsSubPage.ASSISTANTS || currentSubPage is SettingsSubPage.ASSISTANT_DETAIL
+        "group_chat" -> currentSubPage is SettingsSubPage.GROUP_CHAT || currentSubPage is SettingsSubPage.CREATE_GROUP_CHAT || currentSubPage is SettingsSubPage.EDIT_GROUP_CHAT
+        "providers" -> currentSubPage is SettingsSubPage.PROVIDERS
+        "knowledge" -> currentSubPage is SettingsSubPage.KNOWLEDGE || currentSubPage is SettingsSubPage.KNOWLEDGE_DETAIL
+        "mcp" -> currentSubPage is SettingsSubPage.MCP
+        "deep_research" -> currentSubPage is SettingsSubPage.DEEP_RESEARCH
+        "regex_rules" -> currentSubPage is SettingsSubPage.REGEX_RULES
+        "skills" -> currentSubPage is SettingsSubPage.SKILLS || currentSubPage is SettingsSubPage.SKILL_DETAIL
+        "usage_stats" -> currentSubPage is SettingsSubPage.USAGE_STATS
+        "export_import" -> currentSubPage is SettingsSubPage.EXPORT_IMPORT
+        "logcat" -> currentSubPage is SettingsSubPage.LOGCAT
+        "network_log" -> currentSubPage is SettingsSubPage.NETWORK_LOG
+        "about" -> currentSubPage is SettingsSubPage.ABOUT
+        else -> false
+    }
+}
 
 /**
  * 设置子页面类型
@@ -87,6 +246,8 @@ private sealed class SettingsSubPage {
     data object DEEP_RESEARCH : SettingsSubPage()
     data object REGEX_RULES : SettingsSubPage()
     data object EXPORT_IMPORT : SettingsSubPage()
+    data object SKILLS : SettingsSubPage()
+    data class SKILL_DETAIL(val id: String?) : SettingsSubPage()
 }
 
 /**
@@ -133,6 +294,11 @@ fun SettingsScreen(
         )
     }
 
+    // 创建技能Repository
+    val skillRepository = remember(database) {
+        SkillRepositoryImpl(database.skillDao())
+    }
+
     // 使用 BoxWithConstraints 检测屏幕宽度
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isTabletMode = maxWidth >= TABLET_MIN_WIDTH
@@ -149,7 +315,8 @@ fun SettingsScreen(
                 knowledgeRepository = knowledgeRepository,
                 knowledgeService = knowledgeService,
                 mcpRepository = mcpRepository,
-                groupChatRepository = groupChatRepository
+                groupChatRepository = groupChatRepository,
+                skillRepository = skillRepository
             )
         } else {
             // 手机模式：单栏布局（保持原有逻辑）
@@ -163,7 +330,8 @@ fun SettingsScreen(
                 knowledgeRepository = knowledgeRepository,
                 knowledgeService = knowledgeService,
                 mcpRepository = mcpRepository,
-                groupChatRepository = groupChatRepository
+                groupChatRepository = groupChatRepository,
+                skillRepository = skillRepository
             )
         }
     }
@@ -184,7 +352,8 @@ private fun TabletSettingsLayout(
     knowledgeRepository: KnowledgeRepositoryImpl,
     knowledgeService: KnowledgeService,
     mcpRepository: McpServerRepositoryImpl,
-    groupChatRepository: GroupChatRepositoryImpl
+    groupChatRepository: GroupChatRepositoryImpl,
+    skillRepository: SkillRepositoryImpl
 ) {
     // 搜索状态
     var showSearchBar by remember { mutableStateOf(false) }
@@ -203,6 +372,7 @@ private fun TabletSettingsLayout(
             currentSubPage is SettingsSubPage.KNOWLEDGE_DETAIL -> onSubPageChange(SettingsSubPage.KNOWLEDGE)
             currentSubPage is SettingsSubPage.CREATE_GROUP_CHAT -> onSubPageChange(SettingsSubPage.GROUP_CHAT)
             currentSubPage is SettingsSubPage.EDIT_GROUP_CHAT -> onSubPageChange(SettingsSubPage.GROUP_CHAT)
+            currentSubPage is SettingsSubPage.SKILL_DETAIL -> onSubPageChange(SettingsSubPage.SKILLS)
             else -> onSubPageChange(SettingsSubPage.MAIN)
         }
     }
@@ -279,18 +449,7 @@ private fun TabletSettingsLayout(
                 modifier = Modifier.padding(innerPadding),
                 currentSubPage = currentSubPage,
                 searchQuery = searchQuery,
-                onProvidersClick = { onSubPageChange(SettingsSubPage.PROVIDERS) },
-                onAboutClick = { onSubPageChange(SettingsSubPage.ABOUT) },
-                onLogcatClick = { onSubPageChange(SettingsSubPage.LOGCAT) },
-                onNetworkLogClick = { onSubPageChange(SettingsSubPage.NETWORK_LOG) },
-                onAssistantsClick = { onSubPageChange(SettingsSubPage.ASSISTANTS) },
-                onGroupChatClick = { onSubPageChange(SettingsSubPage.GROUP_CHAT) },
-                onKnowledgeClick = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
-                onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
-                onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) },
-                onDeepResearchClick = { onSubPageChange(SettingsSubPage.DEEP_RESEARCH) },
-                onRegexRulesClick = { onSubPageChange(SettingsSubPage.REGEX_RULES) },
-                onExportImportClick = { onSubPageChange(SettingsSubPage.EXPORT_IMPORT) }
+                onSubPageChange = onSubPageChange
             )
         }
 
@@ -505,6 +664,38 @@ private fun TabletSettingsLayout(
                             )
                         }
                     }
+                    is SettingsSubPage.SKILLS -> {
+                        val viewModel = remember(skillRepository) {
+                            SkillViewModel(skillRepository)
+                        }
+                        SkillScreen(
+                            viewModel = viewModel,
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            onSkillClick = { id -> onSubPageChange(SettingsSubPage.SKILL_DETAIL(id)) },
+                            onCreateSkill = { onSubPageChange(SettingsSubPage.SKILL_DETAIL(null)) },
+                            showTopBar = true
+                        )
+                    }
+                    is SettingsSubPage.SKILL_DETAIL -> {
+                        val viewModel = remember(skillRepository) {
+                            SkillViewModel(skillRepository)
+                        }
+                        val skills by viewModel.skills.collectAsState()
+                        val skill = page.id?.let { id -> skills.find { it.id == id } }
+                        SkillDetailScreen(
+                            skill = skill,
+                            onSave = { newSkill ->
+                                if (page.id == null) {
+                                    viewModel.createSkill(newSkill)
+                                } else {
+                                    viewModel.updateSkill(newSkill)
+                                }
+                            },
+                            onDelete = { id -> viewModel.deleteSkill(id) },
+                            onBack = { onSubPageChange(SettingsSubPage.SKILLS) },
+                            showTopBar = true
+                        )
+                    }
                 }
             }
         }
@@ -526,7 +717,8 @@ private fun PhoneSettingsLayout(
     knowledgeRepository: KnowledgeRepositoryImpl,
     knowledgeService: KnowledgeService,
     mcpRepository: McpServerRepositoryImpl,
-    groupChatRepository: GroupChatRepositoryImpl
+    groupChatRepository: GroupChatRepositoryImpl,
+    skillRepository: SkillRepositoryImpl
 ) {
     // 处理系统返回键
     BackHandler {
@@ -536,6 +728,7 @@ private fun PhoneSettingsLayout(
             is SettingsSubPage.KNOWLEDGE_DETAIL -> onSubPageChange(SettingsSubPage.KNOWLEDGE)
             is SettingsSubPage.CREATE_GROUP_CHAT -> onSubPageChange(SettingsSubPage.GROUP_CHAT)
             is SettingsSubPage.EDIT_GROUP_CHAT -> onSubPageChange(SettingsSubPage.GROUP_CHAT)
+            is SettingsSubPage.SKILL_DETAIL -> onSubPageChange(SettingsSubPage.SKILLS)
             else -> onSubPageChange(SettingsSubPage.MAIN)
         }
     }
@@ -544,7 +737,8 @@ private fun PhoneSettingsLayout(
     fun SettingsSubPage.level(): Int = when (this) {
         is SettingsSubPage.MAIN -> 0
         is SettingsSubPage.ASSISTANT_DETAIL, is SettingsSubPage.KNOWLEDGE_DETAIL,
-        is SettingsSubPage.CREATE_GROUP_CHAT, is SettingsSubPage.EDIT_GROUP_CHAT -> 2
+        is SettingsSubPage.CREATE_GROUP_CHAT, is SettingsSubPage.EDIT_GROUP_CHAT,
+        is SettingsSubPage.SKILL_DETAIL -> 2
         else -> 1
     }
 
@@ -579,18 +773,7 @@ private fun PhoneSettingsLayout(
             is SettingsSubPage.MAIN -> {
                 SettingsMainContent(
                     onBack = onBack,
-                    onProvidersClick = { onSubPageChange(SettingsSubPage.PROVIDERS) },
-                    onAboutClick = { onSubPageChange(SettingsSubPage.ABOUT) },
-                    onLogcatClick = { onSubPageChange(SettingsSubPage.LOGCAT) },
-                    onNetworkLogClick = { onSubPageChange(SettingsSubPage.NETWORK_LOG) },
-                    onAssistantsClick = { onSubPageChange(SettingsSubPage.ASSISTANTS) },
-                    onGroupChatClick = { onSubPageChange(SettingsSubPage.GROUP_CHAT) },
-                    onKnowledgeClick = { onSubPageChange(SettingsSubPage.KNOWLEDGE) },
-                    onMcpClick = { onSubPageChange(SettingsSubPage.MCP) },
-                    onUsageStatsClick = { onSubPageChange(SettingsSubPage.USAGE_STATS) },
-                    onDeepResearchClick = { onSubPageChange(SettingsSubPage.DEEP_RESEARCH) },
-                    onRegexRulesClick = { onSubPageChange(SettingsSubPage.REGEX_RULES) },
-                    onExportImportClick = { onSubPageChange(SettingsSubPage.EXPORT_IMPORT) }
+                    onSubPageChange = onSubPageChange
                 )
             }
             is SettingsSubPage.PROVIDERS -> {
@@ -690,7 +873,8 @@ private fun PhoneSettingsLayout(
             is SettingsSubPage.EXPORT_IMPORT -> {
                 ExportImportScreenEnhanced(
                     settingsManager = settingsManager,
-                    onBackClick = { onSubPageChange(SettingsSubPage.MAIN) }
+                    onBackClick = { onSubPageChange(SettingsSubPage.MAIN) },
+                    showTopBar = false
                 )
             }
             is SettingsSubPage.GROUP_CHAT -> {
@@ -747,30 +931,54 @@ private fun PhoneSettingsLayout(
                     )
                 }
             }
+            is SettingsSubPage.SKILLS -> {
+                val viewModel = remember(skillRepository) {
+                    SkillViewModel(skillRepository)
+                }
+                SkillScreen(
+                    viewModel = viewModel,
+                    onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                    onSkillClick = { id -> onSubPageChange(SettingsSubPage.SKILL_DETAIL(id)) },
+                    onCreateSkill = { onSubPageChange(SettingsSubPage.SKILL_DETAIL(null)) }
+                )
+            }
+            is SettingsSubPage.SKILL_DETAIL -> {
+                val viewModel = remember(skillRepository) {
+                    SkillViewModel(skillRepository)
+                }
+                val skills by viewModel.skills.collectAsState()
+                val skill = page.id?.let { id -> skills.find { it.id == id } }
+                SkillDetailScreen(
+                    skill = skill,
+                    onSave = { newSkill ->
+                        if (page.id == null) {
+                            viewModel.createSkill(newSkill)
+                        } else {
+                            viewModel.updateSkill(newSkill)
+                        }
+                    },
+                    onDelete = { id -> viewModel.deleteSkill(id) },
+                    onBack = { onSubPageChange(SettingsSubPage.SKILLS) }
+                )
+            }
         }
     }
 }
 
 /**
- * 设置主页面内容 - 卡片式设计
+ * 设置主页面内容 - 卡片式设计（手机模式）
+ * 使用共享数据源 getAllSettingsItems()
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsMainContent(
     onBack: () -> Unit,
-    onProvidersClick: () -> Unit,
-    onAboutClick: () -> Unit,
-    onLogcatClick: () -> Unit,
-    onNetworkLogClick: () -> Unit,
-    onAssistantsClick: () -> Unit,
-    onGroupChatClick: () -> Unit = {},
-    onKnowledgeClick: () -> Unit,
-    onMcpClick: () -> Unit,
-    onUsageStatsClick: () -> Unit,
-    onDeepResearchClick: () -> Unit = {},
-    onRegexRulesClick: () -> Unit = {},
-    onExportImportClick: () -> Unit = {}
+    onSubPageChange: (SettingsSubPage) -> Unit
 ) {
+    val allItems = getAllSettingsItems()
+    val groupOrder = listOf("通用", "其他")
+    val groupedItems = allItems.groupBy { it.group }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -798,525 +1006,27 @@ private fun SettingsMainContent(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 通用设置分组标题
-            Text(
-                text = "通用",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
-            )
+            groupOrder.forEach { group ->
+                val items = groupedItems[group] ?: return@forEach
 
-            // 助手设置卡片
-            OutlinedCard(
-                onClick = onAssistantsClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                // 分组标题
+                Text(
+                    text = group,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+                )
 
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "助手",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "管理AI助手和本地工具",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                // 设置项卡片
+                items.forEach { item ->
+                    SettingsCardItem(
+                        item = item,
+                        onClick = { onSubPageChange(item.targetPage) }
                     )
                 }
-            }
 
-            // 助手群聊设置卡片
-            OutlinedCard(
-                onClick = onGroupChatClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Lucide.Users,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "助手群聊",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "创建多助手协作对话",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // 服务商设置卡片
-            OutlinedCard(
-                onClick = onProvidersClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Settings,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "服务商",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "管理 AI 服务商配置",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // 知识库设置卡片
-            OutlinedCard(
-                onClick = onKnowledgeClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Lucide.BookOpen,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "知识库",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "管理RAG知识库和向量检索",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // MCP 服务器设置卡片
-            OutlinedCard(
-                onClick = onMcpClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Cloud,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "MCP 服务器",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "管理 MCP 工具服务器连接",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // 深度研究卡片
-            OutlinedCard(
-                onClick = onDeepResearchClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "深度研究",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "AI 驱动的迭代式深度研究",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // 正则表达式卡片
-            OutlinedCard(
-                onClick = onRegexRulesClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.BugReport,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "正则表达式",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "管理 AI 输出内容清理规则",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 其他分组标题
-            Text(
-                text = "其他",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
-            )
-
-            // 使用统计卡片
-            OutlinedCard(
-                onClick = onUsageStatsClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.BarChart,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "使用统计",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "查看 Token 和模型调用统计",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // 日志查看卡片
-            OutlinedCard(
-                onClick = onLogcatClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Lucide.ScrollText,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "日志查看",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "查看应用运行日志",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // 网络日志卡片
-            OutlinedCard(
-                onClick = onNetworkLogClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Cloud,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "网络日志",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "查看 API 请求和响应信息",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // 导出/导入卡片
-            OutlinedCard(
-                onClick = onExportImportClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Lucide.Download,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "导出/导入",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "导出或导入配置、知识库等数据",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // 关于卡片
-            OutlinedCard(
-                onClick = onAboutClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "关于",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "版本信息与开发者",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                if (group != groupOrder.last()) {
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         }
@@ -1324,121 +1034,76 @@ private fun SettingsMainContent(
 }
 
 /**
+ * 设置卡片项（手机模式使用）
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsCardItem(
+    item: SettingsItemData,
+    onClick: () -> Unit
+) {
+    OutlinedCard(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            when (val icon = item.icon) {
+                is SettingsIcon.Material -> Icon(
+                    icon.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                is SettingsIcon.Lucide -> Icon(
+                    icon.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = item.subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
  * 平板模式下的设置列表内容（带选中状态）
+ * 使用共享数据源 getAllSettingsItems()
  */
 @Composable
 private fun SettingsListContent(
     modifier: Modifier = Modifier,
     currentSubPage: SettingsSubPage,
     searchQuery: String = "",
-    onProvidersClick: () -> Unit,
-    onAboutClick: () -> Unit,
-    onLogcatClick: () -> Unit,
-    onNetworkLogClick: () -> Unit,
-    onAssistantsClick: () -> Unit,
-    onGroupChatClick: () -> Unit = {},
-    onKnowledgeClick: () -> Unit,
-    onMcpClick: () -> Unit,
-    onUsageStatsClick: () -> Unit,
-    onDeepResearchClick: () -> Unit = {},
-    onRegexRulesClick: () -> Unit = {},
-    onExportImportClick: () -> Unit = {}
+    onSubPageChange: (SettingsSubPage) -> Unit
 ) {
-    // 设置项数据（不使用 Composable lambda）
-    data class SettingsItemData(
-        val id: String,
-        val group: String,
-        val title: String,
-        val subtitle: String,
-        val onClick: () -> Unit
-    )
-
-    val allItems = listOf(
-        SettingsItemData(
-            id = "assistants",
-            group = "通用",
-            title = "助手",
-            subtitle = "管理AI助手和本地工具",
-            onClick = onAssistantsClick
-        ),
-        SettingsItemData(
-            id = "group_chat",
-            group = "通用",
-            title = "助手群聊",
-            subtitle = "创建多助手协作对话",
-            onClick = onGroupChatClick
-        ),
-        SettingsItemData(
-            id = "providers",
-            group = "通用",
-            title = "服务商",
-            subtitle = "管理 AI 服务商配置",
-            onClick = onProvidersClick
-        ),
-        SettingsItemData(
-            id = "knowledge",
-            group = "通用",
-            title = "知识库",
-            subtitle = "管理RAG知识库和向量检索",
-            onClick = onKnowledgeClick
-        ),
-        SettingsItemData(
-            id = "mcp",
-            group = "通用",
-            title = "MCP 服务器",
-            subtitle = "管理 MCP 工具服务器连接",
-            onClick = onMcpClick
-        ),
-        SettingsItemData(
-            id = "deep_research",
-            group = "通用",
-            title = "深度研究",
-            subtitle = "AI 驱动的迭代式深度研究",
-            onClick = onDeepResearchClick
-        ),
-        SettingsItemData(
-            id = "regex_rules",
-            group = "通用",
-            title = "正则表达式",
-            subtitle = "管理 AI 输出内容清理规则",
-            onClick = onRegexRulesClick
-        ),
-        SettingsItemData(
-            id = "usage_stats",
-            group = "其他",
-            title = "使用统计",
-            subtitle = "查看 Token 和模型调用统计",
-            onClick = onUsageStatsClick
-        ),
-        SettingsItemData(
-            id = "export_import",
-            group = "其他",
-            title = "导出/导入",
-            subtitle = "导出或导入配置、知识库等数据",
-            onClick = onExportImportClick
-        ),
-        SettingsItemData(
-            id = "logcat",
-            group = "其他",
-            title = "日志查看",
-            subtitle = "查看应用运行日志",
-            onClick = onLogcatClick
-        ),
-        SettingsItemData(
-            id = "network_log",
-            group = "其他",
-            title = "网络日志",
-            subtitle = "查看 API 请求和响应信息",
-            onClick = onNetworkLogClick
-        ),
-        SettingsItemData(
-            id = "about",
-            group = "其他",
-            title = "关于",
-            subtitle = "版本信息与开发者",
-            onClick = onAboutClick
-        )
-    )
+    val allItems = getAllSettingsItems()
 
     // 根据搜索词过滤
     val filteredItems = if (searchQuery.isBlank()) {
@@ -1488,94 +1153,12 @@ private fun SettingsListContent(
                 )
 
                 items.forEach { item ->
-                    val isSelected = when (item.id) {
-                        "assistants" -> currentSubPage is SettingsSubPage.ASSISTANTS || currentSubPage is SettingsSubPage.ASSISTANT_DETAIL
-                        "group_chat" -> currentSubPage is SettingsSubPage.GROUP_CHAT || currentSubPage is SettingsSubPage.CREATE_GROUP_CHAT || currentSubPage is SettingsSubPage.EDIT_GROUP_CHAT
-                        "providers" -> currentSubPage is SettingsSubPage.PROVIDERS
-                        "knowledge" -> currentSubPage is SettingsSubPage.KNOWLEDGE || currentSubPage is SettingsSubPage.KNOWLEDGE_DETAIL
-                        "mcp" -> currentSubPage is SettingsSubPage.MCP
-                        "deep_research" -> currentSubPage is SettingsSubPage.DEEP_RESEARCH
-                        "regex_rules" -> currentSubPage is SettingsSubPage.REGEX_RULES
-                        "usage_stats" -> currentSubPage is SettingsSubPage.USAGE_STATS
-                        "logcat" -> currentSubPage is SettingsSubPage.LOGCAT
-                        "network_log" -> currentSubPage is SettingsSubPage.NETWORK_LOG
-                        "about" -> currentSubPage is SettingsSubPage.ABOUT
-                        else -> false
-                    }
-
-                    when (item.id) {
-                        "knowledge" -> SettingsListItem(
-                            iconContent = {
-                                Icon(
-                                    Lucide.BookOpen,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer
-                                           else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            title = item.title,
-                            subtitle = item.subtitle,
-                            isSelected = isSelected,
-                            onClick = item.onClick
-                        )
-                        "logcat" -> SettingsListItem(
-                            iconContent = {
-                                Icon(
-                                    Lucide.ScrollText,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer
-                                           else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            title = item.title,
-                            subtitle = item.subtitle,
-                            isSelected = isSelected,
-                            onClick = item.onClick
-                        )
-                        "group_chat" -> SettingsListItem(
-                            iconContent = {
-                                Icon(
-                                    Lucide.Users,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer
-                                           else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            title = item.title,
-                            subtitle = item.subtitle,
-                            isSelected = isSelected,
-                            onClick = item.onClick
-                        )
-                        "regex_rules" -> SettingsListItem(
-                            icon = Icons.Default.BugReport,
-                            title = item.title,
-                            subtitle = item.subtitle,
-                            isSelected = isSelected,
-                            onClick = item.onClick
-                        )
-                        else -> {
-                            val icon = when (item.id) {
-                                "assistants" -> Icons.Default.Person
-                                "providers" -> Icons.Default.Settings
-                                "mcp" -> Icons.Default.Cloud
-                                "deep_research" -> Icons.Default.Search
-                                "usage_stats" -> Icons.Default.BarChart
-                                "network_log" -> Icons.Default.Cloud
-                                "about" -> Icons.Default.Info
-                                else -> Icons.Default.Settings
-                            }
-                            SettingsListItem(
-                                icon = icon,
-                                title = item.title,
-                                subtitle = item.subtitle,
-                                isSelected = isSelected,
-                                onClick = item.onClick
-                            )
-                        }
-                    }
+                    val isSelected = isSettingsItemSelected(item.id, currentSubPage)
+                    SettingsListItemFromData(
+                        item = item,
+                        isSelected = isSelected,
+                        onClick = { onSubPageChange(item.targetPage) }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1585,14 +1168,11 @@ private fun SettingsListContent(
 }
 
 /**
- * 设置列表项（支持选中状态）
+ * 设置列表项（平板模式使用，支持选中状态）
  */
 @Composable
-private fun SettingsListItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    iconContent: @Composable (() -> Unit)? = null,
-    title: String,
-    subtitle: String,
+private fun SettingsListItemFromData(
+    item: SettingsItemData,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
@@ -1606,6 +1186,7 @@ private fun SettingsListItem(
     } else {
         MaterialTheme.colorScheme.onSurface
     }
+    val iconTint = if (isSelected) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
 
     Surface(
         onClick = onClick,
@@ -1619,28 +1200,32 @@ private fun SettingsListItem(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (icon != null) {
-                Icon(
-                    icon,
+            when (val icon = item.icon) {
+                is SettingsIcon.Material -> Icon(
+                    icon.icon,
                     contentDescription = null,
                     modifier = Modifier.size(24.dp),
-                    tint = if (isSelected) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = iconTint
                 )
-            } else if (iconContent != null) {
-                iconContent()
+                is SettingsIcon.Lucide -> Icon(
+                    icon.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = iconTint
+                )
             }
 
             Spacer(modifier = Modifier.width(16.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = title,
+                    text = item.title,
                     style = MaterialTheme.typography.titleMedium,
                     color = contentColor
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = subtitle,
+                    text = item.subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isSelected) contentColor.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
                 )

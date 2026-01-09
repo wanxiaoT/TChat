@@ -7,21 +7,19 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import com.composables.icons.lucide.*
 import com.tchat.data.database.entity.KnowledgeBaseEntity
@@ -39,6 +37,7 @@ import java.io.FileOutputStream
 fun ExportImportScreenEnhanced(
     settingsManager: SettingsManager,
     onBackClick: () -> Unit,
+    showTopBar: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -63,6 +62,10 @@ fun ExportImportScreenEnhanced(
     var showKnowledgeBaseSelection by remember { mutableStateOf(false) }
     var showProviderSingleSelection by remember { mutableStateOf(false) }
     var pendingExportAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var showSkillSelection by remember { mutableStateOf(false) }
+
+    val skills by viewModel.skills.collectAsState()
+    val selectedSkillIds by viewModel.selectedSkillIds.collectAsState()
 
     // 文件选择器 - 数据库备份（保存 zip 文件）
     val backupFileLauncher = rememberLauncherForActivityResult(
@@ -111,6 +114,9 @@ fun ExportImportScreenEnhanced(
                         viewModel.exportKnowledgeBaseToUri(kbId, it)
                     }
                 }
+                ExportType.SKILLS -> {
+                    viewModel.exportSkillsToUri(selectedSkillIds.toList(), it)
+                }
                 null -> {}
             }
         }
@@ -134,6 +140,10 @@ fun ExportImportScreenEnhanced(
                     val file = uriToFile(context, it, "knowledge_base_import.json")
                     viewModel.importKnowledgeBaseFromFile(file)
                 }
+                ExportType.SKILLS -> {
+                    val file = uriToFile(context, it, "skills_import.json")
+                    viewModel.importSkillsFromFile(file)
+                }
                 null -> {}
             }
         }
@@ -141,14 +151,16 @@ fun ExportImportScreenEnhanced(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("导出/导入") },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+            if (showTopBar) {
+                TopAppBar(
+                    title = { Text("导出/导入") },
+                    navigationIcon = {
+                        IconButton(onClick = onBackClick) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         snackbarHost = {
             val snackbarHostState = remember { SnackbarHostState() }
@@ -179,142 +191,182 @@ fun ExportImportScreenEnhanced(
         modifier = modifier
     ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // 数据库备份
-                item {
-                    DatabaseBackupSection(
-                        onBackup = {
-                            backupFileLauncher.launch(viewModel.generateBackupFileName())
-                        },
-                        onRestore = {
-                            restoreFileLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*"))
-                        }
-                    )
+            Column(modifier = Modifier.fillMaxSize()) {
+                // 平板模式下显示标题栏
+                if (!showTopBar) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "导出/导入",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                    HorizontalDivider()
                 }
 
-                // 供应商配置
-                item {
-                    ExportImportSectionConnected(
-                        title = "供应商配置",
-                        description = "导出或导入AI供应商配置（包括模型列表和自定义参数）",
-                        icon = Lucide.Server,
-                        encryptionEnabled = useEncryption,
-                        encryptionPassword = encryptionPassword,
-                        onEncryptionEnabledChange = { useEncryption = it },
-                        onEncryptionPasswordChange = { encryptionPassword = it },
-                        onExportFile = {
-                            currentExportType = ExportType.PROVIDERS
-                            pendingExportAction = null
-                            showProviderSelection = true
-                        },
-                        onExportQRCode = {
-                            currentExportType = ExportType.PROVIDERS
-                            if (selectedProviderIds.isNotEmpty()) {
-                                viewModel.exportProvidersToQRCode(
-                                    selectedProviderIds.toList(),
-                                    useEncryption,
-                                    encryptionPassword.takeIf { useEncryption }
-                                ) { qrCode ->
-                                    showQRCodeDialog = qrCode
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // 数据库备份
+                    item {
+                        DatabaseBackupSection(
+                            onBackup = {
+                                backupFileLauncher.launch(viewModel.generateBackupFileName())
+                            },
+                            onRestore = {
+                                restoreFileLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*"))
+                            }
+                        )
+                    }
+
+                    // 供应商配置
+                    item {
+                        ExportImportSectionConnected(
+                            title = "供应商配置",
+                            description = "导出或导入AI供应商配置（包括模型列表和自定义参数）",
+                            icon = Lucide.Server,
+                            encryptionEnabled = useEncryption,
+                            encryptionPassword = encryptionPassword,
+                            onEncryptionEnabledChange = { useEncryption = it },
+                            onEncryptionPasswordChange = { encryptionPassword = it },
+                            onExportFile = {
+                                currentExportType = ExportType.PROVIDERS
+                                pendingExportAction = null
+                                showProviderSelection = true
+                            },
+                            onExportQRCode = {
+                                currentExportType = ExportType.PROVIDERS
+                                if (selectedProviderIds.isNotEmpty()) {
+                                    viewModel.exportProvidersToQRCode(
+                                        selectedProviderIds.toList(),
+                                        useEncryption,
+                                        encryptionPassword.takeIf { useEncryption }
+                                    ) { qrCode ->
+                                        showQRCodeDialog = qrCode
+                                    }
+                                } else {
+                                    pendingExportAction = {
+                                        if (selectedProviderIds.isNotEmpty()) {
+                                            viewModel.exportProvidersToQRCode(
+                                                selectedProviderIds.toList(),
+                                                useEncryption,
+                                                encryptionPassword.takeIf { useEncryption }
+                                            ) { qrCode ->
+                                                showQRCodeDialog = qrCode
+                                            }
+                                        }
+                                    }
+                                    showProviderSelection = true
                                 }
-                            } else {
+                            },
+                            onImportFile = {
+                                currentExportType = ExportType.PROVIDERS
+                                importFileLauncher.launch(arrayOf("application/json", "*/*"))
+                            },
+                            onImportQRCode = {
+                                currentExportType = ExportType.PROVIDERS
+                                showQRScanner = true
+                            }
+                        )
+                    }
+
+                    // API配置（含密钥）
+                    item {
+                        ExportImportSectionConnected(
+                            title = "API配置",
+                            description = "导出或导入API配置（包含API密钥，强烈建议加密）",
+                            icon = Lucide.Key,
+                            encryptionEnabled = useEncryption,
+                            encryptionPassword = encryptionPassword,
+                            onEncryptionEnabledChange = { useEncryption = it },
+                            onEncryptionPasswordChange = { encryptionPassword = it },
+                            onExportFile = {
+                                currentExportType = ExportType.API_CONFIG
+                                useEncryption = true // API配置强制加密
+                                showProviderSingleSelection = true
                                 pendingExportAction = {
-                                    if (selectedProviderIds.isNotEmpty()) {
-                                        viewModel.exportProvidersToQRCode(
-                                            selectedProviderIds.toList(),
-                                            useEncryption,
-                                            encryptionPassword.takeIf { useEncryption }
+                                    selectedProviderId?.let { id ->
+                                        exportFileLauncher.launch("api_config_${System.currentTimeMillis()}.json")
+                                    }
+                                }
+                            },
+                            onExportQRCode = {
+                                currentExportType = ExportType.API_CONFIG
+                                useEncryption = true
+                                showProviderSingleSelection = true
+                                pendingExportAction = {
+                                    selectedProviderId?.let { id ->
+                                        viewModel.exportApiConfigToQRCode(
+                                            id,
+                                            true,
+                                            encryptionPassword
                                         ) { qrCode ->
                                             showQRCodeDialog = qrCode
                                         }
                                     }
                                 }
-                                showProviderSelection = true
-                            }
-                        },
-                        onImportFile = {
-                            currentExportType = ExportType.PROVIDERS
-                            importFileLauncher.launch(arrayOf("application/json", "*/*"))
-                        },
-                        onImportQRCode = {
-                            currentExportType = ExportType.PROVIDERS
-                            showQRScanner = true
-                        }
-                    )
-                }
+                            },
+                            onImportFile = {
+                                currentExportType = ExportType.API_CONFIG
+                                importFileLauncher.launch(arrayOf("application/json", "*/*"))
+                            },
+                            onImportQRCode = {
+                                currentExportType = ExportType.API_CONFIG
+                                showQRScanner = true
+                            },
+                            requiresEncryption = true
+                        )
+                    }
 
-                // API配置（含密钥）
-                item {
-                    ExportImportSectionConnected(
-                        title = "API配置",
-                        description = "导出或导入API配置（包含API密钥，强烈建议加密）",
-                        icon = Lucide.Key,
-                        encryptionEnabled = useEncryption,
-                        encryptionPassword = encryptionPassword,
-                        onEncryptionEnabledChange = { useEncryption = it },
-                        onEncryptionPasswordChange = { encryptionPassword = it },
-                        onExportFile = {
-                            currentExportType = ExportType.API_CONFIG
-                            useEncryption = true // API配置强制加密
-                            showProviderSingleSelection = true
-                            pendingExportAction = {
-                                selectedProviderId?.let { id ->
-                                    exportFileLauncher.launch("api_config_${System.currentTimeMillis()}.json")
-                                }
-                            }
-                        },
-                        onExportQRCode = {
-                            currentExportType = ExportType.API_CONFIG
-                            useEncryption = true
-                            showProviderSingleSelection = true
-                            pendingExportAction = {
-                                selectedProviderId?.let { id ->
-                                    viewModel.exportApiConfigToQRCode(
-                                        id,
-                                        true,
-                                        encryptionPassword
-                                    ) { qrCode ->
-                                        showQRCodeDialog = qrCode
-                                    }
-                                }
-                            }
-                        },
-                        onImportFile = {
-                            currentExportType = ExportType.API_CONFIG
-                            importFileLauncher.launch(arrayOf("application/json", "*/*"))
-                        },
-                        onImportQRCode = {
-                            currentExportType = ExportType.API_CONFIG
-                            showQRScanner = true
-                        },
-                        requiresEncryption = true
-                    )
-                }
+                    // 知识库
+                    item {
+                        ExportImportSectionConnected(
+                            title = "知识库",
+                            description = "导出或导入知识库（包含原始文件、向量数据和配置）",
+                            icon = Lucide.Database,
+                            encryptionEnabled = false,
+                            encryptionPassword = "",
+                            onEncryptionEnabledChange = {},
+                            onEncryptionPasswordChange = { encryptionPassword = it },
+                            onExportFile = {
+                                currentExportType = ExportType.KNOWLEDGE_BASE
+                                showKnowledgeBaseSelection = true
+                            },
+                            onImportFile = {
+                                currentExportType = ExportType.KNOWLEDGE_BASE
+                                importFileLauncher.launch(arrayOf("application/json", "*/*"))
+                            },
+                            supportsQRCode = false
+                        )
+                    }
 
-                // 知识库
-                item {
-                    ExportImportSectionConnected(
-                        title = "知识库",
-                        description = "导出或导入知识库（包含原始文件、向量数据和配置）",
-                        icon = Lucide.Database,
-                        encryptionEnabled = false,
-                        encryptionPassword = "",
-                        onEncryptionEnabledChange = {},
-                        onEncryptionPasswordChange = { encryptionPassword = it },
-                        onExportFile = {
-                            currentExportType = ExportType.KNOWLEDGE_BASE
-                            showKnowledgeBaseSelection = true
-                        },
-                        onImportFile = {
-                            currentExportType = ExportType.KNOWLEDGE_BASE
-                            importFileLauncher.launch(arrayOf("application/json", "*/*"))
-                        },
-                        supportsQRCode = false
-                    )
+                    // Skills
+                    item {
+                        ExportImportSectionConnected(
+                            title = "Skills",
+                            description = "导出或导入自定义 Skills（不包含内置 Skills）",
+                            icon = Lucide.Sparkles,
+                            encryptionEnabled = false,
+                            encryptionPassword = "",
+                            onEncryptionEnabledChange = {},
+                            onEncryptionPasswordChange = {},
+                            onExportFile = {
+                                currentExportType = ExportType.SKILLS
+                                showSkillSelection = true
+                            },
+                            onImportFile = {
+                                currentExportType = ExportType.SKILLS
+                                importFileLauncher.launch(arrayOf("application/json", "*/*"))
+                            },
+                            supportsQRCode = false
+                        )
+                    }
                 }
             }
 
@@ -337,118 +389,135 @@ fun ExportImportScreenEnhanced(
                 }
             }
         }
+    }
 
-        // 供应商选择对话框
-        if (showProviderSelection) {
-            ProviderSelectionDialog(
-                providers = providers,
-                selectedProviders = selectedProviderIds,
-                onProviderToggle = { viewModel.toggleProviderSelection(it) },
-                onDismiss = {
-                    showProviderSelection = false
-                    pendingExportAction = null
-                },
-                onConfirm = {
-                    showProviderSelection = false
-                    if (pendingExportAction != null) {
-                        pendingExportAction?.invoke()
-                        pendingExportAction = null
-                    } else {
-                        exportFileLauncher.launch("providers_${System.currentTimeMillis()}.json")
-                    }
-                }
-            )
-        }
-
-        // 二维码显示对话框
-        if (showQRCodeDialog != null) {
-            QRCodeDisplayDialog(
-                qrCodeBitmap = showQRCodeDialog!!,
-                title = "导出二维码",
-                onDismiss = { showQRCodeDialog = null },
-                onShare = {
-                    val bitmap = showQRCodeDialog
-                    if (bitmap != null) {
-                        try {
-                            val shareDir = File(context.cacheDir, "share")
-                            if (!shareDir.exists()) shareDir.mkdirs()
-
-                            val file = File(shareDir, "TChat_Export_QRCode.png")
-                            FileOutputStream(file).use { output ->
-                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
-                            }
-
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                file
-                            )
-
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "image/png"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                putExtra(Intent.EXTRA_TEXT, "TChat 导出二维码")
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-
-                            context.startActivity(Intent.createChooser(shareIntent, "分享二维码"))
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "分享失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-            )
-        }
-
-        // 供应商单选对话框
-        if (showProviderSingleSelection) {
-            ProviderSingleSelectionDialog(
-                providers = providers,
-                onDismiss = {
-                    showProviderSingleSelection = false
-                    pendingExportAction = null
-                },
-                onConfirm = { providerId ->
-                    selectedProviderId = providerId
-                    showProviderSingleSelection = false
+    // 供应商选择对话框
+    if (showProviderSelection) {
+        ProviderSelectionDialog(
+            providers = providers,
+            selectedProviders = selectedProviderIds,
+            onProviderToggle = { viewModel.toggleProviderSelection(it) },
+            onDismiss = {
+                showProviderSelection = false
+                pendingExportAction = null
+            },
+            onConfirm = {
+                showProviderSelection = false
+                if (pendingExportAction != null) {
                     pendingExportAction?.invoke()
                     pendingExportAction = null
+                } else {
+                    exportFileLauncher.launch("providers_${System.currentTimeMillis()}.json")
                 }
-            )
-        }
+            }
+        )
+    }
 
-        // 知识库选择对话框
-        if (showKnowledgeBaseSelection) {
-            KnowledgeBaseSelectionDialog(
-                knowledgeBases = knowledgeBases,
-                onDismiss = { showKnowledgeBaseSelection = false },
-                onConfirm = { baseId ->
-                    selectedKnowledgeBaseId = baseId
-                    showKnowledgeBaseSelection = false
-                    exportFileLauncher.launch("knowledge_base_${System.currentTimeMillis()}.json")
-                }
-            )
-        }
+    // 二维码显示对话框
+    if (showQRCodeDialog != null) {
+        QRCodeDisplayDialog(
+            qrCodeBitmap = showQRCodeDialog!!,
+            title = "导出二维码",
+            onDismiss = { showQRCodeDialog = null },
+            onShare = {
+                val bitmap = showQRCodeDialog
+                if (bitmap != null) {
+                    try {
+                        val shareDir = File(context.cacheDir, "share")
+                        if (!shareDir.exists()) shareDir.mkdirs()
 
-        // 二维码扫描器
-        if (showQRScanner) {
-            com.tchat.wanxiaot.ui.components.QRCodeScannerForImport(
-                onBack = { showQRScanner = false },
-                onDataScanned = { exportData ->
-                    showQRScanner = false
-                    when (currentExportType) {
-                        ExportType.PROVIDERS -> {
-                            viewModel.importProvidersFromExportData(exportData)
+                        val file = File(shareDir, "TChat_Export_QRCode.png")
+                        FileOutputStream(file).use { output ->
+                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
                         }
-                        ExportType.API_CONFIG -> {
-                            viewModel.importApiConfigFromExportData(exportData)
+
+                        val uri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            file
+                        )
+
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "image/png"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            putExtra(Intent.EXTRA_TEXT, "TChat 导出二维码")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
-                        else -> {}
+
+                        context.startActivity(Intent.createChooser(shareIntent, "分享二维码"))
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "分享失败: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
-                },
-                password = encryptionPassword.takeIf { it.isNotEmpty() }
-            )
-        }
+                }
+            }
+        )
+    }
+
+    // 供应商单选对话框
+    if (showProviderSingleSelection) {
+        ProviderSingleSelectionDialog(
+            providers = providers,
+            onDismiss = {
+                showProviderSingleSelection = false
+                pendingExportAction = null
+            },
+            onConfirm = { providerId ->
+                selectedProviderId = providerId
+                showProviderSingleSelection = false
+                pendingExportAction?.invoke()
+                pendingExportAction = null
+            }
+        )
+    }
+
+    // 知识库选择对话框
+    if (showKnowledgeBaseSelection) {
+        KnowledgeBaseSelectionDialog(
+            knowledgeBases = knowledgeBases,
+            onDismiss = { showKnowledgeBaseSelection = false },
+            onConfirm = { baseId ->
+                selectedKnowledgeBaseId = baseId
+                showKnowledgeBaseSelection = false
+                exportFileLauncher.launch("knowledge_base_${System.currentTimeMillis()}.json")
+            }
+        )
+    }
+
+    // Skills 选择对话框
+    if (showSkillSelection) {
+        SkillSelectionDialog(
+            skills = skills.filter { !it.isBuiltIn },
+            selectedSkillIds = selectedSkillIds,
+            onSkillToggle = { viewModel.toggleSkillSelection(it) },
+            onDismiss = {
+                showSkillSelection = false
+                viewModel.clearSkillSelection()
+            },
+            onConfirm = {
+                showSkillSelection = false
+                exportFileLauncher.launch("skills_${System.currentTimeMillis()}.json")
+            }
+        )
+    }
+
+    // 二维码扫描器
+    if (showQRScanner) {
+        com.tchat.wanxiaot.ui.components.QRCodeScannerForImport(
+            onBack = { showQRScanner = false },
+            onDataScanned = { exportData ->
+                showQRScanner = false
+                when (currentExportType) {
+                    ExportType.PROVIDERS -> {
+                        viewModel.importProvidersFromExportData(exportData)
+                    }
+                    ExportType.API_CONFIG -> {
+                        viewModel.importApiConfigFromExportData(exportData)
+                    }
+                    else -> {}
+                }
+            },
+            password = encryptionPassword.takeIf { it.isNotEmpty() }
+        )
     }
 }
 
@@ -773,7 +842,8 @@ private fun ImportOptionsDialogConnected(
 enum class ExportType {
     PROVIDERS,
     API_CONFIG,
-    KNOWLEDGE_BASE
+    KNOWLEDGE_BASE,
+    SKILLS
 }
 
 /**
@@ -912,6 +982,83 @@ private fun KnowledgeBaseSelectionDialog(
                 enabled = selectedId != null
             ) {
                 Text("确定")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+/**
+ * Skills 选择对话框
+ */
+@Composable
+private fun SkillSelectionDialog(
+    skills: List<com.tchat.data.database.entity.SkillEntity>,
+    selectedSkillIds: Set<String>,
+    onSkillToggle: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Lucide.Sparkles, contentDescription = null) },
+        title = { Text("选择要导出的 Skills") },
+        text = {
+            if (skills.isEmpty()) {
+                Text(
+                    text = "暂无自定义 Skills（内置 Skills 不支持导出）",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Column {
+                    Text(
+                        text = "留空则导出所有自定义 Skills",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    LazyColumn {
+                        items(skills) { skill ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSkillToggle(skill.id) }
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = skill.id in selectedSkillIds,
+                                    onCheckedChange = { onSkillToggle(skill.id) }
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = skill.displayName,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = skill.description.take(50) + if (skill.description.length > 50) "..." else "",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = skills.isNotEmpty()
+            ) {
+                Text(if (selectedSkillIds.isEmpty()) "导出全部" else "导出选中 (${selectedSkillIds.size})")
             }
         },
         dismissButton = {

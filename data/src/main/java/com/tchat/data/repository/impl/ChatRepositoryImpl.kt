@@ -13,6 +13,8 @@ import com.tchat.data.model.MessageVariant
 import com.tchat.data.repository.ChatConfig
 import com.tchat.data.repository.ChatRepository
 import com.tchat.data.repository.MessageResult
+import com.tchat.data.repository.SkillRepository
+import com.tchat.data.skill.SkillService
 import com.tchat.data.tool.InputSchema
 import com.tchat.data.tool.Tool
 import com.tchat.data.util.MessagePartSerializer
@@ -43,8 +45,13 @@ import java.util.UUID
 class ChatRepositoryImpl(
     private val aiProvider: AIProvider,
     private val chatDao: ChatDao,
-    private val messageDao: MessageDao
+    private val messageDao: MessageDao,
+    private val skillRepository: SkillRepository? = null
 ) : ChatRepository {
+
+    private val skillService: SkillService? by lazy {
+        skillRepository?.let { SkillService(it) }
+    }
 
     override fun getAllChats(): Flow<List<Chat>> {
         return chatDao.getAllChats().map { entities ->
@@ -120,11 +127,37 @@ class ChatRepositoryImpl(
             // 自动生成标题
             autoGenerateTitle(chatId, content)
 
+            // 技能匹配和激活
+            val enabledSkillIds = config?.enabledSkillIds ?: emptyList()
+            val activatedSkills = if (enabledSkillIds.isNotEmpty() && skillService != null) {
+                skillService!!.getActivatedSkills(content, enabledSkillIds)
+            } else {
+                emptyList()
+            }
+
+            // 构建增强的系统提示（包含激活的技能内容）
+            val enhancedSystemPrompt = if (activatedSkills.isNotEmpty() && skillService != null) {
+                skillService!!.buildSystemPromptWithSkills(
+                    baseSystemPrompt = config?.systemPrompt ?: "",
+                    activatedSkills = activatedSkills
+                )
+            } else {
+                config?.systemPrompt
+            }
+
+            // 获取技能工具并合并
+            val skillTools = if (activatedSkills.isNotEmpty() && skillService != null) {
+                skillService!!.getToolsFromSkills(activatedSkills)
+            } else {
+                emptyList()
+            }
+            val allTools = (config?.tools ?: emptyList()) + skillTools
+
             // 获取聊天历史
-            val messages = getMessagesForAI(chatId, config?.systemPrompt)
+            val messages = getMessagesForAI(chatId, enhancedSystemPrompt)
 
             // 转换工具定义
-            val toolDefinitions = config?.tools?.map { it.toToolDefinition() } ?: emptyList()
+            val toolDefinitions = allTools.map { it.toToolDefinition() }
 
             // 创建 AI 消息占位符
             val assistantId = UUID.randomUUID().toString()
@@ -142,7 +175,7 @@ class ChatRepositoryImpl(
                 chatId = chatId,
                 assistantId = assistantId,
                 messages = messages,
-                tools = config?.tools ?: emptyList(),
+                tools = allTools,
                 toolDefinitions = toolDefinitions,
                 modelName = config?.modelName,
                 providerId = config?.providerId,
@@ -197,9 +230,35 @@ class ChatRepositoryImpl(
             saveMessageToDb(userMessage)
             emit(Result.Success(MessageResult(chatId, userMessage)))
 
+            // 技能匹配和激活
+            val enabledSkillIds = config?.enabledSkillIds ?: emptyList()
+            val activatedSkills = if (enabledSkillIds.isNotEmpty() && skillService != null) {
+                skillService!!.getActivatedSkills(content, enabledSkillIds)
+            } else {
+                emptyList()
+            }
+
+            // 构建增强的系统提示（包含激活的技能内容）
+            val enhancedSystemPrompt = if (activatedSkills.isNotEmpty() && skillService != null) {
+                skillService!!.buildSystemPromptWithSkills(
+                    baseSystemPrompt = config?.systemPrompt ?: "",
+                    activatedSkills = activatedSkills
+                )
+            } else {
+                config?.systemPrompt
+            }
+
+            // 获取技能工具并合并
+            val skillTools = if (activatedSkills.isNotEmpty() && skillService != null) {
+                skillService!!.getToolsFromSkills(activatedSkills)
+            } else {
+                emptyList()
+            }
+            val allTools = (config?.tools ?: emptyList()) + skillTools
+
             // 构建消息历史
             val messages = mutableListOf<ChatMessage>()
-            config?.systemPrompt?.let {
+            enhancedSystemPrompt?.let {
                 if (it.isNotBlank()) {
                     messages.add(ChatMessage(role = ProviderMessageRole.SYSTEM, content = it))
                 }
@@ -207,7 +266,7 @@ class ChatRepositoryImpl(
             messages.add(ChatMessage(role = ProviderMessageRole.USER, content = content))
 
             // 转换工具定义
-            val toolDefinitions = config?.tools?.map { it.toToolDefinition() } ?: emptyList()
+            val toolDefinitions = allTools.map { it.toToolDefinition() }
 
             // 创建 AI 消息占位符
             val assistantId = UUID.randomUUID().toString()
@@ -225,7 +284,7 @@ class ChatRepositoryImpl(
                 chatId = chatId,
                 assistantId = assistantId,
                 messages = messages,
-                tools = config?.tools ?: emptyList(),
+                tools = allTools,
                 toolDefinitions = toolDefinitions,
                 modelName = config?.modelName,
                 providerId = config?.providerId,

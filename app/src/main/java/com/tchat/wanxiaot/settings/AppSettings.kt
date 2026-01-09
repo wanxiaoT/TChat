@@ -60,6 +60,63 @@ data class RegexRule(
 )
 
 /**
+ * API Key 状态
+ */
+enum class ApiKeyStatus {
+    ACTIVE,       // 正常可用
+    DISABLED,     // 已禁用（用户手动禁用）
+    ERROR,        // 错误状态（连续失败后自动标记）
+    RATE_LIMITED  // 限流中
+}
+
+/**
+ * Key 选择策略
+ */
+enum class KeySelectionStrategy {
+    ROUND_ROBIN,  // 轮询
+    PRIORITY,     // 优先级（数字越小优先级越高）
+    RANDOM,       // 随机
+    LEAST_USED    // 最少使用
+}
+
+/**
+ * API Key 条目
+ * 用于多 Key 管理
+ */
+data class ApiKeyEntry(
+    val id: String = UUID.randomUUID().toString(),
+    val key: String,                              // API Key 值
+    val name: String = "",                        // 显示名称（可选）
+    val isEnabled: Boolean = true,                // 是否启用
+    val priority: Int = 5,                        // 优先级 1-10，数字越小越优先
+    val requestCount: Int = 0,                    // 总请求次数
+    val successCount: Int = 0,                    // 成功请求次数
+    val failureCount: Int = 0,                    // 连续失败次数
+    val lastUsedAt: Long = 0,                     // 最后使用时间戳
+    val lastError: String? = null,                // 最后错误信息
+    val status: ApiKeyStatus = ApiKeyStatus.ACTIVE,
+    val statusChangedAt: Long = 0                 // 状态变更时间（用于自动恢复）
+) {
+    /**
+     * 获取脱敏显示的 Key
+     */
+    fun getMaskedKey(): String {
+        return if (key.length > 8) {
+            "${key.take(4)}****${key.takeLast(4)}"
+        } else {
+            "****"
+        }
+    }
+
+    /**
+     * 获取显示名称（如果没有设置名称，则显示脱敏 Key）
+     */
+    fun getDisplayName(): String {
+        return name.ifEmpty { getMaskedKey() }
+    }
+}
+
+/**
  * 服务商配置条目
  */
 data class ProviderConfig(
@@ -70,8 +127,50 @@ data class ProviderConfig(
     val endpoint: String = "",
     val selectedModel: String = "",
     val availableModels: List<String> = emptyList(),
-    val modelCustomParams: Map<String, ModelCustomParams> = emptyMap()  // 模型名 -> 自定义参数
-)
+    val modelCustomParams: Map<String, ModelCustomParams> = emptyMap(),  // 模型名 -> 自定义参数
+    // 多 Key 管理
+    val apiKeys: List<ApiKeyEntry> = emptyList(),
+    val multiKeyEnabled: Boolean = false,
+    val keySelectionStrategy: KeySelectionStrategy = KeySelectionStrategy.ROUND_ROBIN,
+    val roundRobinIndex: Int = 0,
+    val maxFailuresBeforeDisable: Int = 3,
+    val autoRecoveryMinutes: Int = 5
+) {
+    /**
+     * 获取有效的 API Key
+     * 如果启用了多 Key，则返回 null（需要通过 ApiKeySelector 选择）
+     * 否则返回单个 apiKey
+     */
+    fun getEffectiveApiKey(): String? {
+        return if (multiKeyEnabled && apiKeys.isNotEmpty()) {
+            null  // 需要通过 ApiKeySelector 选择
+        } else {
+            apiKey
+        }
+    }
+
+    /**
+     * 获取可用的 Key 数量
+     */
+    fun getAvailableKeyCount(): Int {
+        return if (multiKeyEnabled) {
+            apiKeys.count { it.isEnabled && it.status == ApiKeyStatus.ACTIVE }
+        } else {
+            if (apiKey.isNotBlank()) 1 else 0
+        }
+    }
+
+    /**
+     * 获取总 Key 数量
+     */
+    fun getTotalKeyCount(): Int {
+        return if (multiKeyEnabled) {
+            apiKeys.size
+        } else {
+            if (apiKey.isNotBlank()) 1 else 0
+        }
+    }
+}
 
 /**
  * 深度研究设置

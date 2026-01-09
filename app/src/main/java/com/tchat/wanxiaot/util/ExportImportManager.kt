@@ -593,4 +593,122 @@ class ExportImportManager(
         array.forEach { value -> jsonArray.put(value.toDouble()) }
         return jsonArray.toString()
     }
+
+    // ============= Skills 导出导入 =============
+
+    /**
+     * 导出 Skills 到文件
+     * @param skillIds 要导出的 Skill ID 列表，如果为空则导出所有
+     * @param outputFile 输出文件路径
+     */
+    suspend fun exportSkillsToFile(
+        skillIds: List<String>,
+        outputFile: File
+    ) = withContext(Dispatchers.IO) {
+        val skillDao = database.skillDao()
+        val allSkills = skillDao.getAllSkillsSync()
+
+        val skillsToExport = if (skillIds.isEmpty()) {
+            allSkills
+        } else {
+            allSkills.filter { it.id in skillIds }
+        }
+
+        val skillInfos = skillsToExport.map { entity ->
+            SkillExportInfo(
+                id = entity.id,
+                name = entity.name,
+                displayName = entity.displayName,
+                description = entity.description,
+                content = entity.content,
+                triggerKeywords = entity.triggerKeywords.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+                priority = entity.priority,
+                enabled = entity.enabled,
+                isBuiltIn = entity.isBuiltIn,
+                createdAt = entity.createdAt,
+                updatedAt = entity.updatedAt
+            )
+        }
+
+        val exportData = SkillsExportData(skillInfos)
+        val wrappedData = ExportData(
+            type = ExportDataType.SKILLS,
+            encrypted = false,
+            data = exportData.toJson()
+        )
+
+        outputFile.writeText(wrappedData.toJson())
+    }
+
+    /**
+     * 从文件导入 Skills
+     * @return 导入的 Skill 数量
+     */
+    suspend fun importSkillsFromFile(
+        inputFile: File
+    ): Int = withContext(Dispatchers.IO) {
+        val content = normalizeImportedText(inputFile.readText())
+        val wrappedData = ExportData.fromJson(content)
+
+        if (wrappedData.type != ExportDataType.SKILLS) {
+            throw IllegalArgumentException("文件类型不匹配，期望: SKILLS，实际: ${wrappedData.type}")
+        }
+
+        val exportData = SkillsExportData.fromJson(wrappedData.data)
+        importSkillsFromData(exportData)
+    }
+
+    /**
+     * 从已解析的导出数据导入 Skills
+     */
+    suspend fun importSkillsFromExportData(
+        exportData: ExportData
+    ): Int = withContext(Dispatchers.IO) {
+        if (exportData.type != ExportDataType.SKILLS) {
+            throw IllegalArgumentException("数据类型不匹配，期望: SKILLS，实际: ${exportData.type}")
+        }
+
+        val skillsData = SkillsExportData.fromJson(exportData.data)
+        importSkillsFromData(skillsData)
+    }
+
+    private suspend fun importSkillsFromData(skillsData: SkillsExportData): Int {
+        val skillDao = database.skillDao()
+        val existingSkills = skillDao.getAllSkillsSync()
+        val existingNames = existingSkills.map { it.name }.toSet()
+
+        var importedCount = 0
+
+        skillsData.skills.forEach { skill ->
+            // 跳过内置技能
+            if (skill.isBuiltIn) return@forEach
+
+            // 检查名称冲突，生成新名称
+            var newName = skill.name
+            var suffix = 1
+            while (newName in existingNames) {
+                newName = "${skill.name}_$suffix"
+                suffix++
+            }
+
+            val entity = com.tchat.data.database.entity.SkillEntity(
+                id = UUID.randomUUID().toString(),
+                name = newName,
+                displayName = if (newName != skill.name) "${skill.displayName} ($suffix)" else skill.displayName,
+                description = skill.description,
+                content = skill.content,
+                triggerKeywords = skill.triggerKeywords.joinToString(","),
+                priority = skill.priority,
+                enabled = skill.enabled,
+                isBuiltIn = false,
+                toolsJson = "[]",
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+            skillDao.insertSkill(entity)
+            importedCount++
+        }
+
+        return importedCount
+    }
 }

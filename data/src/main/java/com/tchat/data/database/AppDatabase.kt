@@ -18,6 +18,7 @@ import com.tchat.data.database.dao.DeepResearchHistoryDao
 import com.tchat.data.database.dao.ChatFolderDao
 import com.tchat.data.database.dao.GroupChatDao
 import com.tchat.data.database.dao.AppSettingsDao
+import com.tchat.data.database.dao.SkillDao
 import com.tchat.data.database.entity.ChatEntity
 import com.tchat.data.database.entity.MessageEntity
 import com.tchat.data.database.entity.KnowledgeBaseEntity
@@ -32,6 +33,7 @@ import com.tchat.data.database.entity.GroupChatEntity
 import com.tchat.data.database.entity.GroupMemberEntity
 import com.tchat.data.database.entity.LocalToolOptionConverter
 import com.tchat.data.database.entity.AppSettingsEntity
+import com.tchat.data.database.entity.SkillEntity
 
 /**
  * TChat数据库
@@ -52,9 +54,10 @@ import com.tchat.data.database.entity.AppSettingsEntity
         ChatFolderRelationEntity::class,
         GroupChatEntity::class,
         GroupMemberEntity::class,
-        AppSettingsEntity::class
+        AppSettingsEntity::class,
+        SkillEntity::class
     ],
-    version = 17,
+    version = 18,
     exportSchema = false
 )
 @TypeConverters(LocalToolOptionConverter::class)
@@ -71,6 +74,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun chatFolderDao(): ChatFolderDao
     abstract fun groupChatDao(): GroupChatDao
     abstract fun appSettingsDao(): AppSettingsDao
+    abstract fun skillDao(): SkillDao
 
     companion object {
         @Volatile
@@ -381,6 +385,32 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // 迁移:添加技能表和助手技能关联字段
+        private val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 创建技能表
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS skills (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        name TEXT NOT NULL,
+                        displayName TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        triggerKeywords TEXT NOT NULL DEFAULT '[]',
+                        priority INTEGER NOT NULL DEFAULT 0,
+                        enabled INTEGER NOT NULL DEFAULT 1,
+                        isBuiltIn INTEGER NOT NULL DEFAULT 0,
+                        toolsJson TEXT NOT NULL DEFAULT '[]',
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                """.trimIndent())
+
+                // 为助手表添加启用技能ID列表字段
+                db.execSQL("ALTER TABLE assistants ADD COLUMN enabledSkillIds TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
         // 迁移:采用 MessagePart 架构，将旧字段迁移到 partsJson
         private val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -522,7 +552,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                         MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
-                        MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17
+                        MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
+                        MIGRATION_17_18
                     )
                     .build()
                 INSTANCE = instance

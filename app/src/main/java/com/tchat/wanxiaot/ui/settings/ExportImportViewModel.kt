@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tchat.data.database.AppDatabase
 import com.tchat.data.database.entity.KnowledgeBaseEntity
+import com.tchat.data.database.entity.SkillEntity
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.util.DatabaseBackupManager
@@ -42,6 +43,12 @@ class ExportImportViewModel(
     private val _knowledgeBases = MutableStateFlow<List<KnowledgeBaseEntity>>(emptyList())
     val knowledgeBases: StateFlow<List<KnowledgeBaseEntity>> = _knowledgeBases.asStateFlow()
 
+    private val _skills = MutableStateFlow<List<SkillEntity>>(emptyList())
+    val skills: StateFlow<List<SkillEntity>> = _skills.asStateFlow()
+
+    private val _selectedSkillIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedSkillIds: StateFlow<Set<String>> = _selectedSkillIds.asStateFlow()
+
     init {
         viewModelScope.launch {
             settingsManager.settings.collect { settings ->
@@ -52,6 +59,12 @@ class ExportImportViewModel(
         viewModelScope.launch {
             database.knowledgeBaseDao().getAllBases().collect { bases ->
                 _knowledgeBases.value = bases
+            }
+        }
+
+        viewModelScope.launch {
+            database.skillDao().getAllSkills().collect { skillList ->
+                _skills.value = skillList
             }
         }
     }
@@ -378,8 +391,65 @@ class ExportImportViewModel(
         _selectedProviderIds.value = emptySet()
     }
 
+    fun toggleSkillSelection(skillId: String) {
+        val current = _selectedSkillIds.value.toMutableSet()
+        if (skillId in current) {
+            current.remove(skillId)
+        } else {
+            current.add(skillId)
+        }
+        _selectedSkillIds.value = current
+    }
+
+    fun clearSkillSelection() {
+        _selectedSkillIds.value = emptySet()
+    }
+
     fun clearUiState() {
         _uiState.value = ExportImportUiState.Idle
+    }
+
+    // ============= Skills 导出导入 =============
+
+    fun exportSkillsToUri(skillIds: List<String>, uri: Uri) {
+        viewModelScope.launch {
+            _uiState.value = ExportImportUiState.Loading("导出 Skills...")
+            val tempFile = File(context.cacheDir, "skills_export_${System.currentTimeMillis()}.json")
+            try {
+                exportImportManager.exportSkillsToFile(skillIds, tempFile)
+                writeTempFileToUri(tempFile, uri)
+                val count = if (skillIds.isEmpty()) "所有" else "${skillIds.size} 个"
+                _uiState.value = ExportImportUiState.Success("成功导出 $count Skills")
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("导出失败: ${e.message}")
+            } finally {
+                tempFile.delete()
+            }
+        }
+    }
+
+    fun importSkillsFromFile(inputFile: File) {
+        viewModelScope.launch {
+            _uiState.value = ExportImportUiState.Loading("导入 Skills...")
+            try {
+                val count = exportImportManager.importSkillsFromFile(inputFile)
+                _uiState.value = ExportImportUiState.Success("成功导入 $count 个 Skills")
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("导入失败: ${e.message}")
+            }
+        }
+    }
+
+    fun importSkillsFromExportData(exportData: ExportData) {
+        viewModelScope.launch {
+            _uiState.value = ExportImportUiState.Loading("导入 Skills...")
+            try {
+                val count = exportImportManager.importSkillsFromExportData(exportData)
+                _uiState.value = ExportImportUiState.Success("成功导入 $count 个 Skills")
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("导入失败: ${e.message}")
+            }
+        }
     }
 }
 
