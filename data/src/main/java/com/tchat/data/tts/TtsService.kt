@@ -17,10 +17,15 @@ class TtsService private constructor(context: Context) {
 
     private var tts: TextToSpeech? = null
     private var isInitialized = false
+    private var initFailed = false
 
     // TTS 状态
     private val _isSpeaking = MutableStateFlow(false)
     val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
+
+    // 初始化状态
+    private val _initStatus = MutableStateFlow<InitStatus>(InitStatus.Initializing)
+    val initStatus: StateFlow<InitStatus> = _initStatus.asStateFlow()
 
     // 当前朗读的消息ID
     private val _currentMessageId = MutableStateFlow<String?>(null)
@@ -31,36 +36,61 @@ class TtsService private constructor(context: Context) {
     private var pitch: Float = 1.0f
     private var language: Locale = Locale.CHINESE
 
+    sealed class InitStatus {
+        data object Initializing : InitStatus()
+        data object Ready : InitStatus()
+        data class Failed(val reason: String) : InitStatus()
+    }
+
     init {
-        tts = TextToSpeech(context.applicationContext) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                isInitialized = true
-                tts?.language = language
-                tts?.setSpeechRate(speechRate)
-                tts?.setPitch(pitch)
+        try {
+            tts = TextToSpeech(context.applicationContext) { status ->
+                if (status == TextToSpeech.SUCCESS) {
+                    isInitialized = true
+                    initFailed = false
 
-                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) {
-                        _isSpeaking.value = true
+                    val result = tts?.setLanguage(language)
+                    if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        // 中文不支持，尝试使用默认语言
+                        tts?.setLanguage(Locale.getDefault())
                     }
 
-                    override fun onDone(utteranceId: String?) {
-                        _isSpeaking.value = false
-                        _currentMessageId.value = null
-                    }
+                    tts?.setSpeechRate(speechRate)
+                    tts?.setPitch(pitch)
 
-                    @Deprecated("Deprecated in Java")
-                    override fun onError(utteranceId: String?) {
-                        _isSpeaking.value = false
-                        _currentMessageId.value = null
-                    }
+                    tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {
+                            _isSpeaking.value = true
+                        }
 
-                    override fun onError(utteranceId: String?, errorCode: Int) {
-                        _isSpeaking.value = false
-                        _currentMessageId.value = null
-                    }
-                })
+                        override fun onDone(utteranceId: String?) {
+                            _isSpeaking.value = false
+                            _currentMessageId.value = null
+                        }
+
+                        @Deprecated("Deprecated in Java", ReplaceWith("onError(utteranceId, errorCode)"))
+                        override fun onError(utteranceId: String?) {
+                            _isSpeaking.value = false
+                            _currentMessageId.value = null
+                        }
+
+                        override fun onError(utteranceId: String?, errorCode: Int) {
+                            _isSpeaking.value = false
+                            _currentMessageId.value = null
+                        }
+                    })
+
+                    _initStatus.value = InitStatus.Ready
+                } else {
+                    isInitialized = false
+                    initFailed = true
+                    _initStatus.value = InitStatus.Failed("TTS 引擎初始化失败，请检查系统是否安装了 TTS 引擎")
+                }
             }
+        } catch (e: Exception) {
+            isInitialized = false
+            initFailed = true
+            _initStatus.value = InitStatus.Failed("TTS 初始化异常: ${e.message}")
         }
     }
 

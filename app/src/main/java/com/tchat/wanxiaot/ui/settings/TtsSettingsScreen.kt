@@ -1,5 +1,7 @@
 package com.tchat.wanxiaot.ui.settings
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -7,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Lucide
@@ -27,7 +30,19 @@ fun TtsSettingsScreen(
     onBack: () -> Unit,
     showTopBar: Boolean = true
 ) {
-    val isSpeaking by ttsService?.isSpeaking?.collectAsState() ?: remember { mutableStateOf(false) }
+    // 如果传入的 ttsService 为 null，尝试从 Context 获取
+    val context = LocalContext.current
+    val actualTtsService = remember(ttsService) {
+        ttsService ?: TtsService.getInstance(context)
+    }
+
+    val isSpeaking by actualTtsService.isSpeaking.collectAsState()
+    val initStatus by actualTtsService.initStatus.collectAsState()
+
+    // 根据初始化状态判断是否可用
+    val isAvailable = initStatus is TtsService.InitStatus.Ready
+    val isInitializing = initStatus is TtsService.InitStatus.Initializing
+    val errorMessage = (initStatus as? TtsService.InitStatus.Failed)?.reason
 
     Scaffold(
         topBar = {
@@ -201,9 +216,16 @@ fun TtsSettingsScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "点击下方按钮测试当前语音设置",
+                    text = when {
+                        isInitializing -> "TTS 引擎正在初始化..."
+                        errorMessage != null -> errorMessage
+                        else -> "点击下方按钮测试当前语音设置"
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (isInitializing || errorMessage != null)
+                        MaterialTheme.colorScheme.error
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -214,21 +236,68 @@ fun TtsSettingsScreen(
                     Button(
                         onClick = {
                             if (isSpeaking) {
-                                ttsService?.stop()
+                                actualTtsService.stop()
                             } else {
-                                ttsService?.speak("你好，这是语音朗读测试。当前语速为 ${String.format("%.1f", ttsSettings.speechRate)} 倍，音调为 ${String.format("%.1f", ttsSettings.pitch)}。")
+                                // 先更新设置再播放
+                                actualTtsService.updateSettings(
+                                    rate = ttsSettings.speechRate,
+                                    pitchValue = ttsSettings.pitch,
+                                    locale = java.util.Locale.forLanguageTag(ttsSettings.language)
+                                )
+                                actualTtsService.speak("你好，这是语音朗读测试。当前语速为 ${String.format("%.1f", ttsSettings.speechRate)} 倍，音调为 ${String.format("%.1f", ttsSettings.pitch)}。")
                             }
                         },
-                        enabled = ttsSettings.enabled && ttsService != null,
+                        enabled = isAvailable,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(
-                            imageVector = if (isSpeaking) Lucide.Square else Lucide.Play,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        if (isInitializing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (isSpeaking) Lucide.Square else Lucide.Play,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (isSpeaking) "停止" else "播放测试")
+                        Text(
+                            when {
+                                isInitializing -> "初始化中..."
+                                errorMessage != null -> "不可用"
+                                isSpeaking -> "停止"
+                                else -> "播放测试"
+                            }
+                        )
+                    }
+                }
+
+                // 如果初始化失败，显示打开系统设置的按钮
+                if (errorMessage != null || isInitializing) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = {
+                            // 打开系统 TTS 设置
+                            try {
+                                val intent = Intent("com.android.settings.TTS_SETTINGS")
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                // 如果上面的 Intent 不可用，尝试通用设置
+                                try {
+                                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                    context.startActivity(intent)
+                                } catch (e2: Exception) {
+                                    // 最后尝试打开通用设置
+                                    val intent = Intent(Settings.ACTION_SETTINGS)
+                                    context.startActivity(intent)
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("打开系统 TTS 设置")
                     }
                 }
             }
