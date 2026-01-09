@@ -38,11 +38,19 @@ fun TtsSettingsScreen(
 
     val isSpeaking by actualTtsService.isSpeaking.collectAsState()
     val initStatus by actualTtsService.initStatus.collectAsState()
+    val availableEngines by actualTtsService.availableEngines.collectAsState()
 
     // 根据初始化状态判断是否可用
     val isAvailable = initStatus is TtsService.InitStatus.Ready
     val isInitializing = initStatus is TtsService.InitStatus.Initializing
     val errorMessage = (initStatus as? TtsService.InitStatus.Failed)?.reason
+
+    // 当设置中的引擎与当前引擎不同时，切换引擎
+    LaunchedEffect(ttsSettings.enginePackage) {
+        if (actualTtsService.getCurrentEngine() != ttsSettings.enginePackage) {
+            actualTtsService.setEngine(ttsSettings.enginePackage)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -101,6 +109,78 @@ fun TtsSettingsScreen(
                     )
                 }
             )
+
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+            // TTS 引擎选择
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = "TTS 引擎",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (availableEngines.isEmpty()) "正在加载引擎列表..." else "选择用于语音合成的引擎",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (availableEngines.isNotEmpty()) {
+                    availableEngines.forEach { engine ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = ttsSettings.enginePackage == engine.packageName,
+                                onClick = {
+                                    onSettingsChange(ttsSettings.copy(enginePackage = engine.packageName))
+                                },
+                                enabled = ttsSettings.enabled
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = engine.name,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                if (engine.packageName.isNotBlank()) {
+                                    Text(
+                                        text = engine.packageName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            if (engine.isDefault && engine.packageName.isNotBlank()) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = MaterialTheme.shapes.small
+                                ) {
+                                    Text(
+                                        text = "默认",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (isInitializing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+            }
 
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
 

@@ -402,7 +402,8 @@ class SettingsManager(context: Context) {
                 autoSpeak = obj.optBoolean("autoSpeak", false),
                 speechRate = obj.optDouble("speechRate", 1.0).toFloat(),
                 pitch = obj.optDouble("pitch", 1.0).toFloat(),
-                language = obj.optString("language", "zh-CN")
+                language = obj.optString("language", "zh-CN"),
+                enginePackage = obj.optString("enginePackage", "")
             )
         } catch (e: Exception) {
             TtsSettings()
@@ -416,6 +417,7 @@ class SettingsManager(context: Context) {
         obj.put("speechRate", settings.speechRate.toDouble())
         obj.put("pitch", settings.pitch.toDouble())
         obj.put("language", settings.language)
+        obj.put("enginePackage", settings.enginePackage)
         return obj.toString()
     }
 

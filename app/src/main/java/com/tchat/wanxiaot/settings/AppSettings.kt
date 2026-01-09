@@ -25,7 +25,8 @@ data class TtsSettings(
     val autoSpeak: Boolean = false,         // AI 回复完成后自动朗读
     val speechRate: Float = 1.0f,           // 语速 (0.1 - 3.0)
     val pitch: Float = 1.0f,                // 音调 (0.1 - 2.0)
-    val language: String = "zh-CN"          // 语言代码
+    val language: String = "zh-CN",         // 语言代码
+    val enginePackage: String = ""          // TTS 引擎包名，空表示使用系统默认
 )
 
 /**

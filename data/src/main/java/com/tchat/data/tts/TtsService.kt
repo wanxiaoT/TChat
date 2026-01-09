@@ -1,6 +1,7 @@
 package com.tchat.data.tts
 
 import android.content.Context
+import android.content.Intent
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,14 +11,24 @@ import java.util.Locale
 import java.util.UUID
 
 /**
+ * TTS 引擎信息
+ */
+data class TtsEngineInfo(
+    val name: String,       // 显示名称
+    val packageName: String, // 包名
+    val isDefault: Boolean = false
+)
+
+/**
  * TTS 服务
  * 封装 Android TextToSpeech API，提供语音朗读功能
  */
-class TtsService private constructor(context: Context) {
+class TtsService private constructor(private val context: Context) {
 
     private var tts: TextToSpeech? = null
     private var isInitialized = false
     private var initFailed = false
+    private var currentEnginePackage: String = ""
 
     // TTS 状态
     private val _isSpeaking = MutableStateFlow(false)
@@ -26,6 +37,10 @@ class TtsService private constructor(context: Context) {
     // 初始化状态
     private val _initStatus = MutableStateFlow<InitStatus>(InitStatus.Initializing)
     val initStatus: StateFlow<InitStatus> = _initStatus.asStateFlow()
+
+    // 可用引擎列表
+    private val _availableEngines = MutableStateFlow<List<TtsEngineInfo>>(emptyList())
+    val availableEngines: StateFlow<List<TtsEngineInfo>> = _availableEngines.asStateFlow()
 
     // 当前朗读的消息ID
     private val _currentMessageId = MutableStateFlow<String?>(null)
@@ -43,15 +58,30 @@ class TtsService private constructor(context: Context) {
     }
 
     init {
+        initTts(null)
+    }
+
+    /**
+     * 初始化 TTS 引擎
+     * @param enginePackage 引擎包名，null 或空字符串表示使用系统默认
+     */
+    private fun initTts(enginePackage: String?) {
+        _initStatus.value = InitStatus.Initializing
+        isInitialized = false
+
+        // 先关闭旧的 TTS 实例
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
+
         try {
-            tts = TextToSpeech(context.applicationContext) { status ->
+            val initListener = TextToSpeech.OnInitListener { status ->
                 if (status == TextToSpeech.SUCCESS) {
                     isInitialized = true
                     initFailed = false
 
                     val result = tts?.setLanguage(language)
                     if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                        // 中文不支持，尝试使用默认语言
                         tts?.setLanguage(Locale.getDefault())
                     }
 
@@ -80,6 +110,9 @@ class TtsService private constructor(context: Context) {
                         }
                     })
 
+                    // 获取可用引擎列表
+                    refreshAvailableEngines()
+
                     _initStatus.value = InitStatus.Ready
                 } else {
                     isInitialized = false
@@ -87,12 +120,90 @@ class TtsService private constructor(context: Context) {
                     _initStatus.value = InitStatus.Failed("TTS 引擎初始化失败，请检查系统是否安装了 TTS 引擎")
                 }
             }
+
+            // 根据是否指定引擎来创建 TTS 实例
+            tts = if (enginePackage.isNullOrBlank()) {
+                currentEnginePackage = ""
+                TextToSpeech(context.applicationContext, initListener)
+            } else {
+                currentEnginePackage = enginePackage
+                TextToSpeech(context.applicationContext, initListener, enginePackage)
+            }
         } catch (e: Exception) {
             isInitialized = false
             initFailed = true
             _initStatus.value = InitStatus.Failed("TTS 初始化异常: ${e.message}")
         }
     }
+
+    /**
+     * 刷新可用引擎列表
+     */
+    private fun refreshAvailableEngines() {
+        try {
+            val engines = tts?.engines ?: emptyList()
+            val defaultEngine = tts?.defaultEngine ?: ""
+
+            val engineList = mutableListOf<TtsEngineInfo>()
+
+            // 添加"系统默认"选项
+            engineList.add(TtsEngineInfo(
+                name = "系统默认",
+                packageName = "",
+                isDefault = true
+            ))
+
+            // 添加所有可用引擎
+            engines.forEach { engine ->
+                val displayName = getEngineDisplayName(engine.name, engine.label)
+                engineList.add(TtsEngineInfo(
+                    name = displayName,
+                    packageName = engine.name,
+                    isDefault = engine.name == defaultEngine
+                ))
+            }
+
+            _availableEngines.value = engineList
+        } catch (e: Exception) {
+            // 如果获取失败，至少提供系统默认选项
+            _availableEngines.value = listOf(
+                TtsEngineInfo(name = "系统默认", packageName = "", isDefault = true)
+            )
+        }
+    }
+
+    /**
+     * 获取引擎显示名称
+     */
+    private fun getEngineDisplayName(packageName: String, label: String): String {
+        // 常见引擎的友好名称
+        return when {
+            packageName.contains("google") -> "Google 文字转语音"
+            packageName.contains("iflytek") || packageName.contains("xunfei") -> "讯飞语音"
+            packageName.contains("samsung") -> "三星 TTS"
+            packageName.contains("huawei") -> "华为 TTS"
+            packageName.contains("xiaomi") -> "小米 TTS"
+            packageName.contains("baidu") -> "百度语音"
+            packageName.contains("tencent") -> "腾讯语音"
+            label.isNotBlank() -> label
+            else -> packageName.substringAfterLast(".")
+        }
+    }
+
+    /**
+     * 切换 TTS 引擎
+     * @param enginePackage 引擎包名，空字符串表示使用系统默认
+     */
+    fun setEngine(enginePackage: String) {
+        if (enginePackage != currentEnginePackage) {
+            initTts(enginePackage.ifBlank { null })
+        }
+    }
+
+    /**
+     * 获取当前引擎包名
+     */
+    fun getCurrentEngine(): String = currentEnginePackage
 
     /**
      * 更新 TTS 设置
