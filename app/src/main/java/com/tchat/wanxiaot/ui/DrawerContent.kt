@@ -5,10 +5,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.*
@@ -16,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tchat.data.model.Chat
@@ -44,6 +48,24 @@ fun DrawerContent(
     modifier: Modifier = Modifier
 ) {
     var showProviderDialog by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    // 根据搜索词过滤聊天记录
+    val filteredChats = remember(chats, searchQuery) {
+        if (searchQuery.isBlank()) {
+            chats
+        } else {
+            chats.filter { it.title.contains(searchQuery, ignoreCase = true) }
+        }
+    }
+
+    val filteredGroupChats = remember(groupChats, searchQuery) {
+        if (searchQuery.isBlank()) {
+            groupChats
+        } else {
+            groupChats.filter { it.name.contains(searchQuery, ignoreCase = true) }
+        }
+    }
 
     // 服务商选择抽屉
     if (showProviderDialog) {
@@ -63,28 +85,79 @@ fun DrawerContent(
             .fillMaxSize()
             .padding(12.dp)
     ) {
-        // 顶部标题区域
+        // 顶部搜索框 - Material You 风格
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp, vertical = 8.dp),
-            color = MaterialTheme.colorScheme.surface
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = 0.dp
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "聊天记录",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                Icon(
+                    Icons.Outlined.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
                 )
-                FilledTonalIconButton(onClick = onNewChat) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = "新建聊天"
-                    )
+
+                // 搜索输入框
+                BasicTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 8.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    singleLine = true,
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    decorationBox = { innerTextField ->
+                        Box {
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    text = "搜索聊天记录",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
+                )
+
+                // 清除按钮或新建按钮
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(
+                        onClick = { searchQuery = "" },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Clear,
+                            contentDescription = "清除搜索",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                } else {
+                    FilledTonalIconButton(
+                        onClick = onNewChat,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "新建聊天",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
@@ -97,7 +170,7 @@ fun DrawerContent(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             // 群聊分组
-            if (groupChats.isNotEmpty()) {
+            if (filteredGroupChats.isNotEmpty()) {
                 item {
                     Text(
                         text = "群聊",
@@ -107,7 +180,7 @@ fun DrawerContent(
                     )
                 }
 
-                items(groupChats) { groupChat ->
+                items(filteredGroupChats) { groupChat ->
                     GroupChatHistoryItem(
                         groupChat = groupChat,
                         isSelected = groupChat.id == currentGroupChatId,
@@ -126,7 +199,7 @@ fun DrawerContent(
             }
 
             // 单聊分组
-            if (chats.isNotEmpty()) {
+            if (filteredChats.isNotEmpty()) {
                 item {
                     Text(
                         text = "单聊",
@@ -137,7 +210,7 @@ fun DrawerContent(
                 }
             }
 
-            items(chats) { chat ->
+            items(filteredChats) { chat ->
                 ChatHistoryItem(
                     chat = chat,
                     isSelected = chat.id == currentChatId && currentGroupChatId == null,
