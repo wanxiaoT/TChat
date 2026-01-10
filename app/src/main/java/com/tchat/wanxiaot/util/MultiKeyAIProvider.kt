@@ -3,8 +3,6 @@ package com.tchat.wanxiaot.util
 import com.tchat.data.apikey.ApiKeyInfo
 import com.tchat.data.apikey.ApiKeySelector
 import com.tchat.data.apikey.ApiKeyStatus as DataApiKeyStatus
-import com.tchat.data.apikey.KeySelectionResult
-import com.tchat.data.apikey.KeySelectionStrategy as DataKeySelectionStrategy
 import com.tchat.network.provider.AIProvider
 import com.tchat.network.provider.AIProviderException
 import com.tchat.network.provider.AIProviderFactory
@@ -167,26 +165,59 @@ class MultiKeyAIProvider(
             }
         }
 
-        val filteredKeys = configuredKeys.filter { it.id !in excludeKeyIds }
-        if (filteredKeys.isEmpty()) {
-            return SelectedKey.None("没有可用的 API Key（所有 Key 均已尝试）")
-        }
-
-        val (result, newIndex) = selector.selectKey(
-            apiKeys = filteredKeys.map { it.toData() },
-            strategy = provider.keySelectionStrategy.toData(),
-            currentIndex = provider.roundRobinIndex,
-            autoRecoveryMinutes = provider.autoRecoveryMinutes
+        // 先检查并恢复可能已经过了恢复时间的 Key
+        val recoveredKeys = selector.checkAndRecoverKeys(
+            configuredKeys.map { it.toData() },
+            provider.autoRecoveryMinutes
         )
 
-        if (newIndex != provider.roundRobinIndex) {
-            settingsManager.updateProvider(provider.copy(roundRobinIndex = newIndex))
+        // 获取可用的 Key（启用且状态为 ACTIVE，且不在排除列表中）
+        val availableKeys = recoveredKeys.filter {
+            it.isEnabled &&
+            it.status == com.tchat.data.apikey.ApiKeyStatus.ACTIVE &&
+            it.id !in excludeKeyIds
         }
 
-        return when (result) {
-            is KeySelectionResult.Success -> SelectedKey.Multi(result.keyInfo.key, result.keyInfo.id)
-            is KeySelectionResult.NoAvailableKey -> SelectedKey.None(result.reason)
+        if (availableKeys.isEmpty()) {
+            val filteredKeys = configuredKeys.filter { it.id !in excludeKeyIds }
+            if (filteredKeys.isEmpty()) {
+                return SelectedKey.None("没有可用的 API Key（所有 Key 均已尝试）")
+            }
+            val disabledCount = filteredKeys.count { !it.isEnabled }
+            val errorCount = filteredKeys.count { it.status == ApiKeyStatus.ERROR }
+            val rateLimitedCount = filteredKeys.count { it.status == ApiKeyStatus.RATE_LIMITED }
+
+            val reason = buildString {
+                append("没有可用的 API Key")
+                if (disabledCount > 0) append("，$disabledCount 个已禁用")
+                if (errorCount > 0) append("，$errorCount 个错误状态")
+                if (rateLimitedCount > 0) append("，$rateLimitedCount 个限流中")
+            }
+            return SelectedKey.None(reason)
         }
+
+        // 根据策略选择 Key
+        val selectedKey = when (provider.keySelectionStrategy) {
+            KeySelectionStrategy.ROUND_ROBIN -> {
+                // 使用原子操作获取轮询索引
+                val index = settingsManager.getAndIncrementRoundRobinIndex(providerId, availableKeys.size)
+                availableKeys[index]
+            }
+            KeySelectionStrategy.PRIORITY -> {
+                // 优先级选择（数字越小优先级越高）
+                availableKeys.minByOrNull { it.priority } ?: availableKeys.first()
+            }
+            KeySelectionStrategy.RANDOM -> {
+                // 随机选择
+                availableKeys[kotlin.random.Random.nextInt(availableKeys.size)]
+            }
+            KeySelectionStrategy.LEAST_USED -> {
+                // 最少使用选择
+                availableKeys.minByOrNull { it.requestCount } ?: availableKeys.first()
+            }
+        }
+
+        return SelectedKey.Multi(selectedKey.key, selectedKey.id)
     }
 
     private suspend fun updateKeyAfterResult(keyId: String, success: Boolean, error: AIProviderException?) {
@@ -216,10 +247,6 @@ class MultiKeyAIProvider(
     private fun isRetryableError(error: AIProviderException): Boolean {
         return error is AIProviderException.AuthenticationError || error is AIProviderException.RateLimitError
     }
-}
-
-private fun KeySelectionStrategy.toData(): DataKeySelectionStrategy {
-    return runCatching { DataKeySelectionStrategy.valueOf(name) }.getOrDefault(DataKeySelectionStrategy.ROUND_ROBIN)
 }
 
 private fun ApiKeyEntry.toData(): ApiKeyInfo {

@@ -30,6 +30,9 @@ class SettingsManager(context: Context) {
     private val _settings = MutableStateFlow(loadSettingsBlocking())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
+    // 原子轮询索引管理（解决多线程竞态问题）
+    private val roundRobinIndices = ConcurrentHashMap<String, AtomicInteger>()
+
     init {
         // 监听数据库变化
         scope.launch {
@@ -627,5 +630,65 @@ class SettingsManager(context: Context) {
      */
     fun shouldRecordTokens(): Boolean {
         return _settings.value.tokenRecordingStatus == TokenRecordingStatus.ENABLED
+    }
+
+    // ==================== 原子轮询索引管理 ====================
+
+    /**
+     * 原子地获取并递增轮询索引（解决多线程竞态问题）
+     *
+     * @param providerId 服务商 ID
+     * @param availableKeyCount 当前可用的 Key 数量
+     * @return 当前应该使用的索引值
+     */
+    fun getAndIncrementRoundRobinIndex(providerId: String, availableKeyCount: Int): Int {
+        if (availableKeyCount <= 0) return 0
+
+        val atomicIndex = roundRobinIndices.getOrPut(providerId) {
+            // 从持久化设置中初始化
+            val provider = _settings.value.providers.find { it.id == providerId }
+            AtomicInteger(provider?.roundRobinIndex ?: 0)
+        }
+
+        // 原子操作：CAS 循环获取当前值并递增
+        while (true) {
+            val current = atomicIndex.get()
+            val actualIndex = current % availableKeyCount
+            val next = (current + 1) % availableKeyCount
+            if (atomicIndex.compareAndSet(current, next)) {
+                // 异步持久化（不阻塞当前操作）
+                scope.launch {
+                    persistRoundRobinIndex(providerId, next)
+                }
+                return actualIndex
+            }
+            // CAS 失败说明被其他线程修改了，重试
+        }
+    }
+
+    /**
+     * 异步持久化轮询索引到数据库
+     */
+    private suspend fun persistRoundRobinIndex(providerId: String, newIndex: Int) {
+        val currentSettings = _settings.value
+        val provider = currentSettings.providers.find { it.id == providerId } ?: return
+        if (provider.roundRobinIndex != newIndex) {
+            val newProviders = currentSettings.providers.map {
+                if (it.id == providerId) it.copy(roundRobinIndex = newIndex) else it
+            }
+            val newSettings = currentSettings.copy(providers = newProviders)
+            _settings.value = newSettings
+            settingsDao.insertOrReplace(appSettingsToEntity(newSettings))
+        }
+    }
+
+    /**
+     * 重置轮询索引（当 Key 列表变化时调用）
+     */
+    fun resetRoundRobinIndex(providerId: String) {
+        roundRobinIndices[providerId]?.set(0)
+        scope.launch {
+            persistRoundRobinIndex(providerId, 0)
+        }
     }
 }
