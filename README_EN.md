@@ -33,6 +33,97 @@ The author of TChat is from mainland China. It's best to communicate in Simplifi
 
 
 
+# v1.8
+
+### New Features
+
+- **Text-to-Speech (TTS) Feature**
+  - Support reading AI responses aloud
+  - Support selecting different TTS engines
+  - TTS engine options displayed as cards
+  - Uses `synthesizeToFile()` for more stable speech synthesis
+
+- **Cloudflare R2 Cloud Backup**
+  - Support backing up data to Cloudflare R2 cloud storage
+  - Large files use streaming upload to optimize memory usage
+  - Complete backup/restore functionality
+
+- **API Key Rotation Feature**
+  - Support configuring multiple API Keys for rotation
+  - Atomic operations to solve race conditions in multi-conversation scenarios
+  - Automatic switching of failed API Keys
+
+- **Skills Feature**
+  - New Skills system support
+
+- **Sidebar Optimization**
+  - Search box beautification with real search functionality
+  - Chat history display style optimization (more rounded design)
+  - Settings page icons unified to use Lucide icon library
+
+---
+
+### Technical Improvements
+
+#### 1. TTS Speech Service
+
+**Feature**: Convert text content to speech
+
+**Implementation**:
+- `TtsService` speech synthesis service
+- Uses `synthesizeToFile()` instead of `speak()` for improved stability
+- Support multiple TTS engine selection
+- Card-style engine selection UI
+
+---
+
+#### 2. Cloudflare R2 Cloud Backup
+
+**Feature**: Cloud data backup and restore
+
+**Implementation**:
+- R2 cloud storage API integration
+- Streaming upload support for large files
+- Complete backup/restore workflow
+
+---
+
+#### 3. API Key Rotation Mechanism
+
+**Feature**: Multi API Key load balancing
+
+**Implementation**:
+- Atomic operations ensure thread safety
+- Solves race conditions in multi-conversation concurrency
+- Automatic failover
+
+---
+
+#### 4. Sidebar Search Feature
+
+**Feature**: Quick search chat history
+
+**Implementation**:
+- Search box UI beautification
+- Real-time search filtering
+- Chat history card rounded corner optimization
+
+---
+
+### Files Involved
+
+| Module | File | Description |
+|------|------|------|
+| app | TtsService.kt | TTS speech synthesis service |
+| app | TtsSettingsScreen.kt | TTS settings page |
+| app | R2BackupService.kt | R2 cloud backup service |
+| app | R2BackupScreen.kt | Cloud backup settings page |
+| app | ApiKeyRotationManager.kt | API Key rotation manager |
+| app | ChatDrawer.kt | Sidebar search feature |
+| app | SettingsScreen.kt | Settings page icon updates |
+
+---
+
 # v1.7
 
 ### New Features
