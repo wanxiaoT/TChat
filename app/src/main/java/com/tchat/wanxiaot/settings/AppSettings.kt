@@ -18,6 +18,36 @@ enum class TokenRecordingStatus {
 }
 
 /**
+ * TTS 引擎类型
+ */
+enum class TtsEngineType {
+    SYSTEM,  // 系统 TTS 引擎
+    DOUBAO   // 豆包 TTS（火山引擎）
+}
+
+/**
+ * 豆包 TTS 音色配置
+ */
+data class DoubaoVoice(
+    val id: String,
+    val name: String,
+    val description: String = ""
+) {
+    companion object {
+        val DEFAULT_VOICES = listOf(
+            DoubaoVoice("zh_female_tianmei_moon_bigtts", "甜美女声", "温柔甜美的女性声音"),
+            DoubaoVoice("zh_male_chunhou_moon_bigtts", "醇厚男声", "成熟稳重的男性声音"),
+            DoubaoVoice("zh_female_shuangkuai_moon_bigtts", "爽快女声", "干练爽朗的女性声音"),
+            DoubaoVoice("zh_male_yangguang_moon_bigtts", "阳光男声", "活力阳光的男性声音"),
+            DoubaoVoice("zh_female_wanwanxiaohe_moon_bigtts", "湾湾小何", "台湾口音女声"),
+            DoubaoVoice("zh_male_rap_moon_bigtts", "说唱男声", "说唱风格男声"),
+            DoubaoVoice("zh_female_story_moon_bigtts", "故事女声", "适合讲故事的女声"),
+            DoubaoVoice("zh_male_story_moon_bigtts", "故事男声", "适合讲故事的男声")
+        )
+    }
+}
+
+/**
  * TTS 设置
  */
 data class TtsSettings(
@@ -26,7 +56,14 @@ data class TtsSettings(
     val speechRate: Float = 1.0f,           // 语速 (0.1 - 3.0)
     val pitch: Float = 1.0f,                // 音调 (0.1 - 2.0)
     val language: String = "zh-CN",         // 语言代码
-    val enginePackage: String = ""          // TTS 引擎包名，空表示使用系统默认
+    val enginePackage: String = "",         // 系统 TTS 引擎包名，空表示使用系统默认
+    // 引擎类型选择
+    val engineType: TtsEngineType = TtsEngineType.SYSTEM,
+    // 豆包 TTS 配置
+    val doubaoAppId: String = "",           // 豆包 App ID
+    val doubaoAccessToken: String = "",     // 豆包 Access Token
+    val doubaoCluster: String = "volcano_tts",  // 豆包服务集群
+    val doubaoVoiceType: String = "zh_female_tianmei_moon_bigtts"  // 豆包音色
 )
 
 /**

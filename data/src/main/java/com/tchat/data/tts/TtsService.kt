@@ -1,14 +1,31 @@
 package com.tchat.data.tts
 
 import android.content.Context
-import android.content.Intent
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.io.File
 import java.util.Locale
 import java.util.UUID
+
+private const val TAG = "TtsService"
+
+/**
+ * TTS 引擎类型
+ */
+enum class TtsEngineType {
+    SYSTEM,  // 系统 TTS 引擎
+    DOUBAO   // 豆包 TTS（火山引擎）
+}
 
 /**
  * TTS 引擎信息
@@ -21,14 +38,38 @@ data class TtsEngineInfo(
 
 /**
  * TTS 服务
- * 封装 Android TextToSpeech API，提供语音朗读功能
+ * 封装 Android TextToSpeech API 和豆包 TTS，提供语音朗读功能
+ * 使用 synthesizeToFile() + MediaPlayer 方式，兼容性更好
  */
 class TtsService private constructor(private val context: Context) {
 
     private var tts: TextToSpeech? = null
+    private var mediaPlayer: MediaPlayer? = null
     private var isInitialized = false
     private var initFailed = false
     private var currentEnginePackage: String = ""
+
+    // 临时音频文件目录
+    private val tempDir: File by lazy {
+        File(context.cacheDir, "tts_audio").also { it.mkdirs() }
+    }
+
+    // 豆包 TTS 服务
+    private val doubaoTtsService: DoubaoTtsService by lazy {
+        DoubaoTtsService(context.cacheDir)
+    }
+
+    // 当前引擎类型
+    private var currentEngineType: TtsEngineType = TtsEngineType.SYSTEM
+
+    // 豆包 TTS 配置
+    private var doubaoAppId: String = ""
+    private var doubaoAccessToken: String = ""
+    private var doubaoCluster: String = "volcano_tts"
+    private var doubaoVoiceType: String = "zh_female_tianmei_moon_bigtts"
+
+    // 协程作用域
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     // TTS 状态
     private val _isSpeaking = MutableStateFlow(false)
@@ -46,6 +87,9 @@ class TtsService private constructor(private val context: Context) {
     private val _currentMessageId = MutableStateFlow<String?>(null)
     val currentMessageId: StateFlow<String?> = _currentMessageId.asStateFlow()
 
+    // 豆包 TTS 错误信息
+    val doubaoLastError: StateFlow<String?> get() = doubaoTtsService.lastError
+
     // TTS 设置
     private var speechRate: Float = 1.0f
     private var pitch: Float = 1.0f
@@ -59,6 +103,21 @@ class TtsService private constructor(private val context: Context) {
 
     init {
         initTts(null)
+        // 监听豆包 TTS 状态
+        scope.launch {
+            doubaoTtsService.isSpeaking.collect { speaking ->
+                if (currentEngineType == TtsEngineType.DOUBAO) {
+                    _isSpeaking.value = speaking
+                }
+            }
+        }
+        scope.launch {
+            doubaoTtsService.currentMessageId.collect { messageId ->
+                if (currentEngineType == TtsEngineType.DOUBAO) {
+                    _currentMessageId.value = messageId
+                }
+            }
+        }
     }
 
     /**
@@ -88,51 +147,33 @@ class TtsService private constructor(private val context: Context) {
                     tts?.setSpeechRate(speechRate)
                     tts?.setPitch(pitch)
 
-                    tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                        override fun onStart(utteranceId: String?) {
-                            _isSpeaking.value = true
-                        }
-
-                        override fun onDone(utteranceId: String?) {
-                            _isSpeaking.value = false
-                            _currentMessageId.value = null
-                        }
-
-                        @Deprecated("Deprecated in Java", ReplaceWith("onError(utteranceId, errorCode)"))
-                        override fun onError(utteranceId: String?) {
-                            _isSpeaking.value = false
-                            _currentMessageId.value = null
-                        }
-
-                        override fun onError(utteranceId: String?, errorCode: Int) {
-                            _isSpeaking.value = false
-                            _currentMessageId.value = null
-                        }
-                    })
-
                     // 获取可用引擎列表
                     refreshAvailableEngines()
 
                     _initStatus.value = InitStatus.Ready
+                    Log.i(TAG, "TTS 引擎初始化成功")
                 } else {
                     isInitialized = false
                     initFailed = true
                     _initStatus.value = InitStatus.Failed("TTS 引擎初始化失败，请检查系统是否安装了 TTS 引擎")
+                    Log.e(TAG, "TTS 引擎初始化失败: status=$status")
                 }
             }
 
             // 根据是否指定引擎来创建 TTS 实例
+            // 注意：某些设备/TTS引擎使用 applicationContext 会初始化失败，直接使用 context
             tts = if (enginePackage.isNullOrBlank()) {
                 currentEnginePackage = ""
-                TextToSpeech(context.applicationContext, initListener)
+                TextToSpeech(context, initListener)
             } else {
                 currentEnginePackage = enginePackage
-                TextToSpeech(context.applicationContext, initListener, enginePackage)
+                TextToSpeech(context, initListener, enginePackage)
             }
         } catch (e: Exception) {
             isInitialized = false
             initFailed = true
             _initStatus.value = InitStatus.Failed("TTS 初始化异常: ${e.message}")
+            Log.e(TAG, "TTS 初始化异常", e)
         }
     }
 
@@ -191,7 +232,7 @@ class TtsService private constructor(private val context: Context) {
     }
 
     /**
-     * 切换 TTS 引擎
+     * 切换系统 TTS 引擎
      * @param enginePackage 引擎包名，空字符串表示使用系统默认
      */
     fun setEngine(enginePackage: String) {
@@ -201,9 +242,43 @@ class TtsService private constructor(private val context: Context) {
     }
 
     /**
-     * 获取当前引擎包名
+     * 获取当前系统引擎包名
      */
     fun getCurrentEngine(): String = currentEnginePackage
+
+    /**
+     * 设置引擎类型（系统 TTS 或豆包 TTS）
+     */
+    fun setEngineType(type: TtsEngineType) {
+        currentEngineType = type
+    }
+
+    /**
+     * 获取当前引擎类型
+     */
+    fun getEngineType(): TtsEngineType = currentEngineType
+
+    /**
+     * 更新豆包 TTS 配置
+     */
+    fun updateDoubaoConfig(
+        appId: String,
+        accessToken: String,
+        cluster: String = "volcano_tts",
+        voiceType: String = "zh_female_tianmei_moon_bigtts"
+    ) {
+        doubaoAppId = appId
+        doubaoAccessToken = accessToken
+        doubaoCluster = cluster
+        doubaoVoiceType = voiceType
+    }
+
+    /**
+     * 检查豆包 TTS 是否已配置
+     */
+    fun isDoubaoConfigured(): Boolean {
+        return doubaoAppId.isNotBlank() && doubaoAccessToken.isNotBlank()
+    }
 
     /**
      * 更新 TTS 设置
@@ -226,29 +301,178 @@ class TtsService private constructor(private val context: Context) {
      * @param messageId 消息ID（用于追踪）
      */
     fun speak(text: String, messageId: String? = null) {
-        if (!isInitialized || text.isBlank()) return
+        if (text.isBlank()) return
+
+        when (currentEngineType) {
+            TtsEngineType.SYSTEM -> speakWithSystemTts(text, messageId)
+            TtsEngineType.DOUBAO -> speakWithDoubaoTts(text, messageId)
+        }
+    }
+
+    /**
+     * 使用系统 TTS 朗读（synthesizeToFile + MediaPlayer 方式）
+     */
+    private fun speakWithSystemTts(text: String, messageId: String?) {
+        if (!isInitialized) {
+            Log.w(TAG, "TTS 未初始化")
+            return
+        }
 
         // 清理文本（移除 Markdown 格式等）
         val cleanText = cleanTextForTts(text)
         if (cleanText.isBlank()) return
 
+        // 停止之前的播放
+        stopMediaPlayer()
+
         _currentMessageId.value = messageId
         val utteranceId = messageId ?: UUID.randomUUID().toString()
 
-        tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        // 创建临时音频文件
+        val audioFile = File(tempDir, "tts_${System.currentTimeMillis()}.wav")
+
+        // 设置合成完成监听器
+        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {
+                Log.i(TAG, "TTS 合成开始: $utteranceId")
+            }
+
+            override fun onDone(utteranceId: String?) {
+                Log.i(TAG, "TTS 合成完成: $utteranceId")
+                // 合成完成后，使用 MediaPlayer 播放
+                scope.launch(Dispatchers.Main) {
+                    playAudioFile(audioFile)
+                }
+            }
+
+            @Deprecated("Deprecated in Java", ReplaceWith("onError(utteranceId, errorCode)"))
+            override fun onError(utteranceId: String?) {
+                Log.e(TAG, "TTS 合成错误: $utteranceId")
+                _isSpeaking.value = false
+                _currentMessageId.value = null
+                audioFile.delete()
+            }
+
+            override fun onError(utteranceId: String?, errorCode: Int) {
+                Log.e(TAG, "TTS 合成错误: $utteranceId, errorCode=$errorCode")
+                _isSpeaking.value = false
+                _currentMessageId.value = null
+                audioFile.delete()
+            }
+        })
+
+        // 使用 synthesizeToFile 合成到文件
+        val result = tts?.synthesizeToFile(cleanText, null, audioFile, utteranceId)
+        if (result != TextToSpeech.SUCCESS) {
+            Log.e(TAG, "synthesizeToFile 失败: result=$result")
+            _isSpeaking.value = false
+            _currentMessageId.value = null
+        }
+    }
+
+    /**
+     * 播放音频文件
+     */
+    private fun playAudioFile(audioFile: File) {
+        if (!audioFile.exists()) {
+            Log.e(TAG, "音频文件不存在: ${audioFile.absolutePath}")
+            _isSpeaking.value = false
+            _currentMessageId.value = null
+            return
+        }
+
+        try {
+            stopMediaPlayer()
+
+            mediaPlayer = MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .build()
+                )
+                setDataSource(audioFile.absolutePath)
+
+                setOnPreparedListener {
+                    Log.i(TAG, "MediaPlayer 准备完成，开始播放")
+                    _isSpeaking.value = true
+                    start()
+                }
+
+                setOnCompletionListener {
+                    Log.i(TAG, "MediaPlayer 播放完成")
+                    _isSpeaking.value = false
+                    _currentMessageId.value = null
+                    release()
+                    mediaPlayer = null
+                    audioFile.delete()
+                }
+
+                setOnErrorListener { _, what, extra ->
+                    Log.e(TAG, "MediaPlayer 错误: what=$what, extra=$extra")
+                    _isSpeaking.value = false
+                    _currentMessageId.value = null
+                    audioFile.delete()
+                    true
+                }
+
+                prepareAsync()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "播放音频文件失败", e)
+            _isSpeaking.value = false
+            _currentMessageId.value = null
+            audioFile.delete()
+        }
+    }
+
+    /**
+     * 停止 MediaPlayer
+     */
+    private fun stopMediaPlayer() {
+        mediaPlayer?.let {
+            try {
+                if (it.isPlaying) {
+                    it.stop()
+                }
+                it.release()
+            } catch (e: Exception) {
+                Log.w(TAG, "停止 MediaPlayer 时出错", e)
+            }
+        }
+        mediaPlayer = null
+    }
+
+    /**
+     * 使用豆包 TTS 朗读
+     */
+    private fun speakWithDoubaoTts(text: String, messageId: String?) {
+        if (!isDoubaoConfigured()) return
+
+        scope.launch {
+            doubaoTtsService.speak(
+                text = text,
+                appId = doubaoAppId,
+                accessToken = doubaoAccessToken,
+                cluster = doubaoCluster,
+                voiceType = doubaoVoiceType,
+                speedRatio = speechRate,
+                messageId = messageId
+            )
+        }
     }
 
     /**
      * 追加朗读（不打断当前朗读）
+     * 注意：使用 synthesizeToFile 方式时，此方法会等待当前播放完成
      */
     fun speakAdd(text: String, messageId: String? = null) {
-        if (!isInitialized || text.isBlank()) return
-
-        val cleanText = cleanTextForTts(text)
-        if (cleanText.isBlank()) return
-
-        val utteranceId = messageId ?: UUID.randomUUID().toString()
-        tts?.speak(cleanText, TextToSpeech.QUEUE_ADD, null, utteranceId)
+        // 简化实现：如果正在播放，则忽略；否则直接播放
+        if (_isSpeaking.value) {
+            Log.i(TAG, "正在播放中，忽略追加请求")
+            return
+        }
+        speak(text, messageId)
     }
 
     /**
@@ -256,6 +480,8 @@ class TtsService private constructor(private val context: Context) {
      */
     fun stop() {
         tts?.stop()
+        stopMediaPlayer()
+        doubaoTtsService.stop()
         _isSpeaking.value = false
         _currentMessageId.value = null
     }
@@ -264,8 +490,23 @@ class TtsService private constructor(private val context: Context) {
      * 暂停朗读（API 21+）
      */
     fun pause() {
-        // Android TTS 没有原生暂停功能，只能停止
-        stop()
+        // MediaPlayer 支持暂停
+        mediaPlayer?.let {
+            if (it.isPlaying) {
+                it.pause()
+                _isSpeaking.value = false
+            }
+        }
+    }
+
+    /**
+     * 恢复朗读
+     */
+    fun resume() {
+        mediaPlayer?.let {
+            it.start()
+            _isSpeaking.value = true
+        }
     }
 
     /**
@@ -315,13 +556,25 @@ class TtsService private constructor(private val context: Context) {
     }
 
     /**
+     * 清理临时文件
+     */
+    private fun cleanupTempFiles() {
+        try {
+            tempDir.listFiles()?.forEach { it.delete() }
+        } catch (e: Exception) {
+            Log.w(TAG, "清理临时文件失败", e)
+        }
+    }
+
+    /**
      * 释放资源
      */
     fun shutdown() {
-        tts?.stop()
+        stop()
         tts?.shutdown()
         tts = null
         isInitialized = false
+        cleanupTempFiles()
         instance = null
     }
 
