@@ -22,6 +22,9 @@ object AwsSignatureV4 {
     private const val REGION = "auto"  // R2 使用 auto 作为 region
     private const val TERMINATOR = "aws4_request"
 
+    // 用于流式上传时跳过 payload hash 计算
+    private const val UNSIGNED_PAYLOAD = "UNSIGNED-PAYLOAD"
+
     /**
      * 签名请求并返回需要添加的 Headers
      */
@@ -48,6 +51,72 @@ object AwsSignatureV4 {
 
         // 计算 payload hash
         val payloadHash = sha256Hex(payload ?: ByteArray(0))
+
+        // 构建要签名的 headers
+        val signedHeaders = TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER)
+        signedHeaders["host"] = host
+        signedHeaders["x-amz-date"] = amzDate
+        signedHeaders["x-amz-content-sha256"] = payloadHash
+        headers.forEach { (key, value) ->
+            signedHeaders[key.lowercase()] = value.trim()
+        }
+
+        // 创建规范请求
+        val canonicalRequest = createCanonicalRequest(
+            method = method,
+            canonicalUri = path,
+            canonicalQueryString = canonicalizeQueryString(query),
+            signedHeaders = signedHeaders,
+            payloadHash = payloadHash
+        )
+
+        // 创建签名字符串
+        val credentialScope = "$dateStamp/$REGION/$SERVICE/$TERMINATOR"
+        val stringToSign = createStringToSign(amzDate, credentialScope, canonicalRequest)
+
+        // 计算签名
+        val signingKey = getSignatureKey(secretAccessKey, dateStamp, REGION, SERVICE)
+        val signature = hmacSha256Hex(signingKey, stringToSign)
+
+        // 构建 Authorization header
+        val signedHeaderNames = signedHeaders.keys.joinToString(";") { it.lowercase() }
+        val authorization = "$ALGORITHM Credential=$accessKeyId/$credentialScope, " +
+                "SignedHeaders=$signedHeaderNames, Signature=$signature"
+
+        // 返回需要添加的 headers
+        return mapOf(
+            "Authorization" to authorization,
+            "x-amz-date" to amzDate,
+            "x-amz-content-sha256" to payloadHash
+        )
+    }
+
+    /**
+     * 签名请求（用于流式上传，不计算 payload hash）
+     * 使用 UNSIGNED-PAYLOAD 跳过 payload hash 计算，适用于大文件上传
+     */
+    fun signRequestForStreaming(
+        method: String,
+        url: String,
+        headers: Map<String, String>,
+        accessKeyId: String,
+        secretAccessKey: String,
+        date: Date = Date()
+    ): Map<String, String> {
+        val parsedUrl = URL(url)
+        val host = parsedUrl.host
+        val path = parsedUrl.path.ifEmpty { "/" }
+        val query = parsedUrl.query ?: ""
+
+        // 格式化日期
+        val dateFormat = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        val amzDate = dateFormat.format(date)
+        val dateStamp = amzDate.substring(0, 8)
+
+        // 使用 UNSIGNED-PAYLOAD 跳过 payload hash 计算
+        val payloadHash = UNSIGNED_PAYLOAD
 
         // 构建要签名的 headers
         val signedHeaders = TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER)

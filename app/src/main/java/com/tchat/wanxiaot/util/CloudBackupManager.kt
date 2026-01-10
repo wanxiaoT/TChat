@@ -101,6 +101,7 @@ class CloudBackupManager(
 
     /**
      * 上传备份文件到 R2
+     * 使用流式上传，避免大文件占用过多内存
      */
     suspend fun uploadBackup(localFile: File): Result<CloudBackupInfo> = withContext(Dispatchers.IO) {
         try {
@@ -114,25 +115,32 @@ class CloudBackupManager(
 
             val key = localFile.name
             val url = "${r2Settings.endpoint}/${r2Settings.bucketName}/$key"
-            val fileBytes = localFile.readBytes()
+            val fileSize = localFile.length()
 
-            val headers = AwsSignatureV4.signRequest(
+            // 使用流式签名，避免将整个文件加载到内存
+            val headers = AwsSignatureV4.signRequestForStreaming(
                 method = "PUT",
                 url = url,
-                headers = mapOf("Content-Type" to "application/zip"),
-                payload = fileBytes,
+                headers = mapOf(
+                    "Content-Type" to "application/zip",
+                    "Content-Length" to fileSize.toString()
+                ),
                 accessKeyId = r2Settings.accessKeyId,
                 secretAccessKey = r2Settings.secretAccessKey
             )
 
+            // 使用 asRequestBody 直接从文件流式读取，不加载到内存
+            val requestBody = localFile.asRequestBody("application/zip".toMediaType())
+
             val request = Request.Builder()
                 .url(url)
-                .put(fileBytes.toRequestBody("application/zip".toMediaType()))
+                .put(requestBody)
                 .apply {
                     headers.forEach { (k, v) ->
                         addHeader(k, v)
                     }
                     addHeader("Content-Type", "application/zip")
+                    addHeader("Content-Length", fileSize.toString())
                 }
                 .build()
 
@@ -143,7 +151,7 @@ class CloudBackupManager(
                 Result.success(
                     CloudBackupInfo(
                         key = key,
-                        size = localFile.length(),
+                        size = fileSize,
                         lastModified = System.currentTimeMillis(),
                         etag = etag.trim('"')
                     )
