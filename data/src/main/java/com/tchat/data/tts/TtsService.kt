@@ -2,7 +2,6 @@ package com.tchat.data.tts
 
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.MediaPlayer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -13,9 +12,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.io.File
+import java.lang.ref.WeakReference
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 private const val TAG = "TtsService"
 
@@ -39,24 +40,22 @@ data class TtsEngineInfo(
 /**
  * TTS 服务
  * 封装 Android TextToSpeech API 和豆包 TTS，提供语音朗读功能
- * 使用 synthesizeToFile() + MediaPlayer 方式，兼容性更好
  */
-class TtsService private constructor(private val context: Context) {
+class TtsService private constructor(context: Context) {
 
+    private val appContext: Context = context.applicationContext
     private var tts: TextToSpeech? = null
-    private var mediaPlayer: MediaPlayer? = null
     private var isInitialized = false
     private var initFailed = false
     private var currentEnginePackage: String = ""
+    private val initSequence = AtomicInteger(0)
 
-    // 临时音频文件目录
-    private val tempDir: File by lazy {
-        File(context.cacheDir, "tts_audio").also { it.mkdirs() }
-    }
+    @Volatile
+    private var contextRef: WeakReference<Context> = WeakReference(context)
 
     // 豆包 TTS 服务
     private val doubaoTtsService: DoubaoTtsService by lazy {
-        DoubaoTtsService(context.cacheDir)
+        DoubaoTtsService(appContext.cacheDir)
     }
 
     // 当前引擎类型
@@ -86,6 +85,70 @@ class TtsService private constructor(private val context: Context) {
     // 当前朗读的消息ID
     private val _currentMessageId = MutableStateFlow<String?>(null)
     val currentMessageId: StateFlow<String?> = _currentMessageId.asStateFlow()
+
+    // 当前系统引擎朗读的 utteranceId（用于过滤回调）
+    @Volatile
+    private var currentUtteranceId: String? = null
+
+    private val systemUtteranceListener = object : UtteranceProgressListener() {
+        private fun isCurrent(callbackUtteranceId: String?): Boolean {
+            val active = currentUtteranceId ?: return false
+            return callbackUtteranceId == null || callbackUtteranceId == active
+        }
+
+        override fun onStart(utteranceId: String?) {
+            if (!isCurrent(utteranceId)) return
+            Log.i(TAG, "TTS 开始朗读: $utteranceId")
+            _isSpeaking.value = true
+        }
+
+        override fun onDone(utteranceId: String?) {
+            if (!isCurrent(utteranceId)) return
+            Log.i(TAG, "TTS 朗读完成: $utteranceId")
+            _isSpeaking.value = false
+            _currentMessageId.value = null
+            currentUtteranceId = null
+        }
+
+        @Suppress("OVERRIDE_DEPRECATION")
+        @Deprecated("Deprecated in Java", ReplaceWith("onError(utteranceId, errorCode)"))
+        override fun onError(utteranceId: String?) {
+            if (!isCurrent(utteranceId)) return
+            Log.e(TAG, "TTS 朗读错误: $utteranceId")
+            _isSpeaking.value = false
+            _currentMessageId.value = null
+            currentUtteranceId = null
+        }
+
+        override fun onError(utteranceId: String?, errorCode: Int) {
+            if (!isCurrent(utteranceId)) return
+            Log.e(TAG, "TTS 朗读错误: $utteranceId, errorCode=$errorCode")
+            _isSpeaking.value = false
+            _currentMessageId.value = null
+            currentUtteranceId = null
+        }
+
+        override fun onStop(utteranceId: String?, interrupted: Boolean) {
+            if (!isCurrent(utteranceId)) return
+            Log.i(TAG, "TTS 停止朗读: $utteranceId, interrupted=$interrupted")
+            _isSpeaking.value = false
+            _currentMessageId.value = null
+            currentUtteranceId = null
+        }
+    }
+
+    private fun updateContext(context: Context) {
+        contextRef = WeakReference(context)
+    }
+
+    private fun resolveTtsContext(): Context {
+        return contextRef.get() ?: appContext
+    }
+
+    private fun resolveAlternateContext(used: Context): Context? {
+        val alt = if (used === appContext) contextRef.get() else appContext
+        return alt?.takeIf { it !== used }
+    }
 
     // 豆包 TTS 错误信息
     val doubaoLastError: StateFlow<String?> get() = doubaoTtsService.lastError
@@ -125,55 +188,173 @@ class TtsService private constructor(private val context: Context) {
      * @param enginePackage 引擎包名，null 或空字符串表示使用系统默认
      */
     private fun initTts(enginePackage: String?) {
+        val sequence = initSequence.incrementAndGet()
+        initTtsInternal(
+            enginePackage = enginePackage,
+            sequence = sequence,
+            preferredContext = resolveTtsContext(),
+            allowFallbackToDefaultEngine = true,
+            allowFallbackToAlternateContext = true
+        )
+    }
+
+    private fun initTtsInternal(
+        enginePackage: String?,
+        sequence: Int,
+        preferredContext: Context,
+        allowFallbackToDefaultEngine: Boolean,
+        allowFallbackToAlternateContext: Boolean
+    ) {
         _initStatus.value = InitStatus.Initializing
         isInitialized = false
+        currentUtteranceId = null
+        _isSpeaking.value = false
+        _currentMessageId.value = null
+
+        val desiredEngine = enginePackage?.takeIf { it.isNotBlank() }
+        currentEnginePackage = desiredEngine ?: ""
 
         // 先关闭旧的 TTS 实例
-        tts?.stop()
-        tts?.shutdown()
+        val old = tts
         tts = null
-
         try {
-            val initListener = TextToSpeech.OnInitListener { status ->
-                if (status == TextToSpeech.SUCCESS) {
-                    isInitialized = true
-                    initFailed = false
+            old?.stop()
+            old?.shutdown()
+        } catch (e: Exception) {
+            Log.w(TAG, "关闭旧 TTS 实例失败", e)
+        }
 
-                    val result = tts?.setLanguage(language)
-                    if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                        tts?.setLanguage(Locale.getDefault())
-                    }
+        val holder = AtomicReference<TextToSpeech?>(null)
+        val initListener = TextToSpeech.OnInitListener { status ->
+            val ttsInstance = holder.get()
+            if (sequence != initSequence.get()) {
+                try {
+                    ttsInstance?.shutdown()
+                } catch (_: Exception) {
+                }
+                return@OnInitListener
+            }
 
-                    tts?.setSpeechRate(speechRate)
-                    tts?.setPitch(pitch)
+            if (status == TextToSpeech.SUCCESS && ttsInstance != null) {
+                isInitialized = true
+                initFailed = false
 
-                    // 获取可用引擎列表
-                    refreshAvailableEngines()
+                val languageResult = ttsInstance.setLanguage(language)
+                if (languageResult == TextToSpeech.LANG_MISSING_DATA || languageResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    ttsInstance.setLanguage(Locale.getDefault())
+                }
 
-                    _initStatus.value = InitStatus.Ready
-                    Log.i(TAG, "TTS 引擎初始化成功")
-                } else {
-                    isInitialized = false
-                    initFailed = true
-                    _initStatus.value = InitStatus.Failed("TTS 引擎初始化失败，请检查系统是否安装了 TTS 引擎")
-                    Log.e(TAG, "TTS 引擎初始化失败: status=$status")
+                ttsInstance.setSpeechRate(speechRate)
+                ttsInstance.setPitch(pitch)
+                ttsInstance.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .build()
+                )
+                ttsInstance.setOnUtteranceProgressListener(systemUtteranceListener)
+
+                // 获取可用引擎列表
+                refreshAvailableEngines()
+
+                _initStatus.value = InitStatus.Ready
+                Log.i(
+                    TAG,
+                    "TTS 引擎初始化成功: engine=${currentEnginePackage.ifBlank { "<default>" }}, context=${preferredContext::class.java.name}"
+                )
+                return@OnInitListener
+            }
+
+            isInitialized = false
+            initFailed = true
+            val engineLabel = currentEnginePackage.ifBlank { "<default>" }
+            val reason = "TTS 引擎初始化失败: status=$status, engine=$engineLabel"
+            _initStatus.value = InitStatus.Failed(reason)
+            Log.e(TAG, "$reason, context=${preferredContext::class.java.name}")
+
+            try {
+                ttsInstance?.shutdown()
+            } catch (_: Exception) {
+            }
+
+            // 指定引擎失败时，自动回退系统默认引擎
+            if (allowFallbackToDefaultEngine && desiredEngine != null) {
+                val nextSeq = initSequence.incrementAndGet()
+                Log.w(TAG, "指定引擎初始化失败，回退系统默认引擎重试")
+                initTtsInternal(
+                    enginePackage = null,
+                    sequence = nextSeq,
+                    preferredContext = preferredContext,
+                    allowFallbackToDefaultEngine = false,
+                    allowFallbackToAlternateContext = allowFallbackToAlternateContext
+                )
+                return@OnInitListener
+            }
+
+            // 默认引擎仍失败时，尝试使用另一种 context（appContext <-> latest context）
+            if (allowFallbackToAlternateContext) {
+                val altContext = resolveAlternateContext(preferredContext)
+                if (altContext != null) {
+                    val nextSeq = initSequence.incrementAndGet()
+                    Log.w(TAG, "TTS 初始化失败，使用备用 Context 重试: ${altContext::class.java.name}")
+                    initTtsInternal(
+                        enginePackage = enginePackage,
+                        sequence = nextSeq,
+                        preferredContext = altContext,
+                        allowFallbackToDefaultEngine = allowFallbackToDefaultEngine,
+                        allowFallbackToAlternateContext = false
+                    )
                 }
             }
+        }
 
-            // 根据是否指定引擎来创建 TTS 实例
-            // 注意：某些设备/TTS引擎使用 applicationContext 会初始化失败，直接使用 context
-            tts = if (enginePackage.isNullOrBlank()) {
-                currentEnginePackage = ""
-                TextToSpeech(context, initListener)
+        try {
+            Log.i(
+                TAG,
+                "开始初始化 TTS: engine=${currentEnginePackage.ifBlank { "<default>" }}, context=${preferredContext::class.java.name}, seq=$sequence"
+            )
+            val ttsInstance = if (desiredEngine == null) {
+                TextToSpeech(preferredContext, initListener)
             } else {
-                currentEnginePackage = enginePackage
-                TextToSpeech(context, initListener, enginePackage)
+                TextToSpeech(preferredContext, initListener, desiredEngine)
             }
+            holder.set(ttsInstance)
+            tts = ttsInstance
         } catch (e: Exception) {
             isInitialized = false
             initFailed = true
-            _initStatus.value = InitStatus.Failed("TTS 初始化异常: ${e.message}")
-            Log.e(TAG, "TTS 初始化异常", e)
+            val engineLabel = currentEnginePackage.ifBlank { "<default>" }
+            val reason = "TTS 初始化异常: ${e.message ?: e.javaClass.simpleName}, engine=$engineLabel"
+            _initStatus.value = InitStatus.Failed(reason)
+            Log.e(TAG, reason, e)
+
+            // 构造异常时也尝试回退（保持行为一致）
+            if (allowFallbackToDefaultEngine && desiredEngine != null) {
+                val nextSeq = initSequence.incrementAndGet()
+                Log.w(TAG, "指定引擎初始化异常，回退系统默认引擎重试")
+                initTtsInternal(
+                    enginePackage = null,
+                    sequence = nextSeq,
+                    preferredContext = preferredContext,
+                    allowFallbackToDefaultEngine = false,
+                    allowFallbackToAlternateContext = allowFallbackToAlternateContext
+                )
+                return
+            }
+            if (allowFallbackToAlternateContext) {
+                val altContext = resolveAlternateContext(preferredContext)
+                if (altContext != null) {
+                    val nextSeq = initSequence.incrementAndGet()
+                    Log.w(TAG, "TTS 初始化异常，使用备用 Context 重试: ${altContext::class.java.name}")
+                    initTtsInternal(
+                        enginePackage = enginePackage,
+                        sequence = nextSeq,
+                        preferredContext = altContext,
+                        allowFallbackToDefaultEngine = allowFallbackToDefaultEngine,
+                        allowFallbackToAlternateContext = false
+                    )
+                }
+            }
         }
     }
 
@@ -322,125 +503,22 @@ class TtsService private constructor(private val context: Context) {
         val cleanText = cleanTextForTts(text)
         if (cleanText.isBlank()) return
 
-        // 停止之前的播放
-        stopMediaPlayer()
+        // 停止之前的朗读
+        tts?.stop()
 
         _currentMessageId.value = messageId
         val utteranceId = messageId ?: UUID.randomUUID().toString()
+        currentUtteranceId = utteranceId
 
-        // 创建临时音频文件
-        val audioFile = File(tempDir, "tts_${System.currentTimeMillis()}.wav")
-
-        // 设置合成完成监听器
-        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {
-                Log.i(TAG, "TTS 合成开始: $utteranceId")
-            }
-
-            override fun onDone(utteranceId: String?) {
-                Log.i(TAG, "TTS 合成完成: $utteranceId")
-                // 合成完成后，使用 MediaPlayer 播放
-                scope.launch(Dispatchers.Main) {
-                    playAudioFile(audioFile)
-                }
-            }
-
-            @Deprecated("Deprecated in Java", ReplaceWith("onError(utteranceId, errorCode)"))
-            override fun onError(utteranceId: String?) {
-                Log.e(TAG, "TTS 合成错误: $utteranceId")
-                _isSpeaking.value = false
-                _currentMessageId.value = null
-                audioFile.delete()
-            }
-
-            override fun onError(utteranceId: String?, errorCode: Int) {
-                Log.e(TAG, "TTS 合成错误: $utteranceId, errorCode=$errorCode")
-                _isSpeaking.value = false
-                _currentMessageId.value = null
-                audioFile.delete()
-            }
-        })
-
-        // 使用 synthesizeToFile 合成到文件
-        val result = tts?.synthesizeToFile(cleanText, null, audioFile, utteranceId)
+        // 使用 speak() 直接朗读，避免不同 TTS 引擎生成的文件格式导致 MediaPlayer 无法播放
+        tts?.setOnUtteranceProgressListener(systemUtteranceListener)
+        val result = tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
         if (result != TextToSpeech.SUCCESS) {
-            Log.e(TAG, "synthesizeToFile 失败: result=$result")
+            Log.e(TAG, "speak 失败: result=$result")
             _isSpeaking.value = false
             _currentMessageId.value = null
+            currentUtteranceId = null
         }
-    }
-
-    /**
-     * 播放音频文件
-     */
-    private fun playAudioFile(audioFile: File) {
-        if (!audioFile.exists()) {
-            Log.e(TAG, "音频文件不存在: ${audioFile.absolutePath}")
-            _isSpeaking.value = false
-            _currentMessageId.value = null
-            return
-        }
-
-        try {
-            stopMediaPlayer()
-
-            mediaPlayer = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .build()
-                )
-                setDataSource(audioFile.absolutePath)
-
-                setOnPreparedListener {
-                    Log.i(TAG, "MediaPlayer 准备完成，开始播放")
-                    _isSpeaking.value = true
-                    start()
-                }
-
-                setOnCompletionListener {
-                    Log.i(TAG, "MediaPlayer 播放完成")
-                    _isSpeaking.value = false
-                    _currentMessageId.value = null
-                    release()
-                    mediaPlayer = null
-                    audioFile.delete()
-                }
-
-                setOnErrorListener { _, what, extra ->
-                    Log.e(TAG, "MediaPlayer 错误: what=$what, extra=$extra")
-                    _isSpeaking.value = false
-                    _currentMessageId.value = null
-                    audioFile.delete()
-                    true
-                }
-
-                prepareAsync()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "播放音频文件失败", e)
-            _isSpeaking.value = false
-            _currentMessageId.value = null
-            audioFile.delete()
-        }
-    }
-
-    /**
-     * 停止 MediaPlayer
-     */
-    private fun stopMediaPlayer() {
-        mediaPlayer?.let {
-            try {
-                if (it.isPlaying) {
-                    it.stop()
-                }
-                it.release()
-            } catch (e: Exception) {
-                Log.w(TAG, "停止 MediaPlayer 时出错", e)
-            }
-        }
-        mediaPlayer = null
     }
 
     /**
@@ -480,33 +558,10 @@ class TtsService private constructor(private val context: Context) {
      */
     fun stop() {
         tts?.stop()
-        stopMediaPlayer()
         doubaoTtsService.stop()
         _isSpeaking.value = false
         _currentMessageId.value = null
-    }
-
-    /**
-     * 暂停朗读（API 21+）
-     */
-    fun pause() {
-        // MediaPlayer 支持暂停
-        mediaPlayer?.let {
-            if (it.isPlaying) {
-                it.pause()
-                _isSpeaking.value = false
-            }
-        }
-    }
-
-    /**
-     * 恢复朗读
-     */
-    fun resume() {
-        mediaPlayer?.let {
-            it.start()
-            _isSpeaking.value = true
-        }
+        currentUtteranceId = null
     }
 
     /**
@@ -559,11 +614,8 @@ class TtsService private constructor(private val context: Context) {
      * 清理临时文件
      */
     private fun cleanupTempFiles() {
-        try {
-            tempDir.listFiles()?.forEach { it.delete() }
-        } catch (e: Exception) {
-            Log.w(TAG, "清理临时文件失败", e)
-        }
+        // 兼容旧版本：历史上使用 synthesizeToFile() 会产生临时文件
+        // 目前系统 TTS 使用 speak() 直接输出，无需清理
     }
 
     /**
@@ -574,7 +626,6 @@ class TtsService private constructor(private val context: Context) {
         tts?.shutdown()
         tts = null
         isInitialized = false
-        cleanupTempFiles()
         instance = null
     }
 
@@ -583,8 +634,8 @@ class TtsService private constructor(private val context: Context) {
         private var instance: TtsService? = null
 
         fun getInstance(context: Context): TtsService {
-            return instance ?: synchronized(this) {
-                instance ?: TtsService(context).also { instance = it }
+            return instance?.also { it.updateContext(context) } ?: synchronized(this) {
+                instance?.also { it.updateContext(context) } ?: TtsService(context).also { instance = it }
             }
         }
 

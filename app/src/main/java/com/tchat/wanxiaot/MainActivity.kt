@@ -39,6 +39,7 @@ import com.tchat.data.tool.Tool
 import com.tchat.data.mcp.McpToolService
 import com.tchat.data.repository.impl.McpServerRepositoryImpl
 import com.tchat.data.tts.TtsService
+import com.tchat.data.tts.TtsEngineType as DataTtsEngineType
 import com.tchat.feature.chat.ChatScreen
 import com.tchat.feature.chat.ChatViewModel
 import com.tchat.feature.chat.GroupChatScreen
@@ -47,6 +48,7 @@ import com.tchat.network.provider.AIProviderFactory
 import com.tchat.network.provider.EmbeddingProviderFactory
 import com.tchat.wanxiaot.settings.AIProviderType
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.wanxiaot.settings.TtsEngineType as AppTtsEngineType
 import com.tchat.data.util.RegexRuleData
 import com.tchat.wanxiaot.ui.DrawerContent
 import com.tchat.wanxiaot.ui.settings.SettingsScreen
@@ -109,6 +111,20 @@ class MainActivity : ComponentActivity() {
                     rate = ttsSettings.speechRate,
                     pitchValue = ttsSettings.pitch,
                     locale = java.util.Locale.forLanguageTag(ttsSettings.language)
+                )
+                // 同步引擎/配置（避免仅在设置页生效）
+                ttsService.setEngine(ttsSettings.enginePackage)
+                ttsService.setEngineType(
+                    when (ttsSettings.engineType) {
+                        AppTtsEngineType.SYSTEM -> DataTtsEngineType.SYSTEM
+                        AppTtsEngineType.DOUBAO -> DataTtsEngineType.DOUBAO
+                    }
+                )
+                ttsService.updateDoubaoConfig(
+                    appId = ttsSettings.doubaoAppId,
+                    accessToken = ttsSettings.doubaoAccessToken,
+                    cluster = ttsSettings.doubaoCluster,
+                    voiceType = ttsSettings.doubaoVoiceType
                 )
             }
         }
