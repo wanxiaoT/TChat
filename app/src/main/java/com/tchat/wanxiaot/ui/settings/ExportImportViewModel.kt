@@ -309,6 +309,50 @@ class ExportImportViewModel(
     }
 
     /**
+     * 创建备份文件（用于云备份上传）
+     * @return 备份文件，如果失败返回 null
+     */
+    suspend fun createBackupFile(): File? {
+        val tempFile = File(context.cacheDir, generateBackupFileName())
+        return try {
+            val result = databaseBackupManager.backupDatabase(tempFile)
+            if (result.isSuccess) {
+                tempFile
+            } else {
+                tempFile.delete()
+                null
+            }
+        } catch (e: Exception) {
+            tempFile.delete()
+            null
+        }
+    }
+
+    /**
+     * 从本地文件恢复数据库（用于云备份恢复）
+     */
+    fun restoreDatabaseFromFile(file: File) {
+        viewModelScope.launch {
+            _uiState.value = ExportImportUiState.Loading("正在恢复数据库...")
+            try {
+                val result = databaseBackupManager.restoreDatabase(file)
+                result.fold(
+                    onSuccess = { restoreInfo ->
+                        _uiState.value = ExportImportUiState.Success(
+                            "恢复成功！已恢复 ${restoreInfo.restoredFileCount} 个文件，请重启应用"
+                        )
+                    },
+                    onFailure = { error ->
+                        _uiState.value = ExportImportUiState.Error("恢复失败: ${error.message}")
+                    }
+                )
+            } catch (e: Exception) {
+                _uiState.value = ExportImportUiState.Error("恢复失败: ${e.message}")
+            }
+        }
+    }
+
+    /**
      * 备份数据库到 URI
      */
     fun backupDatabaseToUri(uri: Uri) {

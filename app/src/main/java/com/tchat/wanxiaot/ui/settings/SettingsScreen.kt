@@ -19,6 +19,7 @@ import com.composables.icons.lucide.ChartColumn
 import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.Cloud
+import com.composables.icons.lucide.CloudUpload
 import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Network
 import com.composables.icons.lucide.Regex
@@ -190,6 +191,14 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         targetPage = SettingsSubPage.EXPORT_IMPORT
     ),
     SettingsItemData(
+        id = "r2_settings",
+        group = "其他",
+        title = "云备份",
+        subtitle = "Cloudflare R2 云端备份设置",
+        icon = SettingsIcon.Lucide(Lucide.CloudUpload),
+        targetPage = SettingsSubPage.R2_SETTINGS
+    ),
+    SettingsItemData(
         id = "logcat",
         group = "其他",
         title = "日志查看",
@@ -231,6 +240,7 @@ private fun isSettingsItemSelected(itemId: String, currentSubPage: SettingsSubPa
         "tts" -> currentSubPage is SettingsSubPage.TTS
         "usage_stats" -> currentSubPage is SettingsSubPage.USAGE_STATS
         "export_import" -> currentSubPage is SettingsSubPage.EXPORT_IMPORT
+        "r2_settings" -> currentSubPage is SettingsSubPage.R2_SETTINGS
         "logcat" -> currentSubPage is SettingsSubPage.LOGCAT
         "network_log" -> currentSubPage is SettingsSubPage.NETWORK_LOG
         "about" -> currentSubPage is SettingsSubPage.ABOUT
@@ -262,6 +272,7 @@ private sealed class SettingsSubPage {
     data object SKILLS : SettingsSubPage()
     data class SKILL_DETAIL(val id: String?) : SettingsSubPage()
     data object TTS : SettingsSubPage()
+    data object R2_SETTINGS : SettingsSubPage()
 }
 
 /**
@@ -729,6 +740,12 @@ private fun TabletSettingsLayout(
                             showTopBar = false
                         )
                     }
+                    is SettingsSubPage.R2_SETTINGS -> {
+                        R2SettingsScreen(
+                            settingsManager = settingsManager,
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) }
+                        )
+                    }
                 }
             }
         }
@@ -1009,6 +1026,12 @@ private fun PhoneSettingsLayout(
                             locale = java.util.Locale.forLanguageTag(newTtsSettings.language)
                         )
                     },
+                    onBack = { onSubPageChange(SettingsSubPage.MAIN) }
+                )
+            }
+            is SettingsSubPage.R2_SETTINGS -> {
+                R2SettingsScreen(
+                    settingsManager = settingsManager,
                     onBack = { onSubPageChange(SettingsSubPage.MAIN) }
                 )
             }

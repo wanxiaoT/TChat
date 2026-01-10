@@ -259,7 +259,8 @@ data class AppSettings(
     val providerGridColumnCount: Int = 1,  // 服务商列表网格列数（1-3）
     val regexRules: List<RegexRule> = emptyList(),  // 全局正则表达式规则
     val tokenRecordingStatus: TokenRecordingStatus = TokenRecordingStatus.ENABLED,  // Token 记录状态
-    val ttsSettings: TtsSettings = TtsSettings()  // TTS 语音朗读设置
+    val ttsSettings: TtsSettings = TtsSettings(),  // TTS 语音朗读设置
+    val r2Settings: R2Settings = R2Settings()  // Cloudflare R2 云备份设置
 ) {
     // 兼容旧代码
     val defaultProviderId: String get() = currentProviderId

@@ -25,6 +25,9 @@ import com.composables.icons.lucide.*
 import com.tchat.data.database.entity.KnowledgeBaseEntity
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.wanxiaot.util.CloudBackupInfo
+import com.tchat.wanxiaot.util.CloudBackupManager
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 
@@ -66,6 +69,21 @@ fun ExportImportScreenEnhanced(
 
     val skills by viewModel.skills.collectAsState()
     val selectedSkillIds by viewModel.selectedSkillIds.collectAsState()
+
+    // 云备份相关状态
+    val r2Settings = settingsManager.settings.collectAsState().value.r2Settings
+    val cloudBackupManager = remember(context, settingsManager) {
+        CloudBackupManager(context, settingsManager)
+    }
+    var showCloudBackupList by remember { mutableStateOf(false) }
+    var cloudBackups by remember { mutableStateOf<List<CloudBackupInfo>>(emptyList()) }
+    var isLoadingCloudBackups by remember { mutableStateOf(false) }
+    var cloudBackupError by remember { mutableStateOf<String?>(null) }
+    var isUploadingToCloud by remember { mutableStateOf(false) }
+    var showCloudRestoreConfirm by remember { mutableStateOf<CloudBackupInfo?>(null) }
+    var isDownloadingFromCloud by remember { mutableStateOf(false) }
+
+    val scope = rememberCoroutineScope()
 
     // 文件选择器 - 数据库备份（保存 zip 文件）
     val backupFileLauncher = rememberLauncherForActivityResult(
@@ -222,6 +240,58 @@ fun ExportImportScreenEnhanced(
                             onRestore = {
                                 restoreFileLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*"))
                             }
+                        )
+                    }
+
+                    // 云备份
+                    item {
+                        CloudBackupSection(
+                            isConfigured = r2Settings.isConfigured,
+                            bucketName = r2Settings.bucketName,
+                            isUploading = isUploadingToCloud,
+                            onUpload = {
+                                // 先创建本地备份，然后上传
+                                scope.launch {
+                                    isUploadingToCloud = true
+                                    try {
+                                        // 创建临时备份文件
+                                        val backupFile = viewModel.createBackupFile()
+                                        if (backupFile != null) {
+                                            val result = cloudBackupManager.uploadBackup(backupFile)
+                                            if (result.isSuccess) {
+                                                Toast.makeText(context, "上传成功", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, "上传失败: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                            }
+                                            // 删除临时文件
+                                            backupFile.delete()
+                                        } else {
+                                            Toast.makeText(context, "创建备份文件失败", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "上传失败: ${e.message}", Toast.LENGTH_LONG).show()
+                                    } finally {
+                                        isUploadingToCloud = false
+                                    }
+                                }
+                            },
+                            onShowList = {
+                                // 加载云端备份列表
+                                scope.launch {
+                                    isLoadingCloudBackups = true
+                                    cloudBackupError = null
+                                    val result = cloudBackupManager.listBackups()
+                                    if (result.isSuccess) {
+                                        cloudBackups = result.getOrDefault(emptyList())
+                                        showCloudBackupList = true
+                                    } else {
+                                        cloudBackupError = result.exceptionOrNull()?.message
+                                        Toast.makeText(context, "获取列表失败: ${cloudBackupError}", Toast.LENGTH_LONG).show()
+                                    }
+                                    isLoadingCloudBackups = false
+                                }
+                            },
+                            isLoadingList = isLoadingCloudBackups
                         )
                     }
 
@@ -517,6 +587,120 @@ fun ExportImportScreenEnhanced(
                 }
             },
             password = encryptionPassword.takeIf { it.isNotEmpty() }
+        )
+    }
+
+    // 云备份列表对话框
+    if (showCloudBackupList) {
+        CloudBackupListDialog(
+            backups = cloudBackups,
+            cloudBackupManager = cloudBackupManager,
+            onDismiss = { showCloudBackupList = false },
+            onRestore = { backup ->
+                showCloudRestoreConfirm = backup
+            },
+            onDelete = { backup ->
+                scope.launch {
+                    val result = cloudBackupManager.deleteBackup(backup.key)
+                    if (result.isSuccess) {
+                        cloudBackups = cloudBackups.filter { it.key != backup.key }
+                        Toast.makeText(context, "删除成功", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "删除失败: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        )
+    }
+
+    // 云备份恢复确认对话框
+    showCloudRestoreConfirm?.let { backup ->
+        AlertDialog(
+            onDismissRequest = { showCloudRestoreConfirm = null },
+            icon = {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("确认从云端恢复") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("将从云端下载并恢复备份：")
+                    Text(
+                        text = backup.key,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("恢复数据库将会：")
+                    Text("• 覆盖当前所有聊天记录")
+                    Text("• 覆盖所有助手配置")
+                    Text("• 覆盖所有知识库数据")
+                    Text("• 覆盖所有其他数据")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "此操作不可撤销，请确保已备份当前数据！",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val backupToRestore = backup
+                        showCloudRestoreConfirm = null
+                        showCloudBackupList = false
+
+                        scope.launch {
+                            isDownloadingFromCloud = true
+                            try {
+                                // 下载到临时文件
+                                val tempFile = File(context.cacheDir, "cloud_restore_${System.currentTimeMillis()}.zip")
+                                val downloadResult = cloudBackupManager.downloadBackup(backupToRestore.key, tempFile)
+
+                                if (downloadResult.isSuccess) {
+                                    // 恢复数据库
+                                    viewModel.restoreDatabaseFromFile(tempFile)
+                                    tempFile.delete()
+                                } else {
+                                    Toast.makeText(context, "下载失败: ${downloadResult.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "恢复失败: ${e.message}", Toast.LENGTH_LONG).show()
+                            } finally {
+                                isDownloadingFromCloud = false
+                            }
+                        }
+                    },
+                    enabled = !isDownloadingFromCloud,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    if (isDownloadingFromCloud) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onError
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("下载中...")
+                    } else {
+                        Text("确认恢复")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showCloudRestoreConfirm = null },
+                    enabled = !isDownloadingFromCloud
+                ) {
+                    Text("取消")
+                }
+            }
         )
     }
 }
@@ -1206,6 +1390,298 @@ private fun DatabaseBackupSection(
             },
             dismissButton = {
                 TextButton(onClick = { showRestoreConfirmDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+}
+
+/**
+ * 云备份模块
+ */
+@Composable
+private fun CloudBackupSection(
+    isConfigured: Boolean,
+    bucketName: String,
+    isUploading: Boolean,
+    onUpload: () -> Unit,
+    onShowList: () -> Unit,
+    isLoadingList: Boolean,
+    modifier: Modifier = Modifier
+) {
+    ElevatedCard(
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // 标题和图标
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    imageVector = Lucide.CloudUpload,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "云备份",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "将备份文件同步到 Cloudflare R2 云存储",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // 配置状态
+            Surface(
+                color = if (isConfigured) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+                shape = MaterialTheme.shapes.small
+            ) {
+                Row(
+                    modifier = Modifier.padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (isConfigured) Lucide.CircleCheck else Lucide.CircleAlert,
+                        contentDescription = null,
+                        tint = if (isConfigured) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = if (isConfigured) {
+                            "已配置 ($bucketName)"
+                        } else {
+                            "未配置 - 请先在设置中配置 R2"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isConfigured) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            }
+
+            // 操作按钮
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onUpload,
+                    enabled = isConfigured && !isUploading,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (isUploading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(Lucide.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (isUploading) "上传中..." else "上传备份")
+                }
+
+                Button(
+                    onClick = onShowList,
+                    enabled = isConfigured && !isLoadingList,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (isLoadingList) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    } else {
+                        Icon(Lucide.List, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (isLoadingList) "加载中..." else "云端列表")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 云备份列表对话框
+ */
+@Composable
+fun CloudBackupListDialog(
+    backups: List<CloudBackupInfo>,
+    cloudBackupManager: CloudBackupManager,
+    onDismiss: () -> Unit,
+    onRestore: (CloudBackupInfo) -> Unit,
+    onDelete: (CloudBackupInfo) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Lucide.Cloud, contentDescription = null) },
+        title = { Text("云端备份列表") },
+        text = {
+            if (backups.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Lucide.CloudOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "暂无云端备份",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(backups) { backup ->
+                        CloudBackupItem(
+                            backup = backup,
+                            cloudBackupManager = cloudBackupManager,
+                            onRestore = { onRestore(backup) },
+                            onDelete = { onDelete(backup) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+}
+
+/**
+ * 云备份列表项
+ */
+@Composable
+private fun CloudBackupItem(
+    backup: CloudBackupInfo,
+    cloudBackupManager: CloudBackupManager,
+    onRestore: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = backup.key,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = "${cloudBackupManager.formatFileSize(backup.size)} · ${cloudBackupManager.formatDate(backup.lastModified)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onRestore,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Lucide.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("恢复", style = MaterialTheme.typography.bodySmall)
+                }
+
+                OutlinedButton(
+                    onClick = { showDeleteConfirm = true },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Icon(Lucide.Trash2, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("删除", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+
+    // 删除确认对话框
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            icon = {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("确认删除") },
+            text = { Text("确定要删除云端备份 \"${backup.key}\" 吗？此操作不可撤销。") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("删除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
                     Text("取消")
                 }
             }

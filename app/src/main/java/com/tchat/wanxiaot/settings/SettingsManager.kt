@@ -116,7 +116,8 @@ class SettingsManager(context: Context) {
             } catch (e: Exception) {
                 TokenRecordingStatus.ENABLED
             },
-            ttsSettings = parseTtsSettings(entity.ttsSettingsJson)
+            ttsSettings = parseTtsSettings(entity.ttsSettingsJson),
+            r2Settings = parseR2Settings(entity.r2SettingsJson)
         )
     }
 
@@ -134,7 +135,8 @@ class SettingsManager(context: Context) {
             providerGridColumnCount = settings.providerGridColumnCount,
             regexRulesJson = serializeRegexRules(settings.regexRules),
             tokenRecordingStatus = settings.tokenRecordingStatus.name,
-            ttsSettingsJson = serializeTtsSettings(settings.ttsSettings)
+            ttsSettingsJson = serializeTtsSettings(settings.ttsSettings),
+            r2SettingsJson = serializeR2Settings(settings.r2Settings)
         )
     }
 
@@ -426,6 +428,33 @@ class SettingsManager(context: Context) {
         return obj.toString()
     }
 
+    private fun parseR2Settings(json: String): R2Settings {
+        return try {
+            val obj = JSONObject(json)
+            R2Settings(
+                enabled = obj.optBoolean("enabled", false),
+                accountId = obj.optString("accountId", ""),
+                accessKeyId = obj.optString("accessKeyId", ""),
+                secretAccessKey = obj.optString("secretAccessKey", ""),
+                bucketName = obj.optString("bucketName", ""),
+                customEndpoint = obj.optString("customEndpoint", "")
+            )
+        } catch (e: Exception) {
+            R2Settings()
+        }
+    }
+
+    private fun serializeR2Settings(settings: R2Settings): String {
+        val obj = JSONObject()
+        obj.put("enabled", settings.enabled)
+        obj.put("accountId", settings.accountId)
+        obj.put("accessKeyId", settings.accessKeyId)
+        obj.put("secretAccessKey", settings.secretAccessKey)
+        obj.put("bucketName", settings.bucketName)
+        obj.put("customEndpoint", settings.customEndpoint)
+        return obj.toString()
+    }
+
     fun updateSettings(settings: AppSettings) {
         _settings.value = settings
         scope.launch {
@@ -690,5 +719,15 @@ class SettingsManager(context: Context) {
         scope.launch {
             persistRoundRobinIndex(providerId, 0)
         }
+    }
+
+    // ==================== R2 云备份设置管理 ====================
+
+    /**
+     * 更新 R2 云备份设置
+     */
+    fun updateR2Settings(r2Settings: R2Settings) {
+        val currentSettings = _settings.value
+        updateSettings(currentSettings.copy(r2Settings = r2Settings))
     }
 }
