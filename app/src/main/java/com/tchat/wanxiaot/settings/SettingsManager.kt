@@ -117,7 +117,8 @@ class SettingsManager(context: Context) {
                 TokenRecordingStatus.ENABLED
             },
             ttsSettings = parseTtsSettings(entity.ttsSettingsJson),
-            r2Settings = parseR2Settings(entity.r2SettingsJson)
+            r2Settings = parseR2Settings(entity.r2SettingsJson),
+            language = entity.language
         )
     }
 
@@ -136,7 +137,8 @@ class SettingsManager(context: Context) {
             regexRulesJson = serializeRegexRules(settings.regexRules),
             tokenRecordingStatus = settings.tokenRecordingStatus.name,
             ttsSettingsJson = serializeTtsSettings(settings.ttsSettings),
-            r2SettingsJson = serializeR2Settings(settings.r2Settings)
+            r2SettingsJson = serializeR2Settings(settings.r2Settings),
+            language = settings.language
         )
     }
 
@@ -729,5 +731,15 @@ class SettingsManager(context: Context) {
     fun updateR2Settings(r2Settings: R2Settings) {
         val currentSettings = _settings.value
         updateSettings(currentSettings.copy(r2Settings = r2Settings))
+    }
+
+    // ==================== 语言设置管理 ====================
+
+    /**
+     * 设置应用显示语言
+     */
+    fun setLanguage(languageCode: String) {
+        val currentSettings = _settings.value
+        updateSettings(currentSettings.copy(language = languageCode))
     }
 }

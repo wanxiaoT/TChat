@@ -56,6 +56,11 @@ import com.tchat.wanxiaot.ui.deepresearch.DeepResearchScreen
 import com.tchat.wanxiaot.ui.deepresearch.DeepResearchViewModel
 import com.tchat.wanxiaot.ui.theme.TChatTheme
 import com.tchat.wanxiaot.util.MultiKeyAIProvider
+import com.tchat.wanxiaot.i18n.Language
+import com.tchat.wanxiaot.i18n.strings
+import com.tchat.wanxiaot.i18n.StringsZhCN
+import com.tchat.wanxiaot.i18n.StringsZhTW
+import com.tchat.wanxiaot.i18n.StringsEn
 import com.tchat.data.deepresearch.DeepResearchManager
 import com.tchat.data.deepresearch.ResearchState
 import com.tchat.data.deepresearch.model.DeepResearchConfig
@@ -135,7 +140,10 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            TChatTheme {
+            val settings by settingsManager.settings.collectAsState()
+            val language = Language.fromCode(settings.language)
+
+            TChatTheme(language = language) {
                 MainScreen(
                     settingsManager = settingsManager,
                     database = database,
@@ -164,11 +172,21 @@ class MainActivity : ComponentActivity() {
         val existingAssistant = assistantDao.getAssistantById(DEFAULT_ASSISTANT_ID)
 
         if (existingAssistant == null) {
+            // 根据当前语言获取字符串
+            val currentLanguage = Language.fromCode(settingsManager.settings.first().language)
+            val actualLanguage = Language.getActualLanguage(currentLanguage)
+            val localStrings = when (actualLanguage) {
+                Language.ZH_CN -> StringsZhCN
+                Language.ZH_TW -> StringsZhTW
+                Language.EN -> StringsEn
+                Language.SYSTEM -> StringsZhCN // 不会到达这里
+            }
+
             // 创建默认助手
             val now = System.currentTimeMillis()
             val defaultAssistant = AssistantEntity(
                 id = DEFAULT_ASSISTANT_ID,
-                name = "默认助手",
+                name = localStrings.assistantsDefault,
                 avatar = null,
                 systemPrompt = "你是一个有帮助的AI助手。",
                 temperature = null,
@@ -520,7 +538,7 @@ fun MainScreen(
                             }) {
                                 Icon(
                                     imageVector = Icons.Default.Menu,
-                                    contentDescription = "菜单"
+                                    contentDescription = strings.chatMenu
                                 )
                             }
                         }
@@ -605,7 +623,18 @@ fun MainScreen(
                                         currentNavState = MainNavState.DEEP_RESEARCH
                                     }
                                 },
-                                isDeepResearching = isDeepResearching
+                                isDeepResearching = isDeepResearching,
+                                // i18n strings
+                                inputHint = strings.chatInputHint,
+                                sendContentDescription = strings.chatSendMessage,
+                                toolsText = strings.chatTools,
+                                toolsWithCountFormat = strings.chatToolsWithCount,
+                                deepResearchText = strings.chatDeepResearch,
+                                deepResearchRunningText = strings.chatDeepResearchRunning,
+                                deepResearchInProgressText = strings.chatDeepResearchInProgress,
+                                speakingAssistantLabel = strings.groupChatSpeakingAssistant,
+                                selectAssistantHint = strings.groupChatSelectAssistant,
+                                pleaseSelectAssistantFirst = strings.groupChatPleaseSelectAssistant
                             )
                         }
                         // 单聊模式
@@ -744,7 +773,15 @@ fun MainScreen(
                                         currentNavState = MainNavState.DEEP_RESEARCH
                                     }
                                 },
-                                isDeepResearching = isDeepResearching
+                                isDeepResearching = isDeepResearching,
+                                // i18n strings
+                                inputHint = strings.chatInputHint,
+                                sendContentDescription = strings.chatSendMessage,
+                                toolsText = strings.chatTools,
+                                toolsWithCountFormat = strings.chatToolsWithCount,
+                                deepResearchText = strings.chatDeepResearch,
+                                deepResearchRunningText = strings.chatDeepResearchRunning,
+                                deepResearchInProgressText = strings.chatDeepResearchInProgress
                             )
                         }
                         repository == null -> {
@@ -752,10 +789,10 @@ fun MainScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center
                             ) {
-                                Text("请先添加服务商配置")
+                                Text(strings.chatNoProvider)
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Button(onClick = { currentNavState = MainNavState.SETTINGS }) {
-                                    Text("打开设置")
+                                    Text(strings.chatOpenSettings)
                                 }
                             }
                         }

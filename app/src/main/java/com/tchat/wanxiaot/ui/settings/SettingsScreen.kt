@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.BookOpen
 import com.composables.icons.lucide.Download
+import com.composables.icons.lucide.Globe
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.ScrollText
 import com.composables.icons.lucide.Settings2
@@ -48,6 +49,8 @@ import com.tchat.data.repository.impl.KnowledgeRepositoryImpl
 import com.tchat.data.service.KnowledgeService
 import com.tchat.data.tts.TtsService
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.wanxiaot.i18n.Language
+import com.tchat.wanxiaot.i18n.strings
 import com.tchat.wanxiaot.ui.assistant.AssistantDetailScreen
 import com.tchat.wanxiaot.ui.assistant.AssistantDetailViewModel
 import com.tchat.wanxiaot.ui.assistant.AssistantScreen
@@ -99,128 +102,137 @@ private data class SettingsItemData(
  * 获取所有设置项列表 - 单一数据源
  * 修改此列表会同时影响手机和平板模式
  */
+@Composable
 private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
     // 通用分组
     SettingsItemData(
         id = "assistants",
-        group = "通用",
-        title = "助手",
-        subtitle = "管理AI助手和本地工具",
+        group = strings.settingsGeneral,
+        title = strings.settingsAssistants,
+        subtitle = strings.settingsAssistantsDesc,
         icon = SettingsIcon.Lucide(Lucide.Bot),
         targetPage = SettingsSubPage.ASSISTANTS
     ),
     SettingsItemData(
         id = "group_chat",
-        group = "通用",
-        title = "助手群聊",
-        subtitle = "创建多助手协作对话",
+        group = strings.settingsGeneral,
+        title = strings.settingsGroupChat,
+        subtitle = strings.settingsGroupChatDesc,
         icon = SettingsIcon.Lucide(Lucide.Users),
         targetPage = SettingsSubPage.GROUP_CHAT
     ),
     SettingsItemData(
         id = "providers",
-        group = "通用",
-        title = "服务商",
-        subtitle = "管理 AI 服务商配置",
+        group = strings.settingsGeneral,
+        title = strings.settingsProviders,
+        subtitle = strings.settingsProvidersDesc,
         icon = SettingsIcon.Lucide(Lucide.Server),
         targetPage = SettingsSubPage.PROVIDERS
     ),
     SettingsItemData(
         id = "knowledge",
-        group = "通用",
-        title = "知识库",
-        subtitle = "管理RAG知识库和向量检索",
+        group = strings.settingsGeneral,
+        title = strings.settingsKnowledge,
+        subtitle = strings.settingsKnowledgeDesc,
         icon = SettingsIcon.Lucide(Lucide.BookOpen),
         targetPage = SettingsSubPage.KNOWLEDGE
     ),
     SettingsItemData(
         id = "mcp",
-        group = "通用",
-        title = "MCP 服务器",
-        subtitle = "管理 MCP 工具服务器连接",
+        group = strings.settingsGeneral,
+        title = strings.settingsMcp,
+        subtitle = strings.settingsMcpDesc,
         icon = SettingsIcon.Lucide(Lucide.Cloud),
         targetPage = SettingsSubPage.MCP
     ),
     SettingsItemData(
         id = "deep_research",
-        group = "通用",
-        title = "深度研究",
-        subtitle = "AI 驱动的迭代式深度研究",
+        group = strings.settingsGeneral,
+        title = strings.settingsDeepResearch,
+        subtitle = strings.settingsDeepResearchDesc,
         icon = SettingsIcon.Lucide(Lucide.Telescope),
         targetPage = SettingsSubPage.DEEP_RESEARCH
     ),
     SettingsItemData(
         id = "regex_rules",
-        group = "通用",
-        title = "正则表达式",
-        subtitle = "管理 AI 输出内容清理规则",
+        group = strings.settingsGeneral,
+        title = strings.settingsRegex,
+        subtitle = strings.settingsRegexDesc,
         icon = SettingsIcon.Lucide(Lucide.Regex),
         targetPage = SettingsSubPage.REGEX_RULES
     ),
     SettingsItemData(
         id = "skills",
-        group = "通用",
-        title = "Skills",
-        subtitle = "管理 AI Skills 和自动触发规则",
+        group = strings.settingsGeneral,
+        title = strings.settingsSkills,
+        subtitle = strings.settingsSkillsDesc,
         icon = SettingsIcon.Lucide(Lucide.Sparkles),
         targetPage = SettingsSubPage.SKILLS
     ),
     SettingsItemData(
         id = "tts",
-        group = "通用",
-        title = "语音朗读",
-        subtitle = "TTS 语音合成设置",
+        group = strings.settingsGeneral,
+        title = strings.settingsTts,
+        subtitle = strings.settingsTtsDesc,
         icon = SettingsIcon.Lucide(Lucide.Volume2),
         targetPage = SettingsSubPage.TTS
     ),
     // 其他分组
     SettingsItemData(
         id = "usage_stats",
-        group = "其他",
-        title = "使用统计",
-        subtitle = "查看 Token 和模型调用统计",
+        group = strings.settingsOther,
+        title = strings.settingsUsageStats,
+        subtitle = strings.settingsUsageStatsDesc,
         icon = SettingsIcon.Lucide(Lucide.ChartColumn),
         targetPage = SettingsSubPage.USAGE_STATS
     ),
     SettingsItemData(
         id = "export_import",
-        group = "其他",
-        title = "导出/导入",
-        subtitle = "导出或导入配置、知识库等数据",
+        group = strings.settingsOther,
+        title = strings.settingsExportImport,
+        subtitle = strings.settingsExportImportDesc,
         icon = SettingsIcon.Lucide(Lucide.Download),
         targetPage = SettingsSubPage.EXPORT_IMPORT
     ),
     SettingsItemData(
         id = "r2_settings",
-        group = "其他",
-        title = "云备份",
-        subtitle = "Cloudflare R2 云端备份设置",
+        group = strings.settingsOther,
+        title = strings.settingsCloudBackup,
+        subtitle = strings.settingsCloudBackupDesc,
         icon = SettingsIcon.Lucide(Lucide.CloudUpload),
         targetPage = SettingsSubPage.R2_SETTINGS
     ),
     SettingsItemData(
         id = "logcat",
-        group = "其他",
-        title = "日志查看",
-        subtitle = "查看应用运行日志",
+        group = strings.settingsOther,
+        title = strings.settingsLogcat,
+        subtitle = strings.settingsLogcatDesc,
         icon = SettingsIcon.Lucide(Lucide.ScrollText),
         targetPage = SettingsSubPage.LOGCAT
     ),
     SettingsItemData(
         id = "network_log",
-        group = "其他",
-        title = "网络日志",
-        subtitle = "查看 API 请求和响应信息",
+        group = strings.settingsOther,
+        title = strings.settingsNetworkLog,
+        subtitle = strings.settingsNetworkLogDesc,
         icon = SettingsIcon.Lucide(Lucide.Network),
         targetPage = SettingsSubPage.NETWORK_LOG
     ),
     SettingsItemData(
         id = "about",
-        group = "其他",
-        title = "关于",
-        subtitle = "版本信息与开发者",
+        group = strings.settingsOther,
+        title = strings.settingsAbout,
+        subtitle = strings.settingsAboutDesc,
         icon = SettingsIcon.Lucide(Lucide.Info),
         targetPage = SettingsSubPage.ABOUT
+    ),
+    SettingsItemData(
+        id = "language",
+        group = strings.settingsOther,
+        title = strings.settingsLanguage,
+        subtitle = strings.settingsLanguageDesc,
+        icon = SettingsIcon.Lucide(Lucide.Globe),
+        targetPage = SettingsSubPage.LANGUAGE
     )
 )
 
@@ -244,6 +256,7 @@ private fun isSettingsItemSelected(itemId: String, currentSubPage: SettingsSubPa
         "logcat" -> currentSubPage is SettingsSubPage.LOGCAT
         "network_log" -> currentSubPage is SettingsSubPage.NETWORK_LOG
         "about" -> currentSubPage is SettingsSubPage.ABOUT
+        "language" -> currentSubPage is SettingsSubPage.LANGUAGE
         else -> false
     }
 }
@@ -273,6 +286,7 @@ private sealed class SettingsSubPage {
     data class SKILL_DETAIL(val id: String?) : SettingsSubPage()
     data object TTS : SettingsSubPage()
     data object R2_SETTINGS : SettingsSubPage()
+    data object LANGUAGE : SettingsSubPage()
 }
 
 /**
@@ -425,7 +439,7 @@ private fun TabletSettingsLayout(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .focusRequester(focusRequester),
-                                placeholder = { Text("搜索设置...") },
+                                placeholder = { Text(strings.settingsSearchHint) },
                                 singleLine = true,
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = Color.Transparent,
@@ -435,7 +449,7 @@ private fun TabletSettingsLayout(
                                 )
                             )
                         } else {
-                            Text("设置")
+                            Text(strings.settingsTitle)
                         }
                     },
                     navigationIcon = {
@@ -449,7 +463,7 @@ private fun TabletSettingsLayout(
                         }) {
                             Icon(
                                 imageVector = if (showSearchBar) Lucide.X else Lucide.ArrowLeft,
-                                contentDescription = if (showSearchBar) "关闭搜索" else "返回"
+                                contentDescription = if (showSearchBar) strings.close else strings.back
                             )
                         }
                     },
@@ -458,7 +472,7 @@ private fun TabletSettingsLayout(
                             IconButton(onClick = { showSearchBar = true }) {
                                 Icon(
                                     imageVector = Lucide.Search,
-                                    contentDescription = "搜索"
+                                    contentDescription = strings.search
                                 )
                             }
                         }
@@ -511,7 +525,7 @@ private fun TabletSettingsLayout(
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    text = "请从左侧选择设置项",
+                                    text = strings.settingsSelectHint,
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -743,6 +757,16 @@ private fun TabletSettingsLayout(
                     is SettingsSubPage.R2_SETTINGS -> {
                         R2SettingsScreen(
                             settingsManager = settingsManager,
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) }
+                        )
+                    }
+                    is SettingsSubPage.LANGUAGE -> {
+                        val settings by settingsManager.settings.collectAsState()
+                        LanguageScreen(
+                            currentLanguage = Language.fromCode(settings.language),
+                            onLanguageSelected = { language ->
+                                settingsManager.setLanguage(language.code)
+                            },
                             onBack = { onSubPageChange(SettingsSubPage.MAIN) }
                         )
                     }
@@ -1035,6 +1059,16 @@ private fun PhoneSettingsLayout(
                     onBack = { onSubPageChange(SettingsSubPage.MAIN) }
                 )
             }
+            is SettingsSubPage.LANGUAGE -> {
+                val settings by settingsManager.settings.collectAsState()
+                LanguageScreen(
+                    currentLanguage = Language.fromCode(settings.language),
+                    onLanguageSelected = { language ->
+                        settingsManager.setLanguage(language.code)
+                    },
+                    onBack = { onSubPageChange(SettingsSubPage.MAIN) }
+                )
+            }
         }
     }
 }
@@ -1050,18 +1084,18 @@ private fun SettingsMainContent(
     onSubPageChange: (SettingsSubPage) -> Unit
 ) {
     val allItems = getAllSettingsItems()
-    val groupOrder = listOf("通用", "其他")
+    val groupOrder = listOf(strings.settingsGeneral, strings.settingsOther)
     val groupedItems = allItems.groupBy { it.group }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("设置") },
+                title = { Text(strings.settingsTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Lucide.ArrowLeft,
-                            contentDescription = "返回"
+                            contentDescription = strings.back
                         )
                     }
                 },
@@ -1190,7 +1224,7 @@ private fun SettingsListContent(
     }
 
     // 按组分组（保持顺序）
-    val groupOrder = listOf("通用", "其他")
+    val groupOrder = listOf(strings.settingsGeneral, strings.settingsOther)
     val groupedItems = filteredItems.groupBy { it.group }
 
     Column(
@@ -1209,7 +1243,7 @@ private fun SettingsListContent(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "未找到匹配的设置项",
+                    text = strings.settingsNoResults,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

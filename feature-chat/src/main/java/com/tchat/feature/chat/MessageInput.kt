@@ -15,7 +15,10 @@ fun MessageInput(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // i18n strings
+    inputHint: String = "输入消息...",
+    sendContentDescription: String = "发送"
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -36,7 +39,7 @@ fun MessageInput(
                 modifier = Modifier.weight(1f),
                 placeholder = {
                     Text(
-                        "输入消息...",
+                        inputHint,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
@@ -65,7 +68,7 @@ fun MessageInput(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "发送"
+                    contentDescription = sendContentDescription
                 )
             }
         }

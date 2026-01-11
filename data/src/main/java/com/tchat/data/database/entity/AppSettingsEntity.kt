@@ -20,5 +20,6 @@ data class AppSettingsEntity(
     val regexRulesJson: String = "[]", // JSON序列化的正则规则列表
     val tokenRecordingStatus: String = "ENABLED", // Token记录状态: ENABLED, PAUSED, DISABLED
     val ttsSettingsJson: String = "{}", // JSON序列化的TTS设置
-    val r2SettingsJson: String = "{}" // JSON序列化的R2云备份设置
+    val r2SettingsJson: String = "{}", // JSON序列化的R2云备份设置
+    val language: String = "zh-CN" // 应用显示语言
 )

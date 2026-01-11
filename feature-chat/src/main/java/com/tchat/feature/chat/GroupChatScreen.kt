@@ -53,7 +53,18 @@ fun GroupChatScreen(
     assistants: List<Assistant> = emptyList(),
     // 深度研究支持
     onDeepResearch: ((String?) -> Unit)? = null,
-    isDeepResearching: Boolean = false
+    isDeepResearching: Boolean = false,
+    // i18n strings
+    inputHint: String = "输入消息...",
+    sendContentDescription: String = "发送",
+    toolsText: String = "工具",
+    toolsWithCountFormat: String = "工具 (%d)",
+    deepResearchText: String = "深度研究",
+    deepResearchRunningText: String = "研究中",
+    deepResearchInProgressText: String = "深度研究进行中...",
+    speakingAssistantLabel: String = "发言助手:",
+    selectAssistantHint: String = "选择助手",
+    pleaseSelectAssistantFirst: String = "请先选择助手"
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val actualChatId by viewModel.actualChatId.collectAsState()
@@ -148,7 +159,9 @@ fun GroupChatScreen(
                     Column {
                         // 深度研究进度提示
                         AnimatedVisibility(visible = isDeepResearching) {
-                            DeepResearchIndicator()
+                            GroupDeepResearchIndicator(
+                                text = deepResearchInProgressText
+                            )
                         }
 
                         // 助手选择器（手动模式）
@@ -160,7 +173,9 @@ fun GroupChatScreen(
                                 currentSpeakerId = currentSpeakerId,
                                 onAssistantSelected = { assistantId ->
                                     viewModel.selectAssistant(assistantId)
-                                }
+                                },
+                                speakingAssistantLabel = speakingAssistantLabel,
+                                selectAssistantHint = selectAssistantHint
                             )
                         }
 
@@ -184,7 +199,11 @@ fun GroupChatScreen(
                                         }
                                     }
                                 },
-                                isDeepResearching = isDeepResearching
+                                isDeepResearching = isDeepResearching,
+                                toolsText = toolsText,
+                                toolsWithCountFormat = toolsWithCountFormat,
+                                deepResearchText = deepResearchText,
+                                deepResearchRunningText = deepResearchRunningText
                             )
                         }
 
@@ -198,7 +217,7 @@ fun GroupChatScreen(
                                     if (currentGroupChat?.activationStrategy == GroupActivationStrategy.MANUAL
                                         && currentSpeakerId == null) {
                                         scope.launch {
-                                            snackbarHostState.showSnackbar("请先选择助手")
+                                            snackbarHostState.showSnackbar(pleaseSelectAssistantFirst)
                                         }
                                         return@MessageInput
                                     }
@@ -210,7 +229,9 @@ fun GroupChatScreen(
                                     )
                                     inputText = ""
                                 }
-                            }
+                            },
+                            inputHint = inputHint,
+                            sendContentDescription = sendContentDescription
                         )
                     }
                 }
@@ -235,7 +256,9 @@ fun GroupChatScreen(
 private fun AssistantSelector(
     assistants: List<Assistant>,
     currentSpeakerId: String?,
-    onAssistantSelected: (String) -> Unit
+    onAssistantSelected: (String) -> Unit,
+    speakingAssistantLabel: String = "发言助手:",
+    selectAssistantHint: String = "选择助手"
 ) {
     var expanded by remember { mutableStateOf(false) }
     val currentAssistant = assistants.find { it.id == currentSpeakerId }
@@ -252,7 +275,7 @@ private fun AssistantSelector(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = "发言助手:",
+                text = speakingAssistantLabel,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -270,7 +293,7 @@ private fun AssistantSelector(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = currentAssistant?.name ?: "选择助手",
+                            text = currentAssistant?.name ?: selectAssistantHint,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -315,7 +338,9 @@ private fun AssistantSelector(
  * 深度研究进度指示器
  */
 @Composable
-private fun DeepResearchIndicator() {
+private fun GroupDeepResearchIndicator(
+    text: String = "深度研究进行中..."
+) {
     Surface(
         color = MaterialTheme.colorScheme.primaryContainer,
         tonalElevation = 2.dp
@@ -339,7 +364,7 @@ private fun DeepResearchIndicator() {
                 tint = MaterialTheme.colorScheme.primary
             )
             Text(
-                text = "深度研究进行中...",
+                text = text,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )

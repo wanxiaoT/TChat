@@ -11,6 +11,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import com.tchat.wanxiaot.i18n.Language
+import com.tchat.wanxiaot.i18n.ProvideStrings
 
 // Material You 完整配色方案
 private val LightColorScheme = lightColorScheme(
@@ -90,6 +92,7 @@ val Shapes = Shapes(
 fun TChatTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
+    language: Language = Language.ZH_CN,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -113,10 +116,12 @@ fun TChatTheme(
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        shapes = Shapes,
-        typography = Typography,
-        content = content
-    )
+    ProvideStrings(language = language) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            shapes = Shapes,
+            typography = Typography,
+            content = content
+        )
+    }
 }

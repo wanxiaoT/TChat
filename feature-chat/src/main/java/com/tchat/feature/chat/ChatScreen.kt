@@ -48,7 +48,15 @@ fun ChatScreen(
     shouldRecordTokens: Boolean = true,
     // 深度研究支持
     onDeepResearch: ((String?) -> Unit)? = null,
-    isDeepResearching: Boolean = false
+    isDeepResearching: Boolean = false,
+    // i18n strings
+    inputHint: String = "输入消息...",
+    sendContentDescription: String = "发送",
+    toolsText: String = "工具",
+    toolsWithCountFormat: String = "工具 (%d)",
+    deepResearchText: String = "深度研究",
+    deepResearchRunningText: String = "研究中",
+    deepResearchInProgressText: String = "深度研究进行中..."
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val actualChatId by viewModel.actualChatId.collectAsState()
@@ -140,7 +148,9 @@ fun ChatScreen(
                     Column {
                         // 深度研究进度提示
                         AnimatedVisibility(visible = isDeepResearching) {
-                            DeepResearchIndicator()
+                            DeepResearchIndicator(
+                                text = deepResearchInProgressText
+                            )
                         }
 
                         // 工具栏
@@ -164,7 +174,11 @@ fun ChatScreen(
                                         }
                                     }
                                 },
-                                isDeepResearching = isDeepResearching
+                                isDeepResearching = isDeepResearching,
+                                toolsText = toolsText,
+                                toolsWithCountFormat = toolsWithCountFormat,
+                                deepResearchText = deepResearchText,
+                                deepResearchRunningText = deepResearchRunningText
                             )
                         }
 
@@ -177,7 +191,9 @@ fun ChatScreen(
                                     viewModel.sendMessage(actualChatId ?: chatId, inputText)
                                     inputText = ""
                                 }
-                            }
+                            },
+                            inputHint = inputHint,
+                            sendContentDescription = sendContentDescription
                         )
                     }
                 }
@@ -207,7 +223,12 @@ internal fun InputToolbar(
     onToolsClick: () -> Unit = {},
     // 深度研究支持
     onDeepResearch: (() -> Unit)? = null,
-    isDeepResearching: Boolean = false
+    isDeepResearching: Boolean = false,
+    // i18n strings
+    toolsText: String = "工具",
+    toolsWithCountFormat: String = "工具 (%d)",
+    deepResearchText: String = "深度研究",
+    deepResearchRunningText: String = "研究中"
 ) {
     var modelMenuExpanded by remember { mutableStateOf(false) }
 
@@ -331,7 +352,7 @@ internal fun InputToolbar(
                             )
                         }
                         Text(
-                            text = if (isDeepResearching) "研究中" else "深度研究",
+                            text = if (isDeepResearching) deepResearchRunningText else deepResearchText,
                             style = MaterialTheme.typography.bodySmall,
                             color = if (isDeepResearching)
                                 MaterialTheme.colorScheme.onTertiaryContainer
@@ -367,7 +388,7 @@ internal fun InputToolbar(
                             MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = if (enabledToolsCount > 0) "工具 ($enabledToolsCount)" else "工具",
+                        text = if (enabledToolsCount > 0) toolsWithCountFormat.format(enabledToolsCount) else toolsText,
                         style = MaterialTheme.typography.bodySmall,
                         color = if (enabledToolsCount > 0)
                             MaterialTheme.colorScheme.onPrimaryContainer
@@ -416,7 +437,9 @@ internal fun getModelDisplayName(model: String): String {
  * 深度研究进度指示器
  */
 @Composable
-private fun DeepResearchIndicator() {
+private fun DeepResearchIndicator(
+    text: String = "深度研究进行中..."
+) {
     Surface(
         color = MaterialTheme.colorScheme.primaryContainer,
         tonalElevation = 2.dp
@@ -440,7 +463,7 @@ private fun DeepResearchIndicator() {
                 tint = MaterialTheme.colorScheme.primary
             )
             Text(
-                text = "深度研究进行中...",
+                text = text,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )

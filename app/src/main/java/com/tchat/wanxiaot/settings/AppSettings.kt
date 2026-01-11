@@ -260,7 +260,8 @@ data class AppSettings(
     val regexRules: List<RegexRule> = emptyList(),  // 全局正则表达式规则
     val tokenRecordingStatus: TokenRecordingStatus = TokenRecordingStatus.ENABLED,  // Token 记录状态
     val ttsSettings: TtsSettings = TtsSettings(),  // TTS 语音朗读设置
-    val r2Settings: R2Settings = R2Settings()  // Cloudflare R2 云备份设置
+    val r2Settings: R2Settings = R2Settings(),  // Cloudflare R2 云备份设置
+    val language: String = "zh-CN"  // 应用显示语言
 ) {
     // 兼容旧代码
     val defaultProviderId: String get() = currentProviderId

@@ -57,7 +57,7 @@ import com.tchat.data.database.entity.SkillEntity
         AppSettingsEntity::class,
         SkillEntity::class
     ],
-    version = 20,
+    version = 21,
     exportSchema = false
 )
 @TypeConverters(LocalToolOptionConverter::class)
@@ -425,6 +425,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // 迁移:为应用设置添加语言字段
+        private val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE app_settings ADD COLUMN language TEXT NOT NULL DEFAULT 'zh-CN'")
+            }
+        }
+
         // 迁移:采用 MessagePart 架构，将旧字段迁移到 partsJson
         private val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -567,7 +574,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                         MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
-                        MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20
+                        MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21
                     )
                     .build()
                 INSTANCE = instance
