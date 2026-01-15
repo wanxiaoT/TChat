@@ -62,6 +62,8 @@ interface Strings {
     val settingsSkillsDesc: String
     val settingsTts: String
     val settingsTtsDesc: String
+    val settingsOcr: String
+    val settingsOcrDesc: String
 
     // 设置项 - 其他
     val settingsUsageStats: String

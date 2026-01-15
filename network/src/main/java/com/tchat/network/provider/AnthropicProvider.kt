@@ -623,7 +623,33 @@ class AnthropicProvider(
                 else -> {
                     // USER 和其他角色
                     msgObj.put("role", msg.role.value)
-                    msgObj.put("content", msg.content)
+                    if (msg.contentParts != null && msg.contentParts.isNotEmpty()) {
+                        // 多模态内容
+                        val contentArray = JSONArray()
+                        msg.contentParts.forEach { part ->
+                            when (part) {
+                                is MessageContent.Text -> {
+                                    val textObj = JSONObject()
+                                    textObj.put("type", "text")
+                                    textObj.put("text", part.text)
+                                    contentArray.put(textObj)
+                                }
+                                is MessageContent.Image -> {
+                                    val imageObj = JSONObject()
+                                    imageObj.put("type", "image")
+                                    val sourceObj = JSONObject()
+                                    sourceObj.put("type", "base64")
+                                    sourceObj.put("media_type", part.mimeType)
+                                    sourceObj.put("data", part.base64Data)
+                                    imageObj.put("source", sourceObj)
+                                    contentArray.put(imageObj)
+                                }
+                            }
+                        }
+                        msgObj.put("content", contentArray)
+                    } else {
+                        msgObj.put("content", msg.content)
+                    }
                 }
             }
             messagesArray.put(msgObj)

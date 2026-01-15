@@ -774,6 +774,14 @@ fun MainScreen(
                                     }
                                 },
                                 isDeepResearching = isDeepResearching,
+                                // 打野助手
+                                onJungleHelperClick = {
+                                    if (!com.tchat.wanxiaot.junglehelper.JungleHelperManager.hasOverlayPermission(context)) {
+                                        com.tchat.wanxiaot.junglehelper.JungleHelperManager.requestOverlayPermission(context)
+                                    } else {
+                                        com.tchat.wanxiaot.junglehelper.JungleHelperManager.toggle(context)
+                                    }
+                                },
                                 // i18n strings
                                 inputHint = strings.chatInputHint,
                                 sendContentDescription = strings.chatSendMessage,

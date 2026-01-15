@@ -177,6 +177,14 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         icon = SettingsIcon.Lucide(Lucide.Volume2),
         targetPage = SettingsSubPage.TTS
     ),
+    SettingsItemData(
+        id = "ocr",
+        group = strings.settingsGeneral,
+        title = strings.settingsOcr,
+        subtitle = strings.settingsOcrDesc,
+        icon = SettingsIcon.Lucide(Lucide.Search),
+        targetPage = SettingsSubPage.OCR
+    ),
     // 其他分组
     SettingsItemData(
         id = "usage_stats",
@@ -250,6 +258,7 @@ private fun isSettingsItemSelected(itemId: String, currentSubPage: SettingsSubPa
         "regex_rules" -> currentSubPage is SettingsSubPage.REGEX_RULES
         "skills" -> currentSubPage is SettingsSubPage.SKILLS || currentSubPage is SettingsSubPage.SKILL_DETAIL
         "tts" -> currentSubPage is SettingsSubPage.TTS
+        "ocr" -> currentSubPage is SettingsSubPage.OCR
         "usage_stats" -> currentSubPage is SettingsSubPage.USAGE_STATS
         "export_import" -> currentSubPage is SettingsSubPage.EXPORT_IMPORT
         "r2_settings" -> currentSubPage is SettingsSubPage.R2_SETTINGS
@@ -285,6 +294,7 @@ private sealed class SettingsSubPage {
     data object SKILLS : SettingsSubPage()
     data class SKILL_DETAIL(val id: String?) : SettingsSubPage()
     data object TTS : SettingsSubPage()
+    data object OCR : SettingsSubPage()
     data object R2_SETTINGS : SettingsSubPage()
     data object LANGUAGE : SettingsSubPage()
 }
@@ -754,6 +764,13 @@ private fun TabletSettingsLayout(
                             showTopBar = false
                         )
                     }
+                    is SettingsSubPage.OCR -> {
+                        OcrSettingsScreen(
+                            settingsManager = settingsManager,
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            showTopBar = false
+                        )
+                    }
                     is SettingsSubPage.R2_SETTINGS -> {
                         R2SettingsScreen(
                             settingsManager = settingsManager,
@@ -1050,6 +1067,12 @@ private fun PhoneSettingsLayout(
                             locale = java.util.Locale.forLanguageTag(newTtsSettings.language)
                         )
                     },
+                    onBack = { onSubPageChange(SettingsSubPage.MAIN) }
+                )
+            }
+            is SettingsSubPage.OCR -> {
+                OcrSettingsScreen(
+                    settingsManager = settingsManager,
                     onBack = { onSubPageChange(SettingsSubPage.MAIN) }
                 )
             }

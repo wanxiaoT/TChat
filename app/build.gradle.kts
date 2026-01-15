@@ -16,6 +16,11 @@ android {
         versionName = "1.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // NDK ABI filters for ImGui
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -35,6 +40,16 @@ android {
         compose = true
         buildConfig = true
     }
+
+    // NDK configuration for ImGui
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    ndkVersion = "29.0.14206865"
 }
 
 kotlin {
@@ -72,6 +87,10 @@ dependencies {
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
+
+    // ML Kit - OCR
+    implementation(libs.mlkit.text.recognition)
+    implementation(libs.mlkit.text.recognition.chinese)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

@@ -386,7 +386,32 @@ class OpenAIProvider(
                     }
                 }
                 else -> {
-                    msgObj.put("content", msg.content)
+                    // USER 和其他角色
+                    if (msg.contentParts != null && msg.contentParts.isNotEmpty()) {
+                        // 多模态内容
+                        val contentArray = JSONArray()
+                        msg.contentParts.forEach { part ->
+                            when (part) {
+                                is MessageContent.Text -> {
+                                    val textObj = JSONObject()
+                                    textObj.put("type", "text")
+                                    textObj.put("text", part.text)
+                                    contentArray.put(textObj)
+                                }
+                                is MessageContent.Image -> {
+                                    val imageObj = JSONObject()
+                                    imageObj.put("type", "image_url")
+                                    val imageUrlObj = JSONObject()
+                                    imageUrlObj.put("url", "data:${part.mimeType};base64,${part.base64Data}")
+                                    imageObj.put("image_url", imageUrlObj)
+                                    contentArray.put(imageObj)
+                                }
+                            }
+                        }
+                        msgObj.put("content", contentArray)
+                    } else {
+                        msgObj.put("content", msg.content)
+                    }
                 }
             }
             messagesArray.put(msgObj)

@@ -21,5 +21,7 @@ data class AppSettingsEntity(
     val tokenRecordingStatus: String = "ENABLED", // Token记录状态: ENABLED, PAUSED, DISABLED
     val ttsSettingsJson: String = "{}", // JSON序列化的TTS设置
     val r2SettingsJson: String = "{}", // JSON序列化的R2云备份设置
-    val language: String = "zh-CN" // 应用显示语言
+    val language: String = "zh-CN", // 应用显示语言
+    val ocrModel: String = "MLKIT_LATIN", // OCR 模型/识别器（保留用于向后兼容）
+    val ocrSettingsJson: String = "{}" // JSON序列化的OCR设置
 )

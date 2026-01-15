@@ -118,7 +118,8 @@ class SettingsManager(context: Context) {
             },
             ttsSettings = parseTtsSettings(entity.ttsSettingsJson),
             r2Settings = parseR2Settings(entity.r2SettingsJson),
-            language = entity.language
+            language = entity.language,
+            ocrSettings = parseOcrSettings(entity.ocrSettingsJson, entity.ocrModel)
         )
     }
 
@@ -138,7 +139,9 @@ class SettingsManager(context: Context) {
             tokenRecordingStatus = settings.tokenRecordingStatus.name,
             ttsSettingsJson = serializeTtsSettings(settings.ttsSettings),
             r2SettingsJson = serializeR2Settings(settings.r2Settings),
-            language = settings.language
+            language = settings.language,
+            ocrModel = settings.ocrSettings.model,
+            ocrSettingsJson = serializeOcrSettings(settings.ocrSettings)
         )
     }
 
@@ -457,6 +460,32 @@ class SettingsManager(context: Context) {
         return obj.toString()
     }
 
+    private fun parseOcrSettings(json: String, legacyOcrModel: String): OcrSettings {
+        return try {
+            val obj = JSONObject(json)
+            // 如果 JSON 为空或没有 model 字段，使用旧的 ocrModel 字段进行兼容
+            val model = obj.optString("model", "").ifEmpty { legacyOcrModel }
+            OcrSettings(
+                model = model.ifEmpty { OcrModel.MLKIT_LATIN.name },
+                aiProviderId = obj.optString("aiProviderId", ""),
+                aiModel = obj.optString("aiModel", ""),
+                customPrompt = obj.optString("customPrompt", OcrSettings.DEFAULT_OCR_PROMPT)
+            )
+        } catch (e: Exception) {
+            // 如果解析失败，使用旧的 ocrModel 字段
+            OcrSettings(model = legacyOcrModel.ifEmpty { OcrModel.MLKIT_LATIN.name })
+        }
+    }
+
+    private fun serializeOcrSettings(settings: OcrSettings): String {
+        val obj = JSONObject()
+        obj.put("model", settings.model)
+        obj.put("aiProviderId", settings.aiProviderId)
+        obj.put("aiModel", settings.aiModel)
+        obj.put("customPrompt", settings.customPrompt)
+        return obj.toString()
+    }
+
     fun updateSettings(settings: AppSettings) {
         _settings.value = settings
         scope.launch {
@@ -741,5 +770,15 @@ class SettingsManager(context: Context) {
     fun setLanguage(languageCode: String) {
         val currentSettings = _settings.value
         updateSettings(currentSettings.copy(language = languageCode))
+    }
+
+    // ==================== OCR 设置管理 ====================
+
+    /**
+     * 更新 OCR 设置
+     */
+    fun updateOcrSettings(ocrSettings: OcrSettings) {
+        val currentSettings = _settings.value
+        updateSettings(currentSettings.copy(ocrSettings = ocrSettings))
     }
 }

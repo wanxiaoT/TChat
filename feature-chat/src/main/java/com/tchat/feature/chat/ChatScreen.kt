@@ -15,6 +15,7 @@ import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.BrainCircuit
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Sparkles
+import com.composables.icons.lucide.Swords
 import com.composables.icons.lucide.Wrench
 import com.tchat.data.model.LocalToolOption
 import com.tchat.data.tool.Tool
@@ -49,6 +50,8 @@ fun ChatScreen(
     // 深度研究支持
     onDeepResearch: ((String?) -> Unit)? = null,
     isDeepResearching: Boolean = false,
+    // 打野助手支持
+    onJungleHelperClick: (() -> Unit)? = null,
     // i18n strings
     inputHint: String = "输入消息...",
     sendContentDescription: String = "发送",
@@ -164,6 +167,7 @@ fun ChatScreen(
                                     showToolSheet = true
                                     scope.launch { toolSheetState.show() }
                                 },
+                                onJungleHelperClick = onJungleHelperClick,
                                 onDeepResearch = onDeepResearch?.let { callback ->
                                     {
                                         // 传递输入框内容（可能为空）
@@ -221,6 +225,8 @@ internal fun InputToolbar(
     onModelSelected: (String) -> Unit,
     enabledToolsCount: Int = 0,
     onToolsClick: () -> Unit = {},
+    // 打野助手支持
+    onJungleHelperClick: (() -> Unit)? = null,
     // 深度研究支持
     onDeepResearch: (() -> Unit)? = null,
     isDeepResearching: Boolean = false,
@@ -395,6 +401,28 @@ internal fun InputToolbar(
                         else
                             MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+
+            // 打野助手按钮 - 只显示图标
+            if (onJungleHelperClick != null) {
+                Surface(
+                    onClick = onJungleHelperClick,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = MaterialTheme.shapes.small,
+                    tonalElevation = 0.dp
+                ) {
+                    Box(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Lucide.Swords,
+                            contentDescription = "打野助手",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

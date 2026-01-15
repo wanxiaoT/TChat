@@ -61,6 +61,8 @@ object StringsEn : Strings {
     override val settingsSkillsDesc = "Manage AI Skills and auto-trigger rules"
     override val settingsTts = "Text to Speech"
     override val settingsTtsDesc = "TTS voice synthesis settings"
+    override val settingsOcr = "OCR"
+    override val settingsOcrDesc = "Screen selection OCR and model settings"
 
     // Settings Items - Other
     override val settingsUsageStats = "Usage Statistics"

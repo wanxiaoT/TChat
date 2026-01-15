@@ -56,11 +56,23 @@ data class ToolDefinition(
 )
 
 /**
+ * 消息内容部分（支持多模态）
+ */
+sealed class MessageContent {
+    data class Text(val text: String) : MessageContent()
+    data class Image(
+        val base64Data: String,
+        val mimeType: String = "image/png"  // image/png, image/jpeg, image/webp, image/gif
+    ) : MessageContent()
+}
+
+/**
  * 聊天消息
  */
 data class ChatMessage(
     val role: MessageRole,
     val content: String,
+    val contentParts: List<MessageContent>? = null,  // 多模态内容（新增）
     val toolCalls: List<ToolCallInfo>? = null,  // AI返回的工具调用
     val toolCallId: String? = null,              // 工具结果的调用ID
     val name: String? = null                     // 工具名称（用于工具结果）

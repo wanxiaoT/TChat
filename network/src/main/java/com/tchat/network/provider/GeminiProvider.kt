@@ -483,9 +483,31 @@ class GeminiProvider(
                     // USER 和其他角色
                     contentObj.put("role", "user")
                     val parts = JSONArray()
-                    val partObj = JSONObject()
-                    partObj.put("text", msg.content)
-                    parts.put(partObj)
+
+                    if (msg.contentParts != null && msg.contentParts.isNotEmpty()) {
+                        // 多模态内容
+                        msg.contentParts.forEach { part ->
+                            when (part) {
+                                is MessageContent.Text -> {
+                                    val textPart = JSONObject()
+                                    textPart.put("text", part.text)
+                                    parts.put(textPart)
+                                }
+                                is MessageContent.Image -> {
+                                    val imagePart = JSONObject()
+                                    val inlineData = JSONObject()
+                                    inlineData.put("mimeType", part.mimeType)
+                                    inlineData.put("data", part.base64Data)
+                                    imagePart.put("inlineData", inlineData)
+                                    parts.put(imagePart)
+                                }
+                            }
+                        }
+                    } else {
+                        val partObj = JSONObject()
+                        partObj.put("text", msg.content)
+                        parts.put(partObj)
+                    }
                     contentObj.put("parts", parts)
                 }
             }

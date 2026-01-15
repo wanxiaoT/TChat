@@ -61,6 +61,8 @@ object StringsZhTW : Strings {
     override val settingsSkillsDesc = "管理 AI Skills 和自動觸發規則"
     override val settingsTts = "語音朗讀"
     override val settingsTtsDesc = "TTS 語音合成設定"
+    override val settingsOcr = "OCR 辨識"
+    override val settingsOcrDesc = "框選畫面內容辨識 API Key 與 URL"
 
     // 設定項 - 其他
     override val settingsUsageStats = "使用統計"

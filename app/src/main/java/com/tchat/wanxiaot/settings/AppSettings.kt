@@ -48,6 +48,25 @@ data class DoubaoVoice(
 }
 
 /**
+ * OCR 设置
+ */
+data class OcrSettings(
+    val model: String = OcrModel.MLKIT_LATIN.name,  // OCR 模型类型
+    val aiProviderId: String = "",                   // 用于 AI OCR 的提供商 ID
+    val aiModel: String = "",                        // 用于 AI OCR 的模型名称
+    val customPrompt: String = DEFAULT_OCR_PROMPT    // 自定义 OCR Prompt
+) {
+    companion object {
+        const val DEFAULT_OCR_PROMPT = """请识别图片中的所有文字内容。
+如果图片中包含 API Key 或 URL，请特别标注出来，格式如下：
+- URL: <识别到的URL>
+- API Key: <识别到的Key>
+
+只返回识别到的文字内容，不要添加额外的解释。"""
+    }
+}
+
+/**
  * TTS 设置
  */
 data class TtsSettings(
@@ -261,10 +280,14 @@ data class AppSettings(
     val tokenRecordingStatus: TokenRecordingStatus = TokenRecordingStatus.ENABLED,  // Token 记录状态
     val ttsSettings: TtsSettings = TtsSettings(),  // TTS 语音朗读设置
     val r2Settings: R2Settings = R2Settings(),  // Cloudflare R2 云备份设置
-    val language: String = "zh-CN"  // 应用显示语言
+    val language: String = "zh-CN",  // 应用显示语言
+    val ocrSettings: OcrSettings = OcrSettings()  // OCR 设置
 ) {
     // 兼容旧代码
     val defaultProviderId: String get() = currentProviderId
+
+    // 兼容旧代码：ocrModel 属性
+    val ocrModel: String get() = ocrSettings.model
 
     /**
      * 获取当前使用的服务商配置

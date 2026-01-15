@@ -2,4 +2,6 @@
 <resources>
 
     <style name="Theme.TChat" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.TChat.Transparent" parent="android:Theme.Translucent.NoTitleBar.Fullscreen" />
 </resources>

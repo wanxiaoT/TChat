@@ -57,7 +57,7 @@ import com.tchat.data.database.entity.SkillEntity
         AppSettingsEntity::class,
         SkillEntity::class
     ],
-    version = 21,
+    version = 23,
     exportSchema = false
 )
 @TypeConverters(LocalToolOptionConverter::class)
@@ -432,6 +432,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // 迁移:为应用设置添加 OCR 模型字段
+        private val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE app_settings ADD COLUMN ocrModel TEXT NOT NULL DEFAULT 'MLKIT_LATIN'")
+            }
+        }
+
+        // 迁移:为应用设置添加 OCR 设置 JSON 字段
+        private val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE app_settings ADD COLUMN ocrSettingsJson TEXT NOT NULL DEFAULT '{}'")
+            }
+        }
+
         // 迁移:采用 MessagePart 架构，将旧字段迁移到 partsJson
         private val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -574,7 +588,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                         MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
-                        MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21
+                        MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
+                        MIGRATION_21_22, MIGRATION_22_23
                     )
                     .build()
                 INSTANCE = instance
