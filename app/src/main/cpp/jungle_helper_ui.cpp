@@ -66,6 +66,20 @@ void JungleHelper_Render(float deltaTime) {
         if (ImGui::Button(u8"OCR框选")) {
             g_OcrRequested.store(true, std::memory_order_release);
         }
+
+        // Footer
+        const char* footerText = "TChat By wanxiaoT";
+        const float footerHeight = ImGui::GetTextLineHeightWithSpacing();
+        const float availY = ImGui::GetContentRegionAvail().y;
+        if (availY > footerHeight) {
+            ImGui::Dummy(ImVec2(0.0f, availY - footerHeight));
+        }
+        const ImVec2 footerTextSize = ImGui::CalcTextSize(footerText);
+        const float contentAvailX = ImGui::GetContentRegionAvail().x;
+        if (footerTextSize.x < contentAvailX) {
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (contentAvailX - footerTextSize.x) * 0.5f);
+        }
+        ImGui::TextDisabled("%s", footerText);
     }
 
     // 记录窗口像素尺寸（无论是否折叠都要记录）
