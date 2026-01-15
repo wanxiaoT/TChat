@@ -48,7 +48,7 @@ void JungleHelper_Render(float deltaTime) {
     ImGuiWindowFlags windowFlags =
         ImGuiWindowFlags_NoMove;
 
-    // 主窗口（移除 NoCollapse，标题栏自带折叠按钮）
+    // 主窗口（标题栏自带折叠按钮）
     if (ImGui::Begin(u8"打野助手", &g_ShowMainWindow, windowFlags)) {
         // 透明度滑块
         ImGui::SliderFloat(u8"透明度", &g_WindowAlpha, 0.3f, 1.0f);
