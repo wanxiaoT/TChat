@@ -5,6 +5,9 @@ import android.content.SharedPreferences
 import com.tchat.data.database.AppDatabase
 import com.tchat.data.database.entity.AppSettingsEntity
 import com.tchat.data.deepresearch.service.WebSearchProvider
+import com.tchat.data.model.ChatToolbarItem
+import com.tchat.data.model.ChatToolbarItemConfig
+import com.tchat.data.model.ChatToolbarSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -119,7 +122,8 @@ class SettingsManager(context: Context) {
             ttsSettings = parseTtsSettings(entity.ttsSettingsJson),
             r2Settings = parseR2Settings(entity.r2SettingsJson),
             language = entity.language,
-            ocrSettings = parseOcrSettings(entity.ocrSettingsJson, entity.ocrModel)
+            ocrSettings = parseOcrSettings(entity.ocrSettingsJson, entity.ocrModel),
+            chatToolbarSettings = parseChatToolbarSettings(entity.chatToolbarSettingsJson)
         )
     }
 
@@ -141,7 +145,8 @@ class SettingsManager(context: Context) {
             r2SettingsJson = serializeR2Settings(settings.r2Settings),
             language = settings.language,
             ocrModel = settings.ocrSettings.model,
-            ocrSettingsJson = serializeOcrSettings(settings.ocrSettings)
+            ocrSettingsJson = serializeOcrSettings(settings.ocrSettings),
+            chatToolbarSettingsJson = serializeChatToolbarSettings(settings.chatToolbarSettings)
         )
     }
 
@@ -486,6 +491,39 @@ class SettingsManager(context: Context) {
         return obj.toString()
     }
 
+    private fun parseChatToolbarSettings(json: String): ChatToolbarSettings {
+        return try {
+            val jsonArray = JSONArray(json)
+            val items = mutableListOf<ChatToolbarItemConfig>()
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.optJSONObject(i) ?: continue
+                val item = runCatching {
+                    ChatToolbarItem.valueOf(obj.optString("id"))
+                }.getOrNull() ?: continue
+                items.add(
+                    ChatToolbarItemConfig(
+                        item = item,
+                        visible = obj.optBoolean("visible", true)
+                    )
+                )
+            }
+            ChatToolbarSettings(items).normalized()
+        } catch (e: Exception) {
+            ChatToolbarSettings()
+        }
+    }
+
+    private fun serializeChatToolbarSettings(settings: ChatToolbarSettings): String {
+        val jsonArray = JSONArray()
+        settings.normalized().items.forEach { config ->
+            val obj = JSONObject()
+            obj.put("id", config.item.name)
+            obj.put("visible", config.visible)
+            jsonArray.put(obj)
+        }
+        return jsonArray.toString()
+    }
+
     fun updateSettings(settings: AppSettings) {
         _settings.value = settings
         scope.launch {
@@ -780,5 +818,12 @@ class SettingsManager(context: Context) {
     fun updateOcrSettings(ocrSettings: OcrSettings) {
         val currentSettings = _settings.value
         updateSettings(currentSettings.copy(ocrSettings = ocrSettings))
+    }
+
+    // ==================== 聊天工具栏显示设置 ====================
+
+    fun updateChatToolbarSettings(chatToolbarSettings: ChatToolbarSettings) {
+        val currentSettings = _settings.value
+        updateSettings(currentSettings.copy(chatToolbarSettings = chatToolbarSettings.normalized()))
     }
 }

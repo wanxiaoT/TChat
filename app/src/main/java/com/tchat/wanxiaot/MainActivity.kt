@@ -624,6 +624,7 @@ fun MainScreen(
                                     }
                                 },
                                 isDeepResearching = isDeepResearching,
+                                chatToolbarSettings = settings.chatToolbarSettings,
                                 // i18n strings
                                 inputHint = strings.chatInputHint,
                                 sendContentDescription = strings.chatSendMessage,
@@ -782,6 +783,7 @@ fun MainScreen(
                                         com.tchat.wanxiaot.junglehelper.JungleHelperManager.toggle(context)
                                     }
                                 },
+                                chatToolbarSettings = settings.chatToolbarSettings,
                                 // i18n strings
                                 inputHint = strings.chatInputHint,
                                 sendContentDescription = strings.chatSendMessage,

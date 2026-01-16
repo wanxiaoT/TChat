@@ -45,6 +45,8 @@ object StringsZhTW : Strings {
     // 設定項 - 一般
     override val settingsAssistants = "助手"
     override val settingsAssistantsDesc = "管理 AI 助手和本機工具"
+    override val settingsDisplay = "顯示設定"
+    override val settingsDisplayDesc = "調整聊天輸入框上方按鈕"
     override val settingsGroupChat = "助手群聊"
     override val settingsGroupChatDesc = "建立多助手協作對話"
     override val settingsProviders = "服務商"
@@ -101,11 +103,13 @@ object StringsZhTW : Strings {
     override val chatCopyMessage = "複製訊息"
     override val chatDeleteMessage = "刪除訊息"
     override val chatEditMessage = "編輯訊息"
+    override val chatModel = "模型"
     override val chatTools = "工具"
     override val chatToolsWithCount = "工具 (%d)"
     override val chatDeepResearch = "深度研究"
     override val chatDeepResearchRunning = "研究中"
     override val chatDeepResearchInProgress = "深度研究進行中..."
+    override val chatJungleHelper = "打野助手"
 
     // ==================== 抽屜選單 ====================
     override val drawerChats = "對話"

@@ -45,6 +45,8 @@ object StringsZhCN : Strings {
     // 设置项 - 通用
     override val settingsAssistants = "助手"
     override val settingsAssistantsDesc = "管理AI助手和本地工具"
+    override val settingsDisplay = "显示设置"
+    override val settingsDisplayDesc = "调整聊天输入框上方按钮"
     override val settingsGroupChat = "助手群聊"
     override val settingsGroupChatDesc = "创建多助手协作对话"
     override val settingsProviders = "服务商"
@@ -101,11 +103,13 @@ object StringsZhCN : Strings {
     override val chatCopyMessage = "复制消息"
     override val chatDeleteMessage = "删除消息"
     override val chatEditMessage = "编辑消息"
+    override val chatModel = "模型"
     override val chatTools = "工具"
     override val chatToolsWithCount = "工具 (%d)"
     override val chatDeepResearch = "深度研究"
     override val chatDeepResearchRunning = "研究中"
     override val chatDeepResearchInProgress = "深度研究进行中..."
+    override val chatJungleHelper = "打野助手"
 
     // ==================== 抽屉菜单 ====================
     override val drawerChats = "对话"

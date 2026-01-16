@@ -19,6 +19,7 @@ import com.composables.icons.lucide.Wrench
 import com.tchat.data.model.LocalToolOption
 import com.tchat.data.model.GroupActivationStrategy
 import com.tchat.data.model.Assistant
+import com.tchat.data.model.ChatToolbarSettings
 import com.tchat.data.tool.Tool
 import com.tchat.data.util.RegexRuleData
 import kotlinx.coroutines.launch
@@ -54,6 +55,8 @@ fun GroupChatScreen(
     // 深度研究支持
     onDeepResearch: ((String?) -> Unit)? = null,
     isDeepResearching: Boolean = false,
+    // 聊天工具栏显示/顺序设置
+    chatToolbarSettings: ChatToolbarSettings = ChatToolbarSettings(),
     // i18n strings
     inputHint: String = "输入消息...",
     sendContentDescription: String = "发送",
@@ -200,6 +203,7 @@ fun GroupChatScreen(
                                     }
                                 },
                                 isDeepResearching = isDeepResearching,
+                                toolbarSettings = chatToolbarSettings,
                                 toolsText = toolsText,
                                 toolsWithCountFormat = toolsWithCountFormat,
                                 deepResearchText = deepResearchText,

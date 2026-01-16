@@ -18,6 +18,8 @@ import com.composables.icons.lucide.Sparkles
 import com.composables.icons.lucide.Swords
 import com.composables.icons.lucide.Wrench
 import com.tchat.data.model.LocalToolOption
+import com.tchat.data.model.ChatToolbarItem
+import com.tchat.data.model.ChatToolbarSettings
 import com.tchat.data.tool.Tool
 import com.tchat.data.util.RegexRuleData
 import kotlinx.coroutines.launch
@@ -52,6 +54,8 @@ fun ChatScreen(
     isDeepResearching: Boolean = false,
     // 打野助手支持
     onJungleHelperClick: (() -> Unit)? = null,
+    // 聊天工具栏显示/顺序设置
+    chatToolbarSettings: ChatToolbarSettings = ChatToolbarSettings(),
     // i18n strings
     inputHint: String = "输入消息...",
     sendContentDescription: String = "发送",
@@ -179,6 +183,7 @@ fun ChatScreen(
                                     }
                                 },
                                 isDeepResearching = isDeepResearching,
+                                toolbarSettings = chatToolbarSettings,
                                 toolsText = toolsText,
                                 toolsWithCountFormat = toolsWithCountFormat,
                                 deepResearchText = deepResearchText,
@@ -230,6 +235,7 @@ internal fun InputToolbar(
     // 深度研究支持
     onDeepResearch: (() -> Unit)? = null,
     isDeepResearching: Boolean = false,
+    toolbarSettings: ChatToolbarSettings = ChatToolbarSettings(),
     // i18n strings
     toolsText: String = "工具",
     toolsWithCountFormat: String = "工具 (%d)",
@@ -237,6 +243,7 @@ internal fun InputToolbar(
     deepResearchRunningText: String = "研究中"
 ) {
     var modelMenuExpanded by remember { mutableStateOf(false) }
+    val normalizedToolbarSettings = remember(toolbarSettings) { toolbarSettings.normalized() }
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -249,179 +256,174 @@ internal fun InputToolbar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // 模型选择器
-            if (availableModels.isNotEmpty()) {
-                Box {
-                    Surface(
-                        onClick = { modelMenuExpanded = true },
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shape = MaterialTheme.shapes.small,
-                        tonalElevation = 0.dp
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // 使用 Lucide Icon 显示模型类型
-                            Icon(
-                                imageVector = getModelLucideIcon(currentModel),
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+            normalizedToolbarSettings.items.forEach { config ->
+                if (!config.visible) return@forEach
 
-                            Text(
-                                text = getModelDisplayName(currentModel),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Icon(
-                                Icons.Default.ArrowDropDown,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    DropdownMenu(
-                        expanded = modelMenuExpanded,
-                        onDismissRequest = { modelMenuExpanded = false }
-                    ) {
-                        availableModels.forEach { model ->
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                when (config.item) {
+                    ChatToolbarItem.MODEL -> {
+                        if (availableModels.isNotEmpty()) {
+                            Box {
+                                Surface(
+                                    onClick = { modelMenuExpanded = true },
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    shape = MaterialTheme.shapes.small,
+                                    tonalElevation = 0.dp
+                                ) {
+                                    Box(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        // 使用 Lucide Icon 显示模型类型
                                         Icon(
-                                            imageVector = getModelLucideIcon(model),
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp),
-                                            tint = if (model == currentModel)
-                                                MaterialTheme.colorScheme.primary
-                                            else
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Text(
-                                            text = model,
-                                            color = if (model == currentModel)
-                                                MaterialTheme.colorScheme.primary
-                                            else
-                                                MaterialTheme.colorScheme.onSurface
+                                            imageVector = getModelLucideIcon(currentModel),
+                                            contentDescription = currentModel.takeIf { it.isNotBlank() },
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.primary
                                         )
                                     }
-                                },
-                                onClick = {
-                                    onModelSelected(model)
-                                    modelMenuExpanded = false
                                 }
-                            )
+
+                                DropdownMenu(
+                                    expanded = modelMenuExpanded,
+                                    onDismissRequest = { modelMenuExpanded = false }
+                                ) {
+                                    availableModels.forEach { model ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = getModelLucideIcon(model),
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(20.dp),
+                                                        tint = if (model == currentModel)
+                                                            MaterialTheme.colorScheme.primary
+                                                        else
+                                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    Text(
+                                                        text = model,
+                                                        color = if (model == currentModel)
+                                                            MaterialTheme.colorScheme.primary
+                                                        else
+                                                            MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                }
+                                            },
+                                            onClick = {
+                                                onModelSelected(model)
+                                                modelMenuExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
-                }
-            }
 
-            Spacer(modifier = Modifier.weight(1f))
-
-            // 深度研究按钮
-            if (onDeepResearch != null) {
-                Surface(
-                    onClick = { onDeepResearch() },
-                    color = if (isDeepResearching)
-                        MaterialTheme.colorScheme.tertiaryContainer
-                    else
-                        MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = MaterialTheme.shapes.small,
-                    tonalElevation = 0.dp
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        if (isDeepResearching) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Psychology,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.tertiary
-                            )
+                    ChatToolbarItem.DEEP_RESEARCH -> {
+                        if (onDeepResearch != null) {
+                            Surface(
+                                onClick = { onDeepResearch() },
+                                color = if (isDeepResearching)
+                                    MaterialTheme.colorScheme.tertiaryContainer
+                                else
+                                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                                shape = MaterialTheme.shapes.small,
+                                tonalElevation = 0.dp
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isDeepResearching) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Psychology,
+                                            contentDescription = deepResearchText,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.tertiary
+                                        )
+                                    }
+                                }
+                            }
                         }
-                        Text(
-                            text = if (isDeepResearching) deepResearchRunningText else deepResearchText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isDeepResearching)
-                                MaterialTheme.colorScheme.onTertiaryContainer
+                    }
+
+                    ChatToolbarItem.TOOLS -> {
+                        Surface(
+                            onClick = onToolsClick,
+                            color = if (enabledToolsCount > 0)
+                                MaterialTheme.colorScheme.primaryContainer
                             else
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                                MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = MaterialTheme.shapes.small,
+                            tonalElevation = 0.dp
+                        ) {
+                            Box(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                val badgeText = when {
+                                    enabledToolsCount <= 0 -> null
+                                    enabledToolsCount <= 9 -> enabledToolsCount.toString()
+                                    else -> "9+"
+                                }
+
+                                if (badgeText != null) {
+                                    BadgedBox(
+                                        badge = {
+                                            Badge {
+                                                Text(badgeText)
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Lucide.Wrench,
+                                            contentDescription = toolsWithCountFormat.format(enabledToolsCount),
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                } else {
+                                    Icon(
+                                        imageVector = Lucide.Wrench,
+                                        contentDescription = toolsText,
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
                     }
-                }
-            }
 
-            // 工具按钮 - 点击打开抽屉
-            Surface(
-                onClick = onToolsClick,
-                color = if (enabledToolsCount > 0)
-                    MaterialTheme.colorScheme.primaryContainer
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = MaterialTheme.shapes.small,
-                tonalElevation = 0.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Lucide.Wrench,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = if (enabledToolsCount > 0)
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = if (enabledToolsCount > 0) toolsWithCountFormat.format(enabledToolsCount) else toolsText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (enabledToolsCount > 0)
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // 打野助手按钮 - 只显示图标
-            if (onJungleHelperClick != null) {
-                Surface(
-                    onClick = onJungleHelperClick,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = MaterialTheme.shapes.small,
-                    tonalElevation = 0.dp
-                ) {
-                    Box(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Lucide.Swords,
-                            contentDescription = "打野助手",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    ChatToolbarItem.JUNGLE_HELPER -> {
+                        if (onJungleHelperClick != null) {
+                            Surface(
+                                onClick = onJungleHelperClick,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                shape = MaterialTheme.shapes.small,
+                                tonalElevation = 0.dp
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Lucide.Swords,
+                                        contentDescription = "打野助手",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

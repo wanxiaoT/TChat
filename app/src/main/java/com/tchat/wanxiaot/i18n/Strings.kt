@@ -46,6 +46,8 @@ interface Strings {
     // 设置项 - 通用
     val settingsAssistants: String
     val settingsAssistantsDesc: String
+    val settingsDisplay: String
+    val settingsDisplayDesc: String
     val settingsGroupChat: String
     val settingsGroupChatDesc: String
     val settingsProviders: String
@@ -102,11 +104,13 @@ interface Strings {
     val chatCopyMessage: String
     val chatDeleteMessage: String
     val chatEditMessage: String
+    val chatModel: String
     val chatTools: String
     val chatToolsWithCount: String  // 格式: "工具 (%d)"
     val chatDeepResearch: String
     val chatDeepResearchRunning: String
     val chatDeepResearchInProgress: String
+    val chatJungleHelper: String
 
     // ==================== 抽屉菜单 ====================
     val drawerChats: String

@@ -114,6 +114,14 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         targetPage = SettingsSubPage.ASSISTANTS
     ),
     SettingsItemData(
+        id = "display",
+        group = strings.settingsGeneral,
+        title = strings.settingsDisplay,
+        subtitle = strings.settingsDisplayDesc,
+        icon = SettingsIcon.Lucide(Lucide.Settings2),
+        targetPage = SettingsSubPage.DISPLAY
+    ),
+    SettingsItemData(
         id = "group_chat",
         group = strings.settingsGeneral,
         title = strings.settingsGroupChat,
@@ -250,6 +258,7 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
 private fun isSettingsItemSelected(itemId: String, currentSubPage: SettingsSubPage): Boolean {
     return when (itemId) {
         "assistants" -> currentSubPage is SettingsSubPage.ASSISTANTS || currentSubPage is SettingsSubPage.ASSISTANT_DETAIL
+        "display" -> currentSubPage is SettingsSubPage.DISPLAY
         "group_chat" -> currentSubPage is SettingsSubPage.GROUP_CHAT || currentSubPage is SettingsSubPage.CREATE_GROUP_CHAT || currentSubPage is SettingsSubPage.EDIT_GROUP_CHAT
         "providers" -> currentSubPage is SettingsSubPage.PROVIDERS
         "knowledge" -> currentSubPage is SettingsSubPage.KNOWLEDGE || currentSubPage is SettingsSubPage.KNOWLEDGE_DETAIL
@@ -281,6 +290,7 @@ private sealed class SettingsSubPage {
     data object NETWORK_LOG : SettingsSubPage()
     data object ASSISTANTS : SettingsSubPage()
     data class ASSISTANT_DETAIL(val id: String) : SettingsSubPage()
+    data object DISPLAY : SettingsSubPage()
     data object GROUP_CHAT : SettingsSubPage()
     data object CREATE_GROUP_CHAT : SettingsSubPage()
     data class EDIT_GROUP_CHAT(val id: String) : SettingsSubPage()
@@ -574,6 +584,13 @@ private fun TabletSettingsLayout(
                             viewModel = viewModel,
                             onBack = { onSubPageChange(SettingsSubPage.MAIN) },
                             onAssistantClick = { id -> onSubPageChange(SettingsSubPage.ASSISTANT_DETAIL(id)) },
+                            showTopBar = false
+                        )
+                    }
+                    is SettingsSubPage.DISPLAY -> {
+                        DisplaySettingsScreen(
+                            settingsManager = settingsManager,
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
                             showTopBar = false
                         )
                     }
@@ -890,6 +907,12 @@ private fun PhoneSettingsLayout(
                     viewModel = viewModel,
                     onBack = { onSubPageChange(SettingsSubPage.MAIN) },
                     onAssistantClick = { id -> onSubPageChange(SettingsSubPage.ASSISTANT_DETAIL(id)) }
+                )
+            }
+            is SettingsSubPage.DISPLAY -> {
+                DisplaySettingsScreen(
+                    settingsManager = settingsManager,
+                    onBack = { onSubPageChange(SettingsSubPage.MAIN) }
                 )
             }
             is SettingsSubPage.ASSISTANT_DETAIL -> {

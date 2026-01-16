@@ -23,5 +23,6 @@ data class AppSettingsEntity(
     val r2SettingsJson: String = "{}", // JSON序列化的R2云备份设置
     val language: String = "zh-CN", // 应用显示语言
     val ocrModel: String = "MLKIT_LATIN", // OCR 模型/识别器（保留用于向后兼容）
-    val ocrSettingsJson: String = "{}" // JSON序列化的OCR设置
+    val ocrSettingsJson: String = "{}", // JSON序列化的OCR设置
+    val chatToolbarSettingsJson: String = "[]" // JSON序列化的聊天工具栏显示/顺序设置
 )

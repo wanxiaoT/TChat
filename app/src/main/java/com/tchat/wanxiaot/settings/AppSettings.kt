@@ -6,6 +6,7 @@ import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Sparkles
 import com.tchat.data.deepresearch.service.WebSearchProvider
+import com.tchat.data.model.ChatToolbarSettings
 import java.util.UUID
 
 /**
@@ -281,7 +282,8 @@ data class AppSettings(
     val ttsSettings: TtsSettings = TtsSettings(),  // TTS 语音朗读设置
     val r2Settings: R2Settings = R2Settings(),  // Cloudflare R2 云备份设置
     val language: String = "zh-CN",  // 应用显示语言
-    val ocrSettings: OcrSettings = OcrSettings()  // OCR 设置
+    val ocrSettings: OcrSettings = OcrSettings(),  // OCR 设置
+    val chatToolbarSettings: ChatToolbarSettings = ChatToolbarSettings() // 聊天输入框上方工具栏显示/顺序设置
 ) {
     // 兼容旧代码
     val defaultProviderId: String get() = currentProviderId

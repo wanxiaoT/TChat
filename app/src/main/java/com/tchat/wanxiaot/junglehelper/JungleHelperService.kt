@@ -334,10 +334,13 @@ class JungleHelperService : Service() {
             return
         }
 
-        showToast("已授权录屏权限")
-        if (startAfter) {
-            beginOcrSelection()
-        }
+        showToast(
+            if (startAfter) {
+                "已授权录屏权限，请点击 OCR 框选开始"
+            } else {
+                "已授权录屏权限"
+            }
+        )
     }
 
     private fun showOcrSelectionOverlay() {

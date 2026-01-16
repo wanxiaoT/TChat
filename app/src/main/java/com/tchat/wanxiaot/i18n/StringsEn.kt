@@ -45,6 +45,8 @@ object StringsEn : Strings {
     // Settings Items - General
     override val settingsAssistants = "Assistants"
     override val settingsAssistantsDesc = "Manage AI assistants and local tools"
+    override val settingsDisplay = "Display"
+    override val settingsDisplayDesc = "Customize chat toolbar buttons"
     override val settingsGroupChat = "Group Chat"
     override val settingsGroupChatDesc = "Create multi-assistant collaborative conversations"
     override val settingsProviders = "Providers"
@@ -101,11 +103,13 @@ object StringsEn : Strings {
     override val chatCopyMessage = "Copy message"
     override val chatDeleteMessage = "Delete message"
     override val chatEditMessage = "Edit message"
+    override val chatModel = "Model"
     override val chatTools = "Tools"
     override val chatToolsWithCount = "Tools (%d)"
     override val chatDeepResearch = "Deep Research"
     override val chatDeepResearchRunning = "Researching"
     override val chatDeepResearchInProgress = "Deep research in progress..."
+    override val chatJungleHelper = "Jungle Helper"
 
     // ==================== Drawer Menu ====================
     override val drawerChats = "Chats"
