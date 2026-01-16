@@ -14,9 +14,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.noties.markwon.Markwon
 import io.noties.markwon.core.MarkwonTheme
+import io.noties.markwon.ext.latex.JLatexMathPlugin
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.html.HtmlPlugin
+import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 
 /**
  * Markdown 渲染组件 - 使用 Markwon 库
@@ -50,12 +52,21 @@ fun MarkdownText(
     }
     val blockQuoteColor = MaterialTheme.colorScheme.primary.toArgb()
 
+    // LaTeX 公式文字大小
+    val textSize = 48f
+
     // 创建Markwon实例（缓存）
     val markwon = remember(isDarkTheme, textColor, linkColor) {
         Markwon.builder(context)
+            .usePlugin(MarkwonInlineParserPlugin.create())
             .usePlugin(StrikethroughPlugin.create())
             .usePlugin(TablePlugin.create(context))
             .usePlugin(HtmlPlugin.create())
+            .usePlugin(JLatexMathPlugin.create(textSize) { builder ->
+                builder.inlinesEnabled(true)
+                builder.theme()
+                    .textColor(textColor)
+            })
             .usePlugin(object : io.noties.markwon.AbstractMarkwonPlugin() {
                 override fun configureTheme(builder: MarkwonTheme.Builder) {
                     builder
