@@ -32,7 +32,8 @@ import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 fun MarkdownText(
     markdown: String,
     modifier: Modifier = Modifier,
-    onLinkClick: ((String) -> Unit)? = null
+    onLinkClick: ((String) -> Unit)? = null,
+    selectable: Boolean = false
 ) {
     val context = LocalContext.current
     val isDarkTheme = isSystemInDarkTheme()
@@ -107,7 +108,8 @@ fun MarkdownText(
                             MarkdownBlock(
                                 content = block.content,
                                 markwon = markwon,
-                                textColor = textColor
+                                textColor = textColor,
+                                selectable = selectable
                             )
                         }
                         is ContentBlock.Mermaid -> {
@@ -126,6 +128,7 @@ fun MarkdownText(
             content = markdown,
             markwon = markwon,
             textColor = textColor,
+            selectable = selectable,
             modifier = modifier
         )
     }
@@ -140,6 +143,7 @@ private fun SimpleMarkdownBlock(
     content: String,
     markwon: Markwon,
     textColor: Int,
+    selectable: Boolean,
     modifier: Modifier = Modifier
 ) {
     // 记住上一次的内容长度，用于增量检测
@@ -154,10 +158,14 @@ private fun SimpleMarkdownBlock(
                 textSize = 16f
                 setLineSpacing(0f, 1.2f)
                 movementMethod = android.text.method.LinkMovementMethod.getInstance()
+                setTextIsSelectable(selectable)
                 textViewInstance = this
             }
         },
         update = { textView ->
+            if (textView.isTextSelectable != selectable) {
+                textView.setTextIsSelectable(selectable)
+            }
             // 只在内容真正变化时更新
             if (content != lastContent) {
                 textView.setTextColor(textColor)
@@ -176,7 +184,8 @@ private fun SimpleMarkdownBlock(
 private fun MarkdownBlock(
     content: String,
     markwon: Markwon,
-    textColor: Int
+    textColor: Int,
+    selectable: Boolean
 ) {
     var lastContent by remember { mutableStateOf("") }
 
@@ -187,9 +196,13 @@ private fun MarkdownBlock(
                 textSize = 16f
                 setLineSpacing(0f, 1.2f)
                 movementMethod = android.text.method.LinkMovementMethod.getInstance()
+                setTextIsSelectable(selectable)
             }
         },
         update = { textView ->
+            if (textView.isTextSelectable != selectable) {
+                textView.setTextIsSelectable(selectable)
+            }
             if (content != lastContent) {
                 textView.setTextColor(textColor)
                 val spanned = markwon.toMarkdown(content)

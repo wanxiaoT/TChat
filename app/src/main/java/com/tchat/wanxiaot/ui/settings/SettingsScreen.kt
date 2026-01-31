@@ -11,6 +11,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -828,6 +829,8 @@ private fun PhoneSettingsLayout(
     groupChatRepository: GroupChatRepositoryImpl,
     skillRepository: SkillRepositoryImpl
 ) {
+    val mainScrollState = rememberScrollState()
+
     // 处理系统返回键
     BackHandler {
         when (currentSubPage) {
@@ -881,7 +884,8 @@ private fun PhoneSettingsLayout(
             is SettingsSubPage.MAIN -> {
                 SettingsMainContent(
                     onBack = onBack,
-                    onSubPageChange = onSubPageChange
+                    onSubPageChange = onSubPageChange,
+                    scrollState = mainScrollState
                 )
             }
             is SettingsSubPage.PROVIDERS -> {
@@ -1127,7 +1131,8 @@ private fun PhoneSettingsLayout(
 @Composable
 private fun SettingsMainContent(
     onBack: () -> Unit,
-    onSubPageChange: (SettingsSubPage) -> Unit
+    onSubPageChange: (SettingsSubPage) -> Unit,
+    scrollState: ScrollState
 ) {
     val allItems = getAllSettingsItems()
     val groupOrder = listOf(strings.settingsGeneral, strings.settingsOther)
@@ -1157,7 +1162,7 @@ private fun SettingsMainContent(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             groupOrder.forEach { group ->

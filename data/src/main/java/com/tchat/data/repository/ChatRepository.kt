@@ -88,4 +88,9 @@ interface ChatRepository {
      * 获取单条消息
      */
     suspend fun getMessageById(messageId: String): Message?
+
+    /**
+     * 删除单条消息
+     */
+    suspend fun deleteMessage(messageId: String): Result<Unit>
 }

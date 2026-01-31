@@ -809,6 +809,15 @@ class ChatRepositoryImpl(
         return messageDao.getMessageById(messageId)?.toMessage()
     }
 
+    override suspend fun deleteMessage(messageId: String): Result<Unit> {
+        return try {
+            messageDao.deleteMessage(messageId)
+            Result.Success(Unit)
+        } catch (e: Exception) {
+            Result.Error(e)
+        }
+    }
+
     private suspend fun getMessagesForAI(chatId: String, systemPrompt: String?): MutableList<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
 

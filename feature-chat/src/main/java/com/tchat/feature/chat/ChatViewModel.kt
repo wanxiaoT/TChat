@@ -233,6 +233,15 @@ class ChatViewModel(
         _errorMessage.value = null
     }
 
+    /**
+     * 删除消息
+     */
+    fun deleteMessage(messageId: String) {
+        viewModelScope.launch {
+            repository.deleteMessage(messageId)
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         streamingObserveJob?.cancel()

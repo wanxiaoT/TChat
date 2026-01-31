@@ -1,6 +1,7 @@
 package com.tchat.feature.chat
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -19,8 +20,12 @@ import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronLeft
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.ChevronUp
+import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.RefreshCw
+import com.composables.icons.lucide.Share2
+import com.composables.icons.lucide.Trash2
+import com.composables.icons.lucide.Volume2
 import com.composables.icons.lucide.X
 import com.composables.icons.lucide.Wrench
 import com.tchat.data.model.Message
@@ -34,11 +39,16 @@ fun MessageItem(
     modifier: Modifier = Modifier,
     providerIcon: ImageVector? = null,
     modelName: String = "",
-    nextMessage: Message? = null,  // 下一条消息（用于找到对应的 AI 回复）
+    previousMessage: Message? = null,  // 上一条消息（用于找到对应的用户消息）
     onRegenerate: ((userMessageId: String, aiMessageId: String) -> Unit)? = null,
-    onSelectVariant: ((messageId: String, variantIndex: Int) -> Unit)? = null
+    onSelectVariant: ((messageId: String, variantIndex: Int) -> Unit)? = null,
+    onCopy: ((content: String) -> Unit)? = null,
+    onSpeak: ((content: String) -> Unit)? = null,
+    onShare: ((content: String) -> Unit)? = null,
+    onDelete: ((messageId: String) -> Unit)? = null
 ) {
     val isUser = message.role == MessageRole.USER
+    val textContent = message.getTextContent()
 
     if (isUser) {
         // 用户消息：右对齐气泡样式
@@ -53,30 +63,12 @@ fun MessageItem(
                 shape = MaterialTheme.shapes.large,
                 color = MaterialTheme.colorScheme.secondaryContainer
             ) {
-                Text(
-                    text = message.getTextContent(),  // 使用 getTextContent()
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                )
-            }
-
-            // 重新生成按钮（仅当下一条是 AI 消息且不在流式加载时显示）
-            if (nextMessage != null &&
-                nextMessage.role == MessageRole.ASSISTANT &&
-                !nextMessage.isStreaming &&
-                onRegenerate != null
-            ) {
-                Spacer(modifier = Modifier.height(4.dp))
-                IconButton(
-                    onClick = { onRegenerate(message.id, nextMessage.id) },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Lucide.RefreshCw,
-                        contentDescription = "重新生成",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
+                SelectionContainer {
+                    Text(
+                        text = textContent,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                     )
                 }
             }
@@ -124,8 +116,8 @@ fun MessageItem(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 消息内容
-            Column {
+            // 消息内容（支持系统原生选择复制）
+            Column(modifier = Modifier.fillMaxWidth()) {
                 // 工具执行结果（如果有）
                 val toolResults = message.getToolResults()
                 if (toolResults.isNotEmpty()) {
@@ -133,48 +125,157 @@ fun MessageItem(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                val textContent = message.getTextContent()
                 if (textContent.isNotEmpty()) {
                     MarkdownText(
                         markdown = textContent,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        selectable = true
                     )
                 }
+            }
 
-                // 流式加载指示器或统计信息和变体选择器
-                if (message.isStreaming) {
-                    Spacer(modifier = Modifier.height(8.dp))
+            // 流式加载指示器或统计信息和变体选择器
+            if (message.isStreaming) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     StreamingIndicator()
-                } else {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+
+                    // 重新生成按钮（流式加载时也显示）
+                    if (previousMessage != null &&
+                        previousMessage.role == MessageRole.USER &&
+                        onRegenerate != null
                     ) {
-                        // 变体选择器（当有多个变体时显示）
-                        val variantCount = message.variantCount()
-                        if (variantCount > 1 && onSelectVariant != null) {
-                            VariantSelector(
-                                currentIndex = message.selectedVariantIndex,
-                                totalCount = variantCount,
-                                onPrevious = {
-                                    val newIndex = (message.selectedVariantIndex - 1 + variantCount) % variantCount
-                                    onSelectVariant(message.id, newIndex)
-                                },
-                                onNext = {
-                                    val newIndex = (message.selectedVariantIndex + 1) % variantCount
-                                    onSelectVariant(message.id, newIndex)
-                                }
+                        IconButton(
+                            onClick = { onRegenerate(previousMessage.id, message.id) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Lucide.RefreshCw,
+                                contentDescription = "重新生成",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
+                    }
+                }
+            } else {
+                Spacer(modifier = Modifier.height(4.dp))
 
-                        // 统计信息
-                        if (message.inputTokens > 0 || message.outputTokens > 0) {
-                            StatisticsInfo(
-                                inputTokens = message.inputTokens,
-                                outputTokens = message.outputTokens,
-                                tokensPerSecond = message.tokensPerSecond,
-                                firstTokenLatency = message.firstTokenLatency
+                // 第一行：变体选择器和统计信息
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 变体选择器（当有多个变体时显示）
+                    val variantCount = message.variantCount()
+                    if (variantCount > 1 && onSelectVariant != null) {
+                        VariantSelector(
+                            currentIndex = message.selectedVariantIndex,
+                            totalCount = variantCount,
+                            onPrevious = {
+                                val newIndex = (message.selectedVariantIndex - 1 + variantCount) % variantCount
+                                onSelectVariant(message.id, newIndex)
+                            },
+                            onNext = {
+                                val newIndex = (message.selectedVariantIndex + 1) % variantCount
+                                onSelectVariant(message.id, newIndex)
+                            }
+                        )
+                    }
+
+                    // 统计信息
+                    if (message.inputTokens > 0 || message.outputTokens > 0) {
+                        StatisticsInfo(
+                            inputTokens = message.inputTokens,
+                            outputTokens = message.outputTokens,
+                            tokensPerSecond = message.tokensPerSecond,
+                            firstTokenLatency = message.firstTokenLatency
+                        )
+                    }
+                }
+
+                // 第二行：操作按钮
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 复制按钮
+                    if (onCopy != null) {
+                        IconButton(
+                            onClick = { onCopy(textContent) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Lucide.Copy,
+                                contentDescription = "复制",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    // 朗读按钮
+                    if (onSpeak != null) {
+                        IconButton(
+                            onClick = { onSpeak(textContent) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Lucide.Volume2,
+                                contentDescription = "朗读",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    // 分享按钮
+                    if (onShare != null) {
+                        IconButton(
+                            onClick = { onShare(textContent) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Lucide.Share2,
+                                contentDescription = "分享",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    // 重新生成按钮（仅当上一条是用户消息时显示）
+                    if (previousMessage != null &&
+                        previousMessage.role == MessageRole.USER &&
+                        onRegenerate != null
+                    ) {
+                        IconButton(
+                            onClick = { onRegenerate(previousMessage.id, message.id) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Lucide.RefreshCw,
+                                contentDescription = "重新生成",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    // 删除按钮
+                    if (onDelete != null) {
+                        IconButton(
+                            onClick = { onDelete(message.id) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Lucide.Trash2,
+                                contentDescription = "删除",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }

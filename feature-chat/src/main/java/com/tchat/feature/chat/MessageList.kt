@@ -16,7 +16,11 @@ fun MessageList(
     providerIcon: ImageVector? = null,
     modelName: String = "",
     onRegenerate: ((userMessageId: String, aiMessageId: String) -> Unit)? = null,
-    onSelectVariant: ((messageId: String, variantIndex: Int) -> Unit)? = null
+    onSelectVariant: ((messageId: String, variantIndex: Int) -> Unit)? = null,
+    onCopy: ((content: String) -> Unit)? = null,
+    onSpeak: ((content: String) -> Unit)? = null,
+    onShare: ((content: String) -> Unit)? = null,
+    onDelete: ((messageId: String) -> Unit)? = null
 ) {
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
@@ -27,16 +31,20 @@ fun MessageList(
             items = messages,
             key = { _, message -> message.id }
         ) { index, message ->
-            // 获取下一条消息（用于判断是否显示重新生成按钮）
-            val nextMessage = messages.getOrNull(index + 1)
+            // 获取上一条消息（用于判断是否显示重新生成按钮）
+            val previousMessage = messages.getOrNull(index - 1)
 
             MessageItem(
                 message = message,
                 providerIcon = providerIcon,
                 modelName = modelName,
-                nextMessage = nextMessage,
+                previousMessage = previousMessage,
                 onRegenerate = onRegenerate,
-                onSelectVariant = onSelectVariant
+                onSelectVariant = onSelectVariant,
+                onCopy = onCopy,
+                onSpeak = onSpeak,
+                onShare = onShare,
+                onDelete = onDelete
             )
         }
     }

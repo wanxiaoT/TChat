@@ -1,5 +1,10 @@
 package com.tchat.feature.chat
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.speech.tts.TextToSpeech
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -10,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.BrainCircuit
@@ -23,6 +29,7 @@ import com.tchat.data.model.ChatToolbarSettings
 import com.tchat.data.tool.Tool
 import com.tchat.data.util.RegexRuleData
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,8 +77,78 @@ fun ChatScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     var inputText by remember { mutableStateOf("") }
 
+    // Context for clipboard, share, TTS
+    val context = LocalContext.current
+
     // Snackbar 状态
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Coroutine scope
+    val scope = rememberCoroutineScope()
+
+    // TTS 初始化
+    var tts by remember { mutableStateOf<TextToSpeech?>(null) }
+    var isTtsReady by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        tts = TextToSpeech(context) { status ->
+            isTtsReady = status == TextToSpeech.SUCCESS
+            if (isTtsReady) {
+                tts?.language = Locale.getDefault()
+            }
+        }
+        onDispose {
+            tts?.stop()
+            tts?.shutdown()
+        }
+    }
+
+    // 复制到剪贴板
+    val onCopy: (String) -> Unit = { content ->
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("message", content)
+        clipboard.setPrimaryClip(clip)
+        scope.launch {
+            snackbarHostState.showSnackbar(
+                message = "已复制到剪贴板",
+                duration = SnackbarDuration.Short
+            )
+        }
+    }
+
+    // 朗读
+    val onSpeak: (String) -> Unit = { content ->
+        if (isTtsReady) {
+            tts?.speak(content, TextToSpeech.QUEUE_FLUSH, null, null)
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "语音引擎未就绪",
+                    duration = SnackbarDuration.Short
+                )
+            }
+        }
+    }
+
+    // 分享
+    val onShare: (String) -> Unit = { content ->
+        val sendIntent = Intent().apply {
+            action = Intent.ACTION_SEND
+            putExtra(Intent.EXTRA_TEXT, content)
+            type = "text/plain"
+        }
+        val shareIntent = Intent.createChooser(sendIntent, null)
+        context.startActivity(shareIntent)
+    }
+
+    // 删除消息
+    val onDelete: (String) -> Unit = { messageId ->
+        viewModel.deleteMessage(messageId)
+    }
+
+    val onRegenerateMessage: (String, String) -> Unit = { userMessageId, aiMessageId ->
+        viewModel.regenerateMessage(userMessageId, aiMessageId)
+    }
 
     // 显示错误信息
     LaunchedEffect(errorMessage) {
@@ -85,7 +162,6 @@ fun ChatScreen(
     }
 
     // 工具选择抽屉状态
-    val scope = rememberCoroutineScope()
     var showToolSheet by remember { mutableStateOf(false) }
     val toolSheetState = rememberModalBottomSheetState()
 
@@ -144,11 +220,15 @@ fun ChatScreen(
                         providerIcon = providerIcon,
                         modelName = currentModel,
                         onRegenerate = { userMessageId, aiMessageId ->
-                            viewModel.regenerateMessage(userMessageId, aiMessageId)
+                            onRegenerateMessage(userMessageId, aiMessageId)
                         },
                         onSelectVariant = { messageId, variantIndex ->
                             viewModel.selectVariant(messageId, variantIndex)
-                        }
+                        },
+                        onCopy = onCopy,
+                        onSpeak = onSpeak,
+                        onShare = onShare,
+                        onDelete = onDelete
                     )
 
                     // 输入区域（工具栏 + 输入框）
