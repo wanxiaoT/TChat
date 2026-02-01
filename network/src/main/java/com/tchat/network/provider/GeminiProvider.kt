@@ -1,5 +1,6 @@
 package com.tchat.network.provider
 
+import com.tchat.network.log.NetworkLogger
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -18,10 +19,21 @@ import java.util.concurrent.TimeUnit
  */
 class GeminiProvider(
     private val apiKey: String,
-    private val baseUrl: String = "https://generativelanguage.googleapis.com/v1beta",
+    baseUrl: String = "https://generativelanguage.googleapis.com/v1",
     private val model: String = "gemini-pro",
     private val customParams: CustomParams? = null
 ) : AIProvider {
+
+    private val normalizedBaseUrl = baseUrl
+        .trim()
+        .trimEnd('/')
+        // 允许用户把 endpoint 填成 .../models（避免拼出 /models/models）
+        .removeSuffix("/models")
+
+    private val normalizedModel = model
+        .trim()
+        .removePrefix("models/")
+        .removePrefix("/models/")
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -42,7 +54,20 @@ class GeminiProvider(
         tools: List<ToolDefinition>
     ): Flow<StreamChunk> = callbackFlow {
         val jsonBody = buildRequestBody(messages, tools)
-        val request = buildRequest(jsonBody, tools.isNotEmpty())
+        val requestUrl = buildRequestUrl()
+        val request = buildRequest(requestUrl, jsonBody)
+
+        // 记录请求日志（避免在 URL 中暴露完整 key）
+        val safeUrlForLog = "$normalizedBaseUrl/models/$normalizedModel:streamGenerateContent?alt=sse"
+        val requestId = NetworkLogger.logRequest(
+            provider = "Gemini",
+            model = model,
+            url = safeUrlForLog,
+            headers = mapOf(
+                "Content-Type" to "application/json"
+            ),
+            body = jsonBody
+        )
 
         // 统计信息
         val startTime = System.currentTimeMillis()
@@ -57,6 +82,9 @@ class GeminiProvider(
         currentCall = client.newCall(request)
         currentCall?.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
+                val duration = System.currentTimeMillis() - startTime
+                NetworkLogger.logError(requestId, "网络连接失败: ${e.message}", duration)
+
                 trySend(StreamChunk.Error(AIProviderException.NetworkError(
                     detail = "网络连接失败: ${e.message}",
                     originalError = e
@@ -66,12 +94,28 @@ class GeminiProvider(
 
             override fun onResponse(call: Call, response: Response) {
                 try {
+                    val duration = System.currentTimeMillis() - startTime
                     if (!response.isSuccessful) {
-                        val error = handleErrorResponse(response)
+                        val errorBody = response.body?.string() ?: ""
+                        NetworkLogger.logResponse(
+                            requestId = requestId,
+                            responseCode = response.code,
+                            responseBody = errorBody,
+                            durationMs = duration
+                        )
+
+                        val error = handleErrorResponse(
+                            responseCode = response.code,
+                            responseMessage = response.message,
+                            errorBody = errorBody
+                        )
                         trySend(StreamChunk.Error(error))
                         close()
                         return
                     }
+
+                    // 收集完整响应，用于日志展示
+                    val responseContent = StringBuilder()
 
                     processStreamResponseWithTools(response, toolCallsBuilder) { chunk ->
                         // 收集统计信息
@@ -81,6 +125,7 @@ class GeminiProvider(
                                     firstTokenTime = System.currentTimeMillis()
                                 }
                                 outputTokenCount += (chunk.text.length * 0.5).toInt()
+                                responseContent.append(chunk.text)
                             }
                             is StreamChunk.Done -> {
                                 // 如果有工具调用，先发送
@@ -100,6 +145,14 @@ class GeminiProvider(
                                 val tps = if (totalDuration > 0) finalOutputTokens / totalDuration else 0.0
                                 val latency = firstTokenTime?.let { it - startTime } ?: 0L
 
+                                // 记录响应日志
+                                NetworkLogger.logResponse(
+                                    requestId = requestId,
+                                    responseCode = 200,
+                                    responseBody = responseContent.toString(),
+                                    durationMs = endTime - startTime
+                                )
+
                                 trySend(StreamChunk.Done(
                                     inputTokens = finalInputTokens,
                                     outputTokens = finalOutputTokens,
@@ -115,6 +168,9 @@ class GeminiProvider(
                         chunk is StreamChunk.Done || chunk is StreamChunk.Error
                     }
                 } catch (e: Exception) {
+                    val duration = System.currentTimeMillis() - startTime
+                    NetworkLogger.logError(requestId, "处理响应时出错: ${e.message}", duration)
+
                     trySend(StreamChunk.Error(AIProviderException.UnknownError(
                         detail = "处理响应时出错: ${e.message}",
                         originalError = e
@@ -559,19 +615,24 @@ class GeminiProvider(
         return jsonObject.toString()
     }
 
-    private fun buildRequest(jsonBody: String, hasTools: Boolean = false): Request {
-        val url = "$baseUrl/models/$model:streamGenerateContent?key=$apiKey&alt=sse"
+    private fun buildRequestUrl(): String {
+        return "$normalizedBaseUrl/models/$normalizedModel:streamGenerateContent?key=$apiKey&alt=sse"
+    }
 
+    private fun buildRequest(url: String, jsonBody: String): Request {
         return Request.Builder()
             .url(url)
             .addHeader("Content-Type", "application/json")
+            .addHeader("Accept", "text/event-stream")
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .build()
     }
 
-    private fun handleErrorResponse(response: Response): AIProviderException {
-        val errorBody = response.body?.string() ?: ""
-
+    private fun handleErrorResponse(
+        responseCode: Int,
+        responseMessage: String,
+        errorBody: String
+    ): AIProviderException {
         // 尝试从 JSON 中提取详细错误
         val detailedMessage = try {
             val json = JSONObject(errorBody)
@@ -581,7 +642,7 @@ class GeminiProvider(
             errorBody
         }
 
-        return when (response.code) {
+        return when (responseCode) {
             400 -> AIProviderException.InvalidRequestError(
                 "无效的请求参数\n$detailedMessage"
             )
@@ -598,7 +659,7 @@ class GeminiProvider(
                 "API 服务暂时不可用\n$detailedMessage"
             )
             else -> AIProviderException.UnknownError(
-                "API 错误 (${response.code}): ${response.message}\n$detailedMessage"
+                "API 错误 ($responseCode): $responseMessage\n$detailedMessage"
             )
         }
     }

@@ -251,8 +251,18 @@ class ApiKeyHealthService {
      * 构建 Gemini 格式的测试请求
      */
     private fun buildGeminiTestRequest(apiKey: String, endpoint: String, model: String): Request {
-        val normalizedEndpoint = endpoint.trimEnd('/')
-        val url = "$normalizedEndpoint/models/$model:generateContent?key=$apiKey"
+        val normalizedEndpoint = endpoint
+            .trim()
+            .trimEnd('/')
+            // 允许用户把 endpoint 填成 .../models（避免拼出 /models/models）
+            .removeSuffix("/models")
+
+        val normalizedModel = model
+            .trim()
+            .removePrefix("models/")
+            .removePrefix("/models/")
+
+        val url = "$normalizedEndpoint/models/$normalizedModel:generateContent?key=$apiKey"
 
         val requestBody = JSONObject().apply {
             put("contents", JSONArray().apply {

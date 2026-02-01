@@ -46,7 +46,7 @@ object AIProviderFactory {
             )
             ProviderType.GEMINI -> createGemini(
                 apiKey = config.apiKey,
-                baseUrl = config.baseUrl.ifEmpty { "https://generativelanguage.googleapis.com/v1beta" },
+                baseUrl = config.baseUrl.ifEmpty { "https://generativelanguage.googleapis.com/v1" },
                 model = config.model.ifEmpty { "gemini-pro" },
                 customParams = config.customParams
             )
@@ -88,7 +88,7 @@ object AIProviderFactory {
      */
     fun createGemini(
         apiKey: String,
-        baseUrl: String = "https://generativelanguage.googleapis.com/v1beta",
+        baseUrl: String = "https://generativelanguage.googleapis.com/v1",
         model: String = "gemini-pro",
         customParams: CustomParams? = null
     ): AIProvider {

@@ -1133,21 +1133,35 @@ private suspend fun fetchModelsFromApi(
     apiKey: String,
     providerType: AIProviderType
 ): List<String> = withContext(Dispatchers.IO) {
+    val normalizedEndpoint = endpoint.trim().trimEnd('/')
+
     val url = when (providerType) {
-        AIProviderType.GEMINI -> "$endpoint/models?key=$apiKey"
-        else -> "${endpoint.trimEnd('/')}/models"
+        AIProviderType.OPENAI -> "$normalizedEndpoint/models"
+        AIProviderType.ANTHROPIC -> {
+            // Anthropic models API 使用 /v1/models，并需要 x-api-key + anthropic-version
+            val baseUrl = if (normalizedEndpoint.endsWith("/v1")) normalizedEndpoint else "$normalizedEndpoint/v1"
+            "$baseUrl/models"
+        }
+        AIProviderType.GEMINI -> "$normalizedEndpoint/models?key=$apiKey"
     }
 
     val requestBuilder = Request.Builder().url(url)
 
     when (providerType) {
-        AIProviderType.OPENAI,
-        AIProviderType.ANTHROPIC -> {
+        AIProviderType.OPENAI -> {
             if (apiKey.isNotBlank()) {
                 requestBuilder.addHeader("Authorization", "Bearer $apiKey")
             }
         }
-        else -> {}
+        AIProviderType.ANTHROPIC -> {
+            if (apiKey.isNotBlank()) {
+                requestBuilder.addHeader("x-api-key", apiKey)
+            }
+            requestBuilder.addHeader("anthropic-version", "2023-06-01")
+        }
+        AIProviderType.GEMINI -> {
+            // Gemini 使用 URL query 的 key；某些代理也支持 header，但这里保持最小集合。
+        }
     }
 
     val response = httpClient.newCall(requestBuilder.build()).execute()
@@ -1159,19 +1173,32 @@ private suspend fun fetchModelsFromApi(
     val responseBody = response.body?.string() ?: throw Exception("空响应")
 
     val jsonObject = JSONObject(responseBody)
-    val dataArray = jsonObject.optJSONArray("data")
-        ?: jsonObject.optJSONArray("models")
-        ?: throw Exception("无效的响应格式")
+    val dataArray = jsonObject.optJSONArray("data") ?: jsonObject.optJSONArray("models")
+        ?: throw Exception("无效的响应格式：未找到 data/models 字段")
 
-    val models = mutableListOf<String>()
+    val models = LinkedHashSet<String>()
     for (i in 0 until dataArray.length()) {
-        val modelObj = dataArray.getJSONObject(i)
-        val modelId = modelObj.optString("id") ?: modelObj.optString("model") ?: continue
+        val modelObj = dataArray.optJSONObject(i) ?: continue
+
+        // OpenAI: id；Gemini: name；兼容部分代理: model
+        val rawId = sequenceOf(
+            modelObj.optString("id", ""),
+            modelObj.optString("name", ""),
+            modelObj.optString("model", "")
+        ).firstOrNull { it.isNotBlank() }.orEmpty()
+
+        val modelId = rawId
+            .trim()
+            .removePrefix("models/")
+            .removePrefix("/models/")
+
+        if (modelId.isBlank()) continue
 
         if (modelId.contains("embedding", ignoreCase = true) ||
             modelId.contains("whisper", ignoreCase = true) ||
             modelId.contains("tts", ignoreCase = true) ||
-            modelId.contains("dall-e", ignoreCase = true)) {
+            modelId.contains("dall-e", ignoreCase = true)
+        ) {
             continue
         }
 
@@ -1182,7 +1209,7 @@ private suspend fun fetchModelsFromApi(
         throw Exception("未找到可用模型")
     }
 
-    models
+    models.toList()
 }
 
 /**

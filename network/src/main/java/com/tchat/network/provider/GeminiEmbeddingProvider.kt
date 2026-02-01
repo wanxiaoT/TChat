@@ -22,7 +22,11 @@ class GeminiEmbeddingProvider(
     baseUrl: String = "https://generativelanguage.googleapis.com/v1"
 ) : EmbeddingProvider {
 
-    private val normalizedBaseUrl = baseUrl.trimEnd('/')
+    private val normalizedBaseUrl = baseUrl
+        .trim()
+        .trimEnd('/')
+        // 允许用户把 endpoint 填成 .../models（避免拼出 /models/models）
+        .removeSuffix("/models")
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
@@ -158,10 +162,15 @@ class GeminiEmbeddingProvider(
     private fun buildBatchRequestBody(texts: List<String>, model: String): String {
         val jsonObject = JSONObject()
 
+        val normalizedModel = model
+            .trim()
+            .removePrefix("models/")
+            .removePrefix("/models/")
+
         val requestsArray = JSONArray()
         texts.forEach { text ->
             val requestObject = JSONObject()
-            requestObject.put("model", "models/$model")
+            requestObject.put("model", "models/$normalizedModel")
 
             val contentObject = JSONObject()
             val partsArray = JSONArray()
@@ -180,16 +189,26 @@ class GeminiEmbeddingProvider(
     }
 
     private fun buildSingleRequest(model: String, jsonBody: String): Request {
+        val normalizedModel = model
+            .trim()
+            .removePrefix("models/")
+            .removePrefix("/models/")
+
         return Request.Builder()
-            .url("$normalizedBaseUrl/models/$model:embedContent?key=$apiKey")
+            .url("$normalizedBaseUrl/models/$normalizedModel:embedContent?key=$apiKey")
             .addHeader("Content-Type", "application/json")
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .build()
     }
 
     private fun buildBatchRequest(model: String, jsonBody: String): Request {
+        val normalizedModel = model
+            .trim()
+            .removePrefix("models/")
+            .removePrefix("/models/")
+
         return Request.Builder()
-            .url("$normalizedBaseUrl/models/$model:batchEmbedContents?key=$apiKey")
+            .url("$normalizedBaseUrl/models/$normalizedModel:batchEmbedContents?key=$apiKey")
             .addHeader("Content-Type", "application/json")
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .build()
