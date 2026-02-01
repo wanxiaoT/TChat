@@ -397,22 +397,18 @@ internal fun InputToolbar(
     var modelMenuExpanded by remember { mutableStateOf(false) }
     val normalizedToolbarSettings = remember(toolbarSettings) { toolbarSettings.normalized() }
 
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 1.dp
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            normalizedToolbarSettings.items.forEach { config ->
-                if (!config.visible) return@forEach
+        normalizedToolbarSettings.items.forEach { config ->
+            if (!config.visible) return@forEach
 
-                when (config.item) {
-                    ChatToolbarItem.MODEL -> {
+            when (config.item) {
+                ChatToolbarItem.MODEL -> {
                         if (availableModels.isNotEmpty()) {
                             Box {
                                 Surface(
@@ -474,7 +470,7 @@ internal fun InputToolbar(
                         }
                     }
 
-                    ChatToolbarItem.DEEP_RESEARCH -> {
+                ChatToolbarItem.DEEP_RESEARCH -> {
                         if (onDeepResearch != null) {
                             Surface(
                                 onClick = { onDeepResearch() },
@@ -508,7 +504,7 @@ internal fun InputToolbar(
                         }
                     }
 
-                    ChatToolbarItem.TOOLS -> {
+                ChatToolbarItem.TOOLS -> {
                         Surface(
                             onClick = onToolsClick,
                             color = if (enabledToolsCount > 0)
@@ -555,7 +551,7 @@ internal fun InputToolbar(
                         }
                     }
 
-                    ChatToolbarItem.JUNGLE_HELPER -> {
+                ChatToolbarItem.JUNGLE_HELPER -> {
                         if (onJungleHelperClick != null) {
                             Surface(
                                 onClick = onJungleHelperClick,
@@ -577,7 +573,6 @@ internal fun InputToolbar(
                             }
                         }
                     }
-                }
             }
         }
     }
