@@ -2,6 +2,7 @@ package com.tchat.data
 
 import com.tchat.core.util.Result
 import com.tchat.data.model.Message
+import com.tchat.data.model.MessagePart
 import com.tchat.data.model.MessageRole
 import com.tchat.data.repository.ChatConfig
 import com.tchat.data.repository.ChatRepository
@@ -93,7 +94,12 @@ class MessageSender(
     /**
      * 发送消息到已有聊天
      */
-    fun sendMessage(chatId: String, content: String, config: ChatConfig? = null) {
+    fun sendMessage(
+        chatId: String,
+        content: String,
+        config: ChatConfig? = null,
+        mediaParts: List<MessagePart> = emptyList()
+    ) {
         val repo = repository ?: return
         val chatConfig = config ?: currentConfig
 
@@ -101,7 +107,12 @@ class MessageSender(
         sendingJobs[chatId]?.cancel()
 
         sendingJobs[chatId] = scope.launch {
-            repo.sendMessage(chatId, content, chatConfig).collect { result ->
+            repo.sendMessage(
+                chatId = chatId,
+                content = content,
+                config = chatConfig,
+                mediaParts = mediaParts
+            ).collect { result ->
                 when (result) {
                     is Result.Success -> {
                         val message = result.data
@@ -135,7 +146,12 @@ class MessageSender(
      * 发送消息到新聊天（懒创建）
      * @return 创建的 chatId
      */
-    fun sendMessageToNewChat(content: String, config: ChatConfig? = null, onChatCreated: (String) -> Unit) {
+    fun sendMessageToNewChat(
+        content: String,
+        config: ChatConfig? = null,
+        mediaParts: List<MessagePart> = emptyList(),
+        onChatCreated: (String) -> Unit
+    ) {
         val repo = repository ?: return
         val chatConfig = config ?: currentConfig
 
@@ -145,7 +161,11 @@ class MessageSender(
         sendingJobs[tempId] = scope.launch {
             var realChatId: String? = null
 
-            repo.sendMessageToNewChat(content, chatConfig).collect { result ->
+            repo.sendMessageToNewChat(
+                content = content,
+                config = chatConfig,
+                mediaParts = mediaParts
+            ).collect { result ->
                 when (result) {
                     is Result.Success -> {
                         val messageResult = result.data
@@ -181,6 +201,88 @@ class MessageSender(
             }
 
             // 任务完成
+            realChatId?.let { sendingJobs.remove(it) }
+            sendingJobs.remove(tempId)
+        }
+    }
+
+    /**
+     * 生成图片到已有聊天
+     */
+    fun generateImage(chatId: String, prompt: String, config: ChatConfig? = null) {
+        val repo = repository ?: return
+        val chatConfig = config ?: currentConfig
+
+        sendingJobs[chatId]?.cancel()
+        sendingJobs[chatId] = scope.launch {
+            repo.generateImage(chatId = chatId, prompt = prompt, config = chatConfig).collect { result ->
+                when (result) {
+                    is Result.Success -> {
+                        val message = result.data
+                        if (message.role == MessageRole.ASSISTANT) {
+                            if (message.isStreaming) {
+                                updateStreamingMessage(chatId, message)
+                            } else {
+                                updateStreamingMessage(chatId, message)
+                                onMessageCompleted(message)
+                            }
+                        }
+                    }
+                    is Result.Error -> {
+                        removeStreamingMessage(chatId)
+                        _errors.value = chatId to result.exception
+                    }
+                    is Result.Loading -> {}
+                }
+            }
+            removeStreamingMessage(chatId)
+            sendingJobs.remove(chatId)
+        }
+    }
+
+    /**
+     * 生成图片到新聊天（懒创建）
+     */
+    fun generateImageToNewChat(prompt: String, config: ChatConfig? = null, onChatCreated: (String) -> Unit) {
+        val repo = repository ?: return
+        val chatConfig = config ?: currentConfig
+
+        val tempId = "new_img_${System.currentTimeMillis()}"
+        sendingJobs[tempId] = scope.launch {
+            var realChatId: String? = null
+
+            repo.generateImageToNewChat(prompt = prompt, config = chatConfig).collect { result ->
+                when (result) {
+                    is Result.Success -> {
+                        val messageResult = result.data
+                        val message = messageResult.message
+
+                        if (realChatId == null) {
+                            realChatId = messageResult.chatId
+                            onChatCreated(messageResult.chatId)
+
+                            sendingJobs.remove(tempId)?.let {
+                                sendingJobs[messageResult.chatId] = it
+                            }
+                        }
+
+                        if (message.role == MessageRole.ASSISTANT) {
+                            if (message.isStreaming) {
+                                updateStreamingMessage(messageResult.chatId, message)
+                            } else {
+                                removeStreamingMessage(messageResult.chatId)
+                                onMessageCompleted(message)
+                            }
+                        }
+                    }
+                    is Result.Error -> {
+                        realChatId?.let { removeStreamingMessage(it) }
+                        _errors.value = (realChatId ?: tempId) to result.exception
+                    }
+                    is Result.Loading -> {}
+                }
+            }
+
             realChatId?.let { sendingJobs.remove(it) }
             sendingJobs.remove(tempId)
         }

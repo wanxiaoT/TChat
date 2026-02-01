@@ -24,6 +24,24 @@ object MessagePartSerializer {
                         put("content", part.content)
                     }
                 }
+                is MessagePart.Image -> {
+                    JSONObject().apply {
+                        put("type", "image")
+                        put("filePath", part.filePath)
+                        put("mimeType", part.mimeType)
+                        part.fileName?.let { put("fileName", it) }
+                        part.sizeBytes?.let { put("sizeBytes", it) }
+                    }
+                }
+                is MessagePart.Video -> {
+                    JSONObject().apply {
+                        put("type", "video")
+                        put("filePath", part.filePath)
+                        put("mimeType", part.mimeType)
+                        part.fileName?.let { put("fileName", it) }
+                        part.sizeBytes?.let { put("sizeBytes", it) }
+                    }
+                }
                 is MessagePart.ToolCall -> {
                     JSONObject().apply {
                         put("type", "tool_call")
@@ -63,6 +81,22 @@ object MessagePartSerializer {
                     "text" -> {
                         MessagePart.Text(
                             content = jsonObj.optString("content", "")
+                        )
+                    }
+                    "image" -> {
+                        MessagePart.Image(
+                            filePath = jsonObj.optString("filePath", ""),
+                            mimeType = jsonObj.optString("mimeType", "image/png"),
+                            fileName = jsonObj.optString("fileName", "").takeIf { it.isNotBlank() },
+                            sizeBytes = jsonObj.optLong("sizeBytes", -1L).takeIf { it >= 0L }
+                        )
+                    }
+                    "video" -> {
+                        MessagePart.Video(
+                            filePath = jsonObj.optString("filePath", ""),
+                            mimeType = jsonObj.optString("mimeType", "video/mp4"),
+                            fileName = jsonObj.optString("fileName", "").takeIf { it.isNotBlank() },
+                            sizeBytes = jsonObj.optLong("sizeBytes", -1L).takeIf { it >= 0L }
                         )
                     }
                     "tool_call" -> {

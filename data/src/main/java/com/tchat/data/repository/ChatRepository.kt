@@ -48,7 +48,8 @@ interface ChatRepository {
     suspend fun sendMessage(
         chatId: String,
         content: String,
-        config: ChatConfig? = null
+        config: ChatConfig? = null,
+        mediaParts: List<com.tchat.data.model.MessagePart> = emptyList()
     ): Flow<Result<Message>>
 
     suspend fun addMessage(message: Message): Result<Unit>
@@ -60,6 +61,24 @@ interface ChatRepository {
      */
     suspend fun sendMessageToNewChat(
         content: String,
+        config: ChatConfig? = null,
+        mediaParts: List<com.tchat.data.model.MessagePart> = emptyList()
+    ): Flow<Result<MessageResult>>
+
+    /**
+     * 生成图片（如果当前服务商支持）
+     */
+    suspend fun generateImage(
+        chatId: String,
+        prompt: String,
+        config: ChatConfig? = null
+    ): Flow<Result<Message>>
+
+    /**
+     * 生成图片到新聊天（懒创建）
+     */
+    suspend fun generateImageToNewChat(
+        prompt: String,
         config: ChatConfig? = null
     ): Flow<Result<MessageResult>>
 

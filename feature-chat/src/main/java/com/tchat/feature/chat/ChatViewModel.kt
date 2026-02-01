@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.tchat.data.MessageSender
 import com.tchat.data.model.Chat
 import com.tchat.data.model.Message
+import com.tchat.data.model.MessagePart
 import com.tchat.data.repository.ChatConfig
 import com.tchat.data.repository.ChatRepository
 import com.tchat.data.tool.Tool
@@ -167,10 +168,10 @@ class ChatViewModel(
      * 发送消息
      * @param chatId 聊天ID，null表示新建聊天
      */
-    fun sendMessage(chatId: String?, content: String) {
+    fun sendMessage(chatId: String?, content: String, mediaParts: List<MessagePart> = emptyList()) {
         if (chatId == null) {
             // 懒创建模式
-            messageSender.sendMessageToNewChat(content, _chatConfig.value) { newChatId ->
+            messageSender.sendMessageToNewChat(content, _chatConfig.value, mediaParts) { newChatId ->
                 // 聊天创建后，更新 ID
                 if (_actualChatId.value == null) {
                     _actualChatId.value = newChatId
@@ -187,7 +188,30 @@ class ChatViewModel(
             }
         } else {
             // 已有聊天
-            messageSender.sendMessage(chatId, content, _chatConfig.value)
+            messageSender.sendMessage(chatId, content, _chatConfig.value, mediaParts)
+        }
+    }
+
+    /**
+     * 生成图片
+     */
+    fun generateImage(chatId: String?, prompt: String) {
+        if (chatId == null) {
+            messageSender.generateImageToNewChat(prompt, _chatConfig.value) { newChatId ->
+                if (_actualChatId.value == null) {
+                    _actualChatId.value = newChatId
+                    currentChatId = newChatId
+
+                    messagesLoadJob?.cancel()
+                    messagesLoadJob = viewModelScope.launch {
+                        repository.getMessagesByChatId(newChatId).collect { messages ->
+                            _dbMessages.value = messages
+                        }
+                    }
+                }
+            }
+        } else {
+            messageSender.generateImage(chatId, prompt, _chatConfig.value)
         }
     }
 

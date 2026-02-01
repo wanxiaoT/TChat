@@ -1,7 +1,9 @@
 package com.tchat.network.provider
 
 import com.tchat.network.log.NetworkLogger
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import okhttp3.*
@@ -161,6 +163,66 @@ class OpenAIProvider(
 
         awaitClose {
             currentCall?.cancel()
+        }
+    }
+
+    override suspend fun generateImage(
+        prompt: String,
+        options: ImageGenerationOptions
+    ): ImageGenerationResult = withContext(Dispatchers.IO) {
+        val effectiveModel = options.model ?: "gpt-image-1"
+        val requestBodyJson = JSONObject().apply {
+            put("model", effectiveModel)
+            put("prompt", prompt)
+            put("n", options.n.coerceIn(1, 10))
+            options.size?.takeIf { it.isNotBlank() }?.let { put("size", it) }
+            options.quality?.takeIf { it.isNotBlank() }?.let { put("quality", it) }
+            put("response_format", "b64_json")
+        }
+
+        val request = Request.Builder()
+            .url("$normalizedBaseUrl/images/generations")
+            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("Content-Type", "application/json")
+            .post(requestBodyJson.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val errorBody = response.body?.string() ?: ""
+                throw handleErrorResponse(response.code, errorBody)
+            }
+
+            val responseBody = response.body?.string().orEmpty()
+            val json = JSONObject(responseBody)
+            val dataArray = json.optJSONArray("data") ?: JSONArray()
+
+            val images = mutableListOf<GeneratedImage>()
+            for (i in 0 until dataArray.length()) {
+                val item = dataArray.optJSONObject(i) ?: continue
+                val b64 = item.optString("b64_json").takeIf { it.isNotBlank() }
+                if (b64 != null) {
+                    images.add(GeneratedImage(base64Data = b64, mimeType = "image/png"))
+                    continue
+                }
+
+                // 一些兼容服务可能返回 url，这里做一次兜底下载再转 base64
+                val url = item.optString("url").takeIf { it.isNotBlank() } ?: continue
+                val imageRequest = Request.Builder().url(url).build()
+                client.newCall(imageRequest).execute().use { imageResp ->
+                    if (!imageResp.isSuccessful) return@use
+                    val bytes = imageResp.body?.bytes() ?: return@use
+                    val mime = imageResp.header("Content-Type")?.takeIf { it.isNotBlank() } ?: "image/png"
+                    val encoded = java.util.Base64.getEncoder().encodeToString(bytes)
+                    images.add(GeneratedImage(base64Data = encoded, mimeType = mime))
+                }
+            }
+
+            if (images.isEmpty()) {
+                throw AIProviderException.UnknownError("图片生成失败：响应不包含图片数据")
+            }
+
+            ImageGenerationResult(images = images)
         }
     }
 
@@ -405,6 +467,11 @@ class OpenAIProvider(
                                     imageUrlObj.put("url", "data:${part.mimeType};base64,${part.base64Data}")
                                     imageObj.put("image_url", imageUrlObj)
                                     contentArray.put(imageObj)
+                                }
+                                is MessageContent.Video -> {
+                                    throw AIProviderException.InvalidRequestError(
+                                        "当前 OpenAI Chat Completions 接口不支持视频输入（仅 Gemini 支持）"
+                                    )
                                 }
                             }
                         }

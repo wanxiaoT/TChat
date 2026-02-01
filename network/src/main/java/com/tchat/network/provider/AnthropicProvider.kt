@@ -644,6 +644,11 @@ class AnthropicProvider(
                                     imageObj.put("source", sourceObj)
                                     contentArray.put(imageObj)
                                 }
+                                is MessageContent.Video -> {
+                                    throw AIProviderException.InvalidRequestError(
+                                        "当前 Anthropic Claude 接口不支持视频输入（仅 Gemini 支持）"
+                                    )
+                                }
                             }
                         }
                         msgObj.put("content", contentArray)

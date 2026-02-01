@@ -38,6 +38,7 @@ import com.tchat.data.tool.LocalTools
 import com.tchat.data.tool.Tool
 import com.tchat.data.mcp.McpToolService
 import com.tchat.data.repository.impl.McpServerRepositoryImpl
+import java.io.File
 import com.tchat.data.tts.TtsService
 import com.tchat.data.tts.TtsEngineType as DataTtsEngineType
 import com.tchat.feature.chat.ChatScreen
@@ -221,6 +222,8 @@ fun MainScreen(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val settings by settingsManager.settings.collectAsState()
     val currentProvider = settings.getCurrentProvider()
+    val context = LocalContext.current
+    val chatMediaDir = remember(context) { File(context.filesDir, "chat_media") }
 
     val chatDao = database.chatDao()
     val messageDao = database.messageDao()
@@ -360,7 +363,13 @@ fun MainScreen(
                     )
                 }
 
-                val newRepo = ChatRepositoryImpl(aiProvider, chatDao, messageDao)
+                val newRepo = ChatRepositoryImpl(
+                    aiProvider = aiProvider,
+                    chatDao = chatDao,
+                    messageDao = messageDao,
+                    providerType = mappedType,
+                    mediaDir = chatMediaDir
+                )
                 repository = newRepo
                 // 初始化 MessageSender 的 repository
                 messageSender.init(newRepo)

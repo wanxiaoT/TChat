@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.speech.tts.TextToSpeech
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -26,6 +28,7 @@ import com.tchat.data.model.LocalToolOption
 import com.tchat.data.model.GroupActivationStrategy
 import com.tchat.data.model.Assistant
 import com.tchat.data.model.ChatToolbarSettings
+import com.tchat.data.model.MessagePart
 import com.tchat.data.tool.Tool
 import com.tchat.data.util.RegexRuleData
 import kotlinx.coroutines.launch
@@ -84,6 +87,7 @@ fun GroupChatScreen(
     val currentSpeakerId by viewModel.currentSpeakerId.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
+    var draftMediaParts by remember { mutableStateOf<List<MessagePart>>(emptyList()) }
 
     // Context for clipboard, share, TTS
     val context = LocalContext.current
@@ -173,6 +177,36 @@ fun GroupChatScreen(
     var showToolSheet by remember { mutableStateOf(false) }
     val toolSheetState = rememberModalBottomSheetState()
 
+    val pickMediaLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            val added = mutableListOf<MessagePart>()
+            uris.forEach { uri ->
+                runCatching {
+                    ChatMediaUtils.importMediaPart(context, uri)
+                }.onSuccess { part ->
+                    added.add(part)
+                }.onFailure { e ->
+                    snackbarHostState.showSnackbar(
+                        message = e.message ?: "导入文件失败",
+                        duration = SnackbarDuration.Short
+                    )
+                }
+            }
+            if (added.isNotEmpty()) {
+                draftMediaParts = (draftMediaParts + added).distinctBy { part ->
+                    when (part) {
+                        is MessagePart.Image -> "img:${part.filePath}"
+                        is MessagePart.Video -> "vid:${part.filePath}"
+                        else -> part.toString()
+                    }
+                }
+            }
+        }
+    }
+
     // 计算当前启用的工具列表
     val currentTools = remember(enabledTools, getToolsForOptions, extraTools) {
         getToolsForOptions(enabledTools.toList()) + extraTools
@@ -193,6 +227,7 @@ fun GroupChatScreen(
     // 监听 groupChatId 和 chatId 的变化
     LaunchedEffect(groupChatId, chatId, viewModel) {
         inputText = ""
+        draftMediaParts = emptyList()
         viewModel.loadGroupChat(groupChatId, chatId)
     }
 
@@ -296,7 +331,7 @@ fun GroupChatScreen(
                             text = inputText,
                             onTextChange = { inputText = it },
                             onSend = {
-                                if (inputText.isNotBlank()) {
+                                if (inputText.isNotBlank() || draftMediaParts.isNotEmpty()) {
                                     // 如果是手动模式且没有选择助手，提示用户
                                     if (currentGroupChat?.activationStrategy == GroupActivationStrategy.MANUAL
                                         && currentSpeakerId == null) {
@@ -309,9 +344,26 @@ fun GroupChatScreen(
                                     viewModel.sendMessage(
                                         chatId = actualChatId ?: chatId,
                                         content = inputText,
-                                        selectedAssistantId = currentSpeakerId
+                                        selectedAssistantId = currentSpeakerId,
+                                        mediaParts = draftMediaParts
                                     )
                                     inputText = ""
+                                    draftMediaParts = emptyList()
+                                }
+                            },
+                            mediaParts = draftMediaParts,
+                            onPickMedia = { pickMediaLauncher.launch(arrayOf("image/*", "video/*")) },
+                            onRemoveMedia = { part -> draftMediaParts = draftMediaParts.filterNot { it == part } },
+                            onGenerateImage = {
+                                if (inputText.isNotBlank()) {
+                                    if (currentGroupChat?.activationStrategy == GroupActivationStrategy.MANUAL
+                                        && currentSpeakerId == null) {
+                                        scope.launch { snackbarHostState.showSnackbar(pleaseSelectAssistantFirst) }
+                                        return@MessageInput
+                                    }
+                                    viewModel.generateImage(actualChatId ?: chatId, inputText)
+                                    inputText = ""
+                                    draftMediaParts = emptyList()
                                 }
                             },
                             inputHint = inputHint,

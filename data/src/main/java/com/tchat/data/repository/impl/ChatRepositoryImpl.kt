@@ -21,17 +21,24 @@ import com.tchat.data.util.MessagePartSerializer
 import com.tchat.data.util.RegexRuleData
 import com.tchat.data.util.RegexStreamProcessor
 import com.tchat.network.provider.AIProvider
+import com.tchat.network.provider.AIProviderFactory
 import com.tchat.network.provider.ChatMessage
+import com.tchat.network.provider.ImageGenerationOptions
+import com.tchat.network.provider.MessageContent
 import com.tchat.network.provider.StreamChunk
 import com.tchat.network.provider.ToolCallInfo
 import com.tchat.network.provider.ToolDefinition
 import com.tchat.network.provider.MessageRole as ProviderMessageRole
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.UUID
+import java.util.Base64
 
 /**
  * 聊天仓库实现
@@ -46,6 +53,8 @@ class ChatRepositoryImpl(
     private val aiProvider: AIProvider,
     private val chatDao: ChatDao,
     private val messageDao: MessageDao,
+    private val providerType: AIProviderFactory.ProviderType,
+    private val mediaDir: File,
     private val skillRepository: SkillRepository? = null
 ) : ChatRepository {
 
@@ -107,25 +116,47 @@ class ChatRepositoryImpl(
     override suspend fun sendMessage(
         chatId: String,
         content: String,
-        config: ChatConfig?
+        config: ChatConfig?,
+        mediaParts: List<MessagePart>
     ): Flow<Result<Message>> = flow {
         try {
             println("=== sendMessage 开始 ===")
             println("chatId: $chatId")
             println("config tools: ${config?.tools?.size ?: 0}")
 
-            // 添加用户消息
-            val userMessage = Message.createTextMessage(
+            val normalizedMediaParts = mediaParts.filter { it is MessagePart.Image || it is MessagePart.Video }
+            if (providerType != AIProviderFactory.ProviderType.GEMINI &&
+                normalizedMediaParts.any { it is MessagePart.Video }
+            ) {
+                throw IllegalArgumentException("当前服务商不支持视频输入（仅 Gemini 支持）")
+            }
+            val userParts = buildList {
+                if (content.isNotBlank()) add(MessagePart.Text(content))
+                addAll(normalizedMediaParts)
+            }
+
+            if (userParts.isEmpty()) {
+                throw IllegalArgumentException("消息内容为空")
+            }
+
+            // 添加用户消息（支持多模态）
+            val userMessage = Message(
                 id = UUID.randomUUID().toString(),
                 chatId = chatId,
                 role = MessageRole.USER,
-                content = content
+                parts = userParts
             )
             addMessage(userMessage)
             emit(Result.Success(userMessage))
 
             // 自动生成标题
-            autoGenerateTitle(chatId, content)
+            val titleSeed = content.takeIf { it.isNotBlank() }
+                ?: when {
+                    normalizedMediaParts.any { it is MessagePart.Video } -> "视频"
+                    normalizedMediaParts.any { it is MessagePart.Image } -> "图片"
+                    else -> ""
+                }
+            autoGenerateTitle(chatId, titleSeed)
 
             // 技能匹配和激活
             val enabledSkillIds = config?.enabledSkillIds ?: emptyList()
@@ -202,12 +233,23 @@ class ChatRepositoryImpl(
 
     override suspend fun sendMessageToNewChat(
         content: String,
-        config: ChatConfig?
+        config: ChatConfig?,
+        mediaParts: List<MessagePart>
     ): Flow<Result<MessageResult>> = flow {
         try {
             // 创建新聊天
-            val title = content.take(50).let {
+            val normalizedMediaParts = mediaParts.filter { it is MessagePart.Image || it is MessagePart.Video }
+            if (providerType != AIProviderFactory.ProviderType.GEMINI &&
+                normalizedMediaParts.any { it is MessagePart.Video }
+            ) {
+                throw IllegalArgumentException("当前服务商不支持视频输入（仅 Gemini 支持）")
+            }
+            val title = content.takeIf { it.isNotBlank() }?.take(50)?.let {
                 if (content.length > 50) "$it..." else it
+            } ?: when {
+                normalizedMediaParts.any { it is MessagePart.Video } -> "视频"
+                normalizedMediaParts.any { it is MessagePart.Image } -> "图片"
+                else -> "新对话"
             }
             val now = System.currentTimeMillis()
             val chatEntity = ChatEntity(
@@ -220,12 +262,21 @@ class ChatRepositoryImpl(
             chatDao.insertChat(chatEntity)
             val chatId = chatEntity.id
 
-            // 添加用户消息
-            val userMessage = Message.createTextMessage(
+            val userParts = buildList {
+                if (content.isNotBlank()) add(MessagePart.Text(content))
+                addAll(normalizedMediaParts)
+            }
+
+            if (userParts.isEmpty()) {
+                throw IllegalArgumentException("消息内容为空")
+            }
+
+            // 添加用户消息（支持多模态）
+            val userMessage = Message(
                 id = UUID.randomUUID().toString(),
                 chatId = chatId,
                 role = MessageRole.USER,
-                content = content
+                parts = userParts
             )
             saveMessageToDb(userMessage)
             emit(Result.Success(MessageResult(chatId, userMessage)))
@@ -263,7 +314,7 @@ class ChatRepositoryImpl(
                     messages.add(ChatMessage(role = ProviderMessageRole.SYSTEM, content = it))
                 }
             }
-            messages.add(ChatMessage(role = ProviderMessageRole.USER, content = content))
+            messages.add(buildUserChatMessage(userMessage))
 
             // 转换工具定义
             val toolDefinitions = allTools.map { it.toToolDefinition() }
@@ -297,6 +348,171 @@ class ChatRepositoryImpl(
         } catch (e: Exception) {
             emit(Result.Error(e))
         }
+    }
+
+    override suspend fun generateImage(
+        chatId: String,
+        prompt: String,
+        config: ChatConfig?
+    ): Flow<Result<Message>> = flow {
+        try {
+            val trimmedPrompt = prompt.trim()
+            if (trimmedPrompt.isBlank()) throw IllegalArgumentException("提示词不能为空")
+
+            // 记录用户提示词消息（作为对话上下文）
+            val userMessage = Message.createTextMessage(
+                id = UUID.randomUUID().toString(),
+                chatId = chatId,
+                role = MessageRole.USER,
+                content = trimmedPrompt
+            )
+            addMessage(userMessage)
+            emit(Result.Success(userMessage))
+
+            autoGenerateTitle(chatId, trimmedPrompt)
+
+            // 生成占位 AI 消息
+            val assistantId = UUID.randomUUID().toString()
+            emit(Result.Success(Message(
+                id = assistantId,
+                chatId = chatId,
+                role = MessageRole.ASSISTANT,
+                parts = listOf(MessagePart.Text("图片生成中...")),
+                isStreaming = true
+            )))
+
+            val result = aiProvider.generateImage(
+                prompt = trimmedPrompt,
+                options = ImageGenerationOptions()
+            )
+
+            val savedParts = mutableListOf<MessagePart>()
+            result.images.forEachIndexed { index, img ->
+                savedParts.add(saveGeneratedImage(img, index))
+            }
+
+            if (savedParts.isEmpty()) throw IllegalStateException("图片生成失败：没有返回图片")
+
+            val finalMessage = Message(
+                id = assistantId,
+                chatId = chatId,
+                role = MessageRole.ASSISTANT,
+                parts = savedParts,
+                isStreaming = false,
+                modelName = config?.modelName,
+                providerId = config?.providerId
+            )
+
+            saveMessageToDb(finalMessage)
+            chatDao.updateChatTimestamp(chatId, System.currentTimeMillis())
+
+            emit(Result.Success(finalMessage))
+        } catch (e: Exception) {
+            emit(Result.Error(e))
+        }
+    }
+
+    override suspend fun generateImageToNewChat(
+        prompt: String,
+        config: ChatConfig?
+    ): Flow<Result<MessageResult>> = flow {
+        try {
+            val trimmedPrompt = prompt.trim()
+            if (trimmedPrompt.isBlank()) throw IllegalArgumentException("提示词不能为空")
+
+            // 创建新聊天
+            val title = trimmedPrompt.take(50).let {
+                if (trimmedPrompt.length > 50) "$it..." else it
+            }
+            val now = System.currentTimeMillis()
+            val chatEntity = ChatEntity(
+                id = UUID.randomUUID().toString(),
+                title = title,
+                createdAt = now,
+                updatedAt = now,
+                isNameManuallyEdited = false
+            )
+            chatDao.insertChat(chatEntity)
+            val chatId = chatEntity.id
+
+            // 保存用户提示词消息
+            val userMessage = Message.createTextMessage(
+                id = UUID.randomUUID().toString(),
+                chatId = chatId,
+                role = MessageRole.USER,
+                content = trimmedPrompt
+            )
+            saveMessageToDb(userMessage)
+            emit(Result.Success(MessageResult(chatId, userMessage)))
+
+            // 生成占位 AI 消息
+            val assistantId = UUID.randomUUID().toString()
+            emit(Result.Success(MessageResult(chatId, Message(
+                id = assistantId,
+                chatId = chatId,
+                role = MessageRole.ASSISTANT,
+                parts = listOf(MessagePart.Text("图片生成中...")),
+                isStreaming = true
+            ))))
+
+            val result = aiProvider.generateImage(
+                prompt = trimmedPrompt,
+                options = ImageGenerationOptions()
+            )
+
+            val savedParts = mutableListOf<MessagePart>()
+            result.images.forEachIndexed { index, img ->
+                savedParts.add(saveGeneratedImage(img, index))
+            }
+
+            if (savedParts.isEmpty()) throw IllegalStateException("图片生成失败：没有返回图片")
+
+            val finalMessage = Message(
+                id = assistantId,
+                chatId = chatId,
+                role = MessageRole.ASSISTANT,
+                parts = savedParts,
+                isStreaming = false,
+                modelName = config?.modelName,
+                providerId = config?.providerId
+            )
+            saveMessageToDb(finalMessage)
+            chatDao.updateChatTimestamp(chatId, System.currentTimeMillis())
+
+            emit(Result.Success(MessageResult(chatId, finalMessage)))
+        } catch (e: Exception) {
+            emit(Result.Error(e))
+        }
+    }
+
+    private suspend fun saveGeneratedImage(
+        image: com.tchat.network.provider.GeneratedImage,
+        index: Int
+    ): MessagePart.Image = withContext(Dispatchers.IO) {
+        val bytes = try {
+            Base64.getDecoder().decode(image.base64Data)
+        } catch (e: Exception) {
+            throw IllegalArgumentException("生成图片数据解析失败", e)
+        }
+
+        val ext = when {
+            image.mimeType.contains("png", ignoreCase = true) -> "png"
+            image.mimeType.contains("webp", ignoreCase = true) -> "webp"
+            image.mimeType.contains("jpg", ignoreCase = true) || image.mimeType.contains("jpeg", ignoreCase = true) -> "jpg"
+            else -> "png"
+        }
+
+        val outDir = File(mediaDir, "generated").apply { mkdirs() }
+        val fileName = "gen_${System.currentTimeMillis()}_${index}.$ext"
+        val outFile = File(outDir, fileName)
+        outFile.writeBytes(bytes)
+
+        MessagePart.Image(
+            filePath = outFile.absolutePath,
+            mimeType = image.mimeType,
+            fileName = outFile.name,
+            sizeBytes = bytes.size.toLong()
+        )
     }
 
     /**
@@ -518,6 +734,8 @@ class ChatRepositoryImpl(
                 is MessagePart.Text -> println("  文本: ${part.content.take(50)}...")
                 is MessagePart.ToolCall -> println("  工具调用: ${part.toolName}")
                 is MessagePart.ToolResult -> println("  工具结果: ${part.toolName}, ID: ${part.toolCallId}")
+                is MessagePart.Image -> println("  图片: ${part.fileName ?: part.filePath}")
+                is MessagePart.Video -> println("  视频: ${part.fileName ?: part.filePath}")
             }
         }
 
@@ -828,23 +1046,119 @@ class ChatRepositoryImpl(
             }
         }
 
-        // 添加历史消息
-        messages.addAll(messageDao.getMessagesByChatIdOnce(chatId).map { entity ->
+        // 添加历史消息（支持多模态）
+        for (entity in messageDao.getMessagesByChatIdOnce(chatId)) {
             val message = entity.toMessage()
-            ChatMessage(
-                role = when (entity.role) {
-                    "user" -> ProviderMessageRole.USER
-                    "assistant" -> ProviderMessageRole.ASSISTANT
-                    "tool" -> ProviderMessageRole.TOOL
-                    else -> ProviderMessageRole.SYSTEM
-                },
-                content = message.getTextContent(),  // 使用新的 getTextContent() 方法
-                toolCallId = null,  // 旧字段已移除
-                name = null  // 旧字段已移除
-            )
-        })
+            val providerMessage = when (entity.role) {
+                "user" -> buildUserChatMessage(message)
+                "assistant" -> buildAssistantChatMessage(message)
+                "tool" -> ChatMessage(
+                    role = ProviderMessageRole.TOOL,
+                    content = message.getTextContent()
+                )
+                else -> ChatMessage(
+                    role = ProviderMessageRole.SYSTEM,
+                    content = message.getTextContent()
+                )
+            }
+            messages.add(providerMessage)
+        }
 
         return messages
+    }
+
+    private fun buildAssistantChatMessage(message: Message): ChatMessage {
+        val text = buildString {
+            val base = message.getTextContent()
+            if (base.isNotBlank()) append(base)
+
+            val images = message.parts.filterIsInstance<MessagePart.Image>()
+            val videos = message.parts.filterIsInstance<MessagePart.Video>()
+            if (images.isNotEmpty()) {
+                if (isNotEmpty()) append("\n")
+                append("（包含 ${images.size} 张图片）")
+            }
+            if (videos.isNotEmpty()) {
+                if (isNotEmpty()) append("\n")
+                append("（包含 ${videos.size} 个视频）")
+            }
+        }
+
+        return ChatMessage(
+            role = ProviderMessageRole.ASSISTANT,
+            content = text
+        )
+    }
+
+    private suspend fun buildUserChatMessage(message: Message): ChatMessage {
+        val textContent = message.getTextContent()
+        val contentParts = buildUserContentParts(message)
+        return ChatMessage(
+            role = ProviderMessageRole.USER,
+            content = textContent,
+            contentParts = contentParts
+        )
+    }
+
+    private suspend fun buildUserContentParts(message: Message): List<MessageContent>? = withContext(Dispatchers.IO) {
+        val parts = mutableListOf<MessageContent>()
+
+        val text = message.getTextContent()
+        if (text.isNotBlank()) {
+            parts.add(MessageContent.Text(text))
+        }
+
+        // 图片
+        message.parts.filterIsInstance<MessagePart.Image>().forEach { image ->
+            val filePath = image.filePath
+            if (filePath.isBlank()) return@forEach
+            val file = File(filePath)
+            if (!file.exists() || !file.isFile) {
+                parts.add(
+                    MessageContent.Text("（图片附件已丢失：${image.fileName ?: filePath}）")
+                )
+                return@forEach
+            }
+            val bytes = file.readBytes()
+            val encoded = Base64.getEncoder().encodeToString(bytes)
+            parts.add(
+                MessageContent.Image(
+                    base64Data = encoded,
+                    mimeType = image.mimeType
+                )
+            )
+        }
+
+        // 视频（仅 Gemini 支持；其他服务商降级为文字提示）
+        message.parts.filterIsInstance<MessagePart.Video>().forEach { video ->
+            val filePath = video.filePath
+            if (filePath.isBlank()) return@forEach
+
+            if (providerType != AIProviderFactory.ProviderType.GEMINI) {
+                parts.add(
+                    MessageContent.Text("（视频附件仅 Gemini 支持，已省略：${video.fileName ?: filePath}）")
+                )
+                return@forEach
+            }
+
+            val file = File(filePath)
+            if (!file.exists() || !file.isFile) {
+                parts.add(
+                    MessageContent.Text("（视频附件已丢失：${video.fileName ?: filePath}）")
+                )
+                return@forEach
+            }
+            val bytes = file.readBytes()
+            val encoded = Base64.getEncoder().encodeToString(bytes)
+            parts.add(
+                MessageContent.Video(
+                    base64Data = encoded,
+                    mimeType = video.mimeType
+                )
+            )
+        }
+
+        parts.takeIf { it.isNotEmpty() }
     }
 
     private suspend fun autoGenerateTitle(chatId: String, firstUserMessage: String) {
@@ -872,6 +1186,8 @@ class ChatRepositoryImpl(
                 is MessagePart.Text -> println("  - 文本: ${part.content.take(50)}...")
                 is MessagePart.ToolCall -> println("  - 工具调用: ${part.toolName}")
                 is MessagePart.ToolResult -> println("  - 工具结果: ${part.toolName}, 错误: ${part.isError}")
+                is MessagePart.Image -> println("  - 图片: ${part.fileName ?: part.filePath}")
+                is MessagePart.Video -> println("  - 视频: ${part.fileName ?: part.filePath}")
             }
         }
 

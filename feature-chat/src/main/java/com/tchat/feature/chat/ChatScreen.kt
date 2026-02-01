@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.speech.tts.TextToSpeech
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -26,6 +28,7 @@ import com.composables.icons.lucide.Wrench
 import com.tchat.data.model.LocalToolOption
 import com.tchat.data.model.ChatToolbarItem
 import com.tchat.data.model.ChatToolbarSettings
+import com.tchat.data.model.MessagePart
 import com.tchat.data.tool.Tool
 import com.tchat.data.util.RegexRuleData
 import kotlinx.coroutines.launch
@@ -76,6 +79,7 @@ fun ChatScreen(
     val actualChatId by viewModel.actualChatId.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     var inputText by remember { mutableStateOf("") }
+    var draftMediaParts by remember { mutableStateOf<List<MessagePart>>(emptyList()) }
 
     // Context for clipboard, share, TTS
     val context = LocalContext.current
@@ -165,6 +169,36 @@ fun ChatScreen(
     var showToolSheet by remember { mutableStateOf(false) }
     val toolSheetState = rememberModalBottomSheetState()
 
+    val pickMediaLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            val added = mutableListOf<MessagePart>()
+            uris.forEach { uri ->
+                runCatching {
+                    ChatMediaUtils.importMediaPart(context, uri)
+                }.onSuccess { part ->
+                    added.add(part)
+                }.onFailure { e ->
+                    snackbarHostState.showSnackbar(
+                        message = e.message ?: "导入文件失败",
+                        duration = SnackbarDuration.Short
+                    )
+                }
+            }
+            if (added.isNotEmpty()) {
+                draftMediaParts = (draftMediaParts + added).distinctBy { part ->
+                    when (part) {
+                        is MessagePart.Image -> "img:${part.filePath}"
+                        is MessagePart.Video -> "vid:${part.filePath}"
+                        else -> part.toString()
+                    }
+                }
+            }
+        }
+    }
+
     // 计算当前启用的工具列表 - 合并本地工具和额外工具（如知识库工具）
     val currentTools = remember(enabledTools, getToolsForOptions, extraTools) {
         getToolsForOptions(enabledTools.toList()) + extraTools
@@ -187,6 +221,7 @@ fun ChatScreen(
     // 监听 chatId 和 viewModel 的变化，确保切换聊天或重建 ViewModel 时都能重新加载
     LaunchedEffect(chatId, viewModel) {
         inputText = "" // 切换聊天时清空输入框，防止残留文本发送到错误聊天
+        draftMediaParts = emptyList()
         viewModel.loadChat(chatId)
     }
 
@@ -276,9 +311,24 @@ fun ChatScreen(
                             text = inputText,
                             onTextChange = { inputText = it },
                             onSend = {
-                                if (inputText.isNotBlank()) {
-                                    viewModel.sendMessage(actualChatId ?: chatId, inputText)
+                                if (inputText.isNotBlank() || draftMediaParts.isNotEmpty()) {
+                                    viewModel.sendMessage(actualChatId ?: chatId, inputText, draftMediaParts)
                                     inputText = ""
+                                    draftMediaParts = emptyList()
+                                }
+                            },
+                            mediaParts = draftMediaParts,
+                            onPickMedia = {
+                                pickMediaLauncher.launch(arrayOf("image/*", "video/*"))
+                            },
+                            onRemoveMedia = { part ->
+                                draftMediaParts = draftMediaParts.filterNot { it == part }
+                            },
+                            onGenerateImage = {
+                                if (inputText.isNotBlank()) {
+                                    viewModel.generateImage(actualChatId ?: chatId, inputText)
+                                    inputText = ""
+                                    draftMediaParts = emptyList()
                                 }
                             },
                             inputHint = inputHint,

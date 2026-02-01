@@ -12,6 +12,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.text.method.ArrowKeyMovementMethod
+import android.text.method.LinkMovementMethod
 import io.noties.markwon.Markwon
 import io.noties.markwon.core.MarkwonTheme
 import io.noties.markwon.ext.latex.JLatexMathPlugin
@@ -148,7 +150,6 @@ private fun SimpleMarkdownBlock(
 ) {
     // 记住上一次的内容长度，用于增量检测
     var lastContent by remember { mutableStateOf("") }
-    var textViewInstance by remember { mutableStateOf<TextView?>(null) }
 
     AndroidView(
         modifier = modifier,
@@ -157,21 +158,20 @@ private fun SimpleMarkdownBlock(
                 setTextColor(textColor)
                 textSize = 16f
                 setLineSpacing(0f, 1.2f)
-                movementMethod = android.text.method.LinkMovementMethod.getInstance()
-                setTextIsSelectable(selectable)
-                textViewInstance = this
+                applySelectableBehavior(selectable)
             }
         },
         update = { textView ->
-            if (textView.isTextSelectable != selectable) {
-                textView.setTextIsSelectable(selectable)
-            }
+            textView.applySelectableBehavior(selectable)
             // 只在内容真正变化时更新
             if (content != lastContent) {
                 textView.setTextColor(textColor)
                 val spanned = markwon.toMarkdown(content)
                 markwon.setParsedMarkdown(textView, spanned)
                 lastContent = content
+
+                // Markwon/Spans 可能会影响 MovementMethod；重新应用保证可选择行为生效
+                textView.applySelectableBehavior(selectable)
             }
         }
     )
@@ -195,20 +195,32 @@ private fun MarkdownBlock(
                 setTextColor(textColor)
                 textSize = 16f
                 setLineSpacing(0f, 1.2f)
-                movementMethod = android.text.method.LinkMovementMethod.getInstance()
-                setTextIsSelectable(selectable)
+                applySelectableBehavior(selectable)
             }
         },
         update = { textView ->
-            if (textView.isTextSelectable != selectable) {
-                textView.setTextIsSelectable(selectable)
-            }
+            textView.applySelectableBehavior(selectable)
             if (content != lastContent) {
                 textView.setTextColor(textColor)
                 val spanned = markwon.toMarkdown(content)
                 markwon.setParsedMarkdown(textView, spanned)
                 lastContent = content
+
+                // Markwon/Spans 可能会影响 MovementMethod；重新应用保证可选择行为生效
+                textView.applySelectableBehavior(selectable)
             }
         }
     )
+}
+
+private fun TextView.applySelectableBehavior(selectable: Boolean) {
+    // setTextIsSelectable(true) 会开启系统原生的选中/复制（支持部分选择）
+    setTextIsSelectable(selectable)
+
+    // 注意：LinkMovementMethod 与 selectable 可能互斥；这里优先保证“可选中复制”
+    movementMethod = if (selectable) {
+        ArrowKeyMovementMethod.getInstance()
+    } else {
+        LinkMovementMethod.getInstance()
+    }
 }

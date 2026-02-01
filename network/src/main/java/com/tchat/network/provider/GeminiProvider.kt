@@ -501,6 +501,14 @@ class GeminiProvider(
                                     imagePart.put("inlineData", inlineData)
                                     parts.put(imagePart)
                                 }
+                                is MessageContent.Video -> {
+                                    val videoPart = JSONObject()
+                                    val inlineData = JSONObject()
+                                    inlineData.put("mimeType", part.mimeType)
+                                    inlineData.put("data", part.base64Data)
+                                    videoPart.put("inlineData", inlineData)
+                                    parts.put(videoPart)
+                                }
                             }
                         }
                     } else {

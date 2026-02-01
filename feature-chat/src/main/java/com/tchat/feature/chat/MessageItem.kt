@@ -1,8 +1,10 @@
 package com.tchat.feature.chat
 
+import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Image
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -12,6 +14,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Bot
@@ -49,6 +53,8 @@ fun MessageItem(
 ) {
     val isUser = message.role == MessageRole.USER
     val textContent = message.getTextContent()
+    val imageParts = remember(message.parts) { message.parts.filterIsInstance<MessagePart.Image>() }
+    val videoParts = remember(message.parts) { message.parts.filterIsInstance<MessagePart.Video>() }
 
     if (isUser) {
         // 用户消息：右对齐气泡样式
@@ -63,13 +69,27 @@ fun MessageItem(
                 shape = MaterialTheme.shapes.large,
                 color = MaterialTheme.colorScheme.secondaryContainer
             ) {
-                SelectionContainer {
-                    Text(
-                        text = textContent,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                    )
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (imageParts.isNotEmpty() || videoParts.isNotEmpty()) {
+                        MessageMediaSection(
+                            imageParts = imageParts,
+                            videoParts = videoParts,
+                            isUser = true
+                        )
+                    }
+
+                    if (textContent.isNotBlank()) {
+                        SelectionContainer {
+                            Text(
+                                text = textContent,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -118,6 +138,15 @@ fun MessageItem(
 
             // 消息内容（支持系统原生选择复制）
             Column(modifier = Modifier.fillMaxWidth()) {
+                if (imageParts.isNotEmpty() || videoParts.isNotEmpty()) {
+                    MessageMediaSection(
+                        imageParts = imageParts,
+                        videoParts = videoParts,
+                        isUser = false
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
                 // 工具执行结果（如果有）
                 val toolResults = message.getToolResults()
                 if (toolResults.isNotEmpty()) {
@@ -279,6 +308,88 @@ fun MessageItem(
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageMediaSection(
+    imageParts: List<MessagePart.Image>,
+    videoParts: List<MessagePart.Video>,
+    isUser: Boolean
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        imageParts.forEach { img ->
+            val bitmap = remember(img.filePath) {
+                runCatching { BitmapFactory.decodeFile(img.filePath) }.getOrNull()
+            }
+
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = img.fileName ?: "image",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 240.dp)
+                        .clip(MaterialTheme.shapes.medium)
+                )
+            } else {
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = if (isUser)
+                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                    else
+                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "图片不可用：${img.fileName ?: img.filePath}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isUser)
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+            }
+        }
+
+        videoParts.forEach { vid ->
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = if (isUser)
+                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                else
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Lucide.ChevronRight,
+                        contentDescription = null,
+                        tint = if (isUser)
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = vid.fileName ?: "视频",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isUser)
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        else
+                            MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         }

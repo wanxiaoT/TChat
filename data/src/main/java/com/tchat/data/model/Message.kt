@@ -14,6 +14,30 @@ sealed class MessagePart {
     ) : MessagePart()
 
     /**
+     * 图片内容部分（用于多模态输入/图片输出）
+     *
+     * filePath: App 内部存储的文件路径（绝对路径）
+     */
+    data class Image(
+        val filePath: String,
+        val mimeType: String = "image/png",
+        val fileName: String? = null,
+        val sizeBytes: Long? = null
+    ) : MessagePart()
+
+    /**
+     * 视频内容部分（目前仅 Gemini 输入支持）
+     *
+     * filePath: App 内部存储的文件路径（绝对路径）
+     */
+    data class Video(
+        val filePath: String,
+        val mimeType: String = "video/mp4",
+        val fileName: String? = null,
+        val sizeBytes: Long? = null
+    ) : MessagePart()
+
+    /**
      * 工具调用部分 - AI 请求执行工具
      */
     data class ToolCall(

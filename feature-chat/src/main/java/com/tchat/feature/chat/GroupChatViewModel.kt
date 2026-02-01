@@ -186,7 +186,12 @@ class GroupChatViewModel(
      * @param content 用户消息内容
      * @param selectedAssistantId 手动模式下选择的助手ID（可选）
      */
-    fun sendMessage(chatId: String?, content: String, selectedAssistantId: String? = null) {
+    fun sendMessage(
+        chatId: String?,
+        content: String,
+        selectedAssistantId: String? = null,
+        mediaParts: List<MessagePart> = emptyList()
+    ) {
         val groupChat = _currentGroupChat.value ?: return
         val groupChatId = currentGroupChatId ?: return
 
@@ -212,7 +217,7 @@ class GroupChatViewModel(
                 // 2. 发送用户消息和助手回复
                 if (chatId == null) {
                     // 懒创建模式
-                    messageSender.sendMessageToNewChat(content, _chatConfig.value) { newChatId ->
+                    messageSender.sendMessageToNewChat(content, _chatConfig.value, mediaParts) { newChatId ->
                         // 聊天创建后，更新 ID
                         if (_actualChatId.value == null) {
                             _actualChatId.value = newChatId
@@ -229,7 +234,7 @@ class GroupChatViewModel(
                     }
                 } else {
                     // 已有聊天
-                    messageSender.sendMessage(chatId, content, _chatConfig.value)
+                    messageSender.sendMessage(chatId, content, _chatConfig.value, mediaParts)
                 }
 
                 // 3. 如果启用了自动模式，可以继续触发下一个助手
@@ -239,6 +244,35 @@ class GroupChatViewModel(
             } catch (e: Exception) {
                 _errorMessage.value = e.message ?: "发送消息失败"
             }
+        }
+    }
+
+    /**
+     * 生成图片（使用当前服务商能力）
+     *
+     * 注：该能力与“群聊多个助手轮流发言”逻辑解耦，这里仅在当前 chatId 上追加生成结果。
+     */
+    fun generateImage(chatId: String?, prompt: String) {
+        val trimmed = prompt.trim()
+        if (trimmed.isBlank()) return
+
+        if (chatId == null) {
+            messageSender.generateImageToNewChat(trimmed, _chatConfig.value) { newChatId ->
+                if (_actualChatId.value == null) {
+                    _actualChatId.value = newChatId
+                    currentChatId = newChatId
+
+                    // 开始监听新聊天的消息
+                    messagesLoadJob?.cancel()
+                    messagesLoadJob = viewModelScope.launch {
+                        chatRepository.getMessagesByChatId(newChatId).collect { messages ->
+                            _dbMessages.value = messages
+                        }
+                    }
+                }
+            }
+        } else {
+            messageSender.generateImage(chatId, trimmed, _chatConfig.value)
         }
     }
 

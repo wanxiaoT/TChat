@@ -29,6 +29,19 @@ interface AIProvider {
      * 取消当前请求
      */
     fun cancel()
+
+    /**
+     * 生成图片（可选能力）
+     *
+     * 默认实现：不支持，直接抛出异常。
+     * 目前主要用于 OpenAI 兼容的 Images API。
+     */
+    suspend fun generateImage(
+        prompt: String,
+        options: ImageGenerationOptions = ImageGenerationOptions()
+    ): ImageGenerationResult {
+        throw AIProviderException.InvalidRequestError("当前服务商不支持图片生成")
+    }
 }
 
 /**
@@ -64,7 +77,36 @@ sealed class MessageContent {
         val base64Data: String,
         val mimeType: String = "image/png"  // image/png, image/jpeg, image/webp, image/gif
     ) : MessageContent()
+
+    /**
+     * 视频内容（目前仅 Gemini 支持 inlineData 方式输入）
+     */
+    data class Video(
+        val base64Data: String,
+        val mimeType: String = "video/mp4"  // video/mp4, video/webm
+    ) : MessageContent()
 }
+
+/**
+ * 图片生成参数
+ *
+ * 注意：不同服务商支持的字段不同，这里保持最小集合。
+ */
+data class ImageGenerationOptions(
+    val model: String? = null,
+    val size: String? = null, // e.g. "1024x1024"
+    val quality: String? = null, // e.g. "standard" / "hd"
+    val n: Int = 1
+)
+
+data class GeneratedImage(
+    val base64Data: String,
+    val mimeType: String = "image/png"
+)
+
+data class ImageGenerationResult(
+    val images: List<GeneratedImage>
+)
 
 /**
  * 聊天消息

@@ -8,6 +8,8 @@ import com.tchat.network.provider.AIProviderException
 import com.tchat.network.provider.AIProviderFactory
 import com.tchat.network.provider.ChatMessage
 import com.tchat.network.provider.CustomParams
+import com.tchat.network.provider.ImageGenerationOptions
+import com.tchat.network.provider.ImageGenerationResult
 import com.tchat.network.provider.StreamChunk
 import com.tchat.network.provider.ToolDefinition
 import com.tchat.wanxiaot.settings.ApiKeyEntry
@@ -119,6 +121,57 @@ class MultiKeyAIProvider(
 
     override fun cancel() {
         currentDelegate?.cancel()
+    }
+
+    override suspend fun generateImage(
+        prompt: String,
+        options: ImageGenerationOptions
+    ): ImageGenerationResult {
+        var attempt = 0
+        val triedKeyIds = mutableSetOf<String>()
+
+        while (true) {
+            attempt++
+            val selection = stateMutex.withLock {
+                val provider = settingsManager.settings.value.providers.firstOrNull { it.id == providerId }
+                    ?: return@withLock SelectedKey.None("服务商配置不存在: $providerId")
+                selectKeyAndPersistIndex(provider, triedKeyIds)
+            }
+
+            when (selection) {
+                is SelectedKey.Single -> {
+                    val delegate = createDelegate(selection.key)
+                    currentDelegate = delegate
+                    return delegate.generateImage(prompt, options)
+                }
+                is SelectedKey.Multi -> {
+                    val delegate = createDelegate(selection.key)
+                    currentDelegate = delegate
+                    try {
+                        val result = delegate.generateImage(prompt, options)
+                        updateKeyAfterResult(selection.keyId, success = true, error = null)
+                        return result
+                    } catch (e: AIProviderException) {
+                        updateKeyAfterResult(selection.keyId, success = false, error = e)
+
+                        val shouldRetry = isRetryableError(e) && attempt < maxRetryAttempts
+                        if (!shouldRetry) throw e
+                        triedKeyIds.add(selection.keyId)
+                        continue
+                    } catch (e: Exception) {
+                        updateKeyAfterResult(
+                            selection.keyId,
+                            success = false,
+                            error = AIProviderException.UnknownError(e.message ?: "unknown error", e)
+                        )
+                        throw e
+                    }
+                }
+                is SelectedKey.None -> {
+                    throw AIProviderException.InvalidRequestError(selection.reason)
+                }
+            }
+        }
     }
 
     private fun createDelegate(apiKey: String): AIProvider {
