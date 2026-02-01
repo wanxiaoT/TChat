@@ -13,6 +13,7 @@ import com.tchat.data.model.Message
 fun MessageList(
     messages: List<Message>,
     modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(16.dp),
     providerIcon: ImageVector? = null,
     modelName: String = "",
     onRegenerate: ((userMessageId: String, aiMessageId: String) -> Unit)? = null,
@@ -24,7 +25,7 @@ fun MessageList(
 ) {
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         itemsIndexed(

@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.speech.tts.TextToSpeech
+import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -18,6 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.BrainCircuit
@@ -246,132 +249,149 @@ fun GroupChatScreen(
         )
     }
 
+    // 群聊页面使用 adjustNothing，避免键盘弹出时整体布局被系统 resize 影响
+    SoftInputModeEffect(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+
     Box(modifier = modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            when (val state = uiState) {
-                is ChatUiState.Loading -> {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        CircularProgressIndicator()
-                    }
+        var inputAreaHeightPx by remember { mutableIntStateOf(0) }
+        val inputAreaHeight = with(LocalDensity.current) { inputAreaHeightPx.toDp() }
+
+        when (val state = uiState) {
+            is ChatUiState.Loading -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
                 }
-                is ChatUiState.Success -> {
-                    // 消息列表
-                    MessageList(
-                        messages = state.messages,
-                        modifier = Modifier.weight(1f),
-                        providerIcon = providerIcon,
-                        modelName = currentModel,
-                        onRegenerate = { userMessageId, aiMessageId ->
-                            onRegenerateMessage(userMessageId, aiMessageId)
-                        },
-                        onSelectVariant = { messageId, variantIndex ->
-                            viewModel.selectVariant(messageId, variantIndex)
-                        },
-                        onCopy = onCopy,
-                        onSpeak = onSpeak,
-                        onShare = onShare,
-                        onDelete = onDelete
-                    )
+            }
+            is ChatUiState.Success -> {
+                // 消息列表
+                MessageList(
+                    messages = state.messages,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        top = 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp + inputAreaHeight
+                    ),
+                    providerIcon = providerIcon,
+                    modelName = currentModel,
+                    onRegenerate = { userMessageId, aiMessageId ->
+                        onRegenerateMessage(userMessageId, aiMessageId)
+                    },
+                    onSelectVariant = { messageId, variantIndex ->
+                        viewModel.selectVariant(messageId, variantIndex)
+                    },
+                    onCopy = onCopy,
+                    onSpeak = onSpeak,
+                    onShare = onShare,
+                    onDelete = onDelete
+                )
 
-                    // 输入区域（工具栏 + 助手选择器 + 输入框）
-                    Column {
-                        // 深度研究进度提示
-                        AnimatedVisibility(visible = isDeepResearching) {
-                            GroupDeepResearchIndicator(
-                                text = deepResearchInProgressText
-                            )
-                        }
-
-                        // 助手选择器（手动模式）
-                        if (currentGroupChat?.activationStrategy == GroupActivationStrategy.MANUAL) {
-                            AssistantSelector(
-                                assistants = assistants.filter { assistant ->
-                                    groupMembers.any { it.assistantId == assistant.id }
-                                },
-                                currentSpeakerId = currentSpeakerId,
-                                onAssistantSelected = { assistantId ->
-                                    viewModel.selectAssistant(assistantId)
-                                },
-                                speakingAssistantLabel = speakingAssistantLabel,
-                                selectAssistantHint = selectAssistantHint
-                            )
-                        }
-
-                        // 工具栏
-                        if (availableModels.isNotEmpty()) {
-                            InputToolbar(
-                                availableModels = availableModels,
-                                currentModel = currentModel,
-                                onModelSelected = onModelSelected,
-                                enabledToolsCount = enabledTools.size,
-                                onToolsClick = {
-                                    showToolSheet = true
-                                    scope.launch { toolSheetState.show() }
-                                },
-                                onDeepResearch = onDeepResearch?.let { callback ->
-                                    {
-                                        val query = inputText.takeIf { it.isNotBlank() }
-                                        callback(query)
-                                        if (query != null) {
-                                            inputText = ""
-                                        }
-                                    }
-                                },
-                                isDeepResearching = isDeepResearching,
-                                toolbarSettings = chatToolbarSettings,
-                                toolsText = toolsText,
-                                toolsWithCountFormat = toolsWithCountFormat,
-                                deepResearchText = deepResearchText,
-                                deepResearchRunningText = deepResearchRunningText
-                            )
-                        }
-
-                        // 输入框
-                        MessageInput(
-                            text = inputText,
-                            onTextChange = { inputText = it },
-                            onSend = {
-                                if (inputText.isNotBlank() || draftMediaParts.isNotEmpty()) {
-                                    // 如果是手动模式且没有选择助手，提示用户
-                                    if (currentGroupChat?.activationStrategy == GroupActivationStrategy.MANUAL
-                                        && currentSpeakerId == null) {
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar(pleaseSelectAssistantFirst)
-                                        }
-                                        return@MessageInput
-                                    }
-
-                                    viewModel.sendMessage(
-                                        chatId = actualChatId ?: chatId,
-                                        content = inputText,
-                                        selectedAssistantId = currentSpeakerId,
-                                        mediaParts = draftMediaParts
-                                    )
-                                    inputText = ""
-                                    draftMediaParts = emptyList()
-                                }
-                            },
-                            mediaParts = draftMediaParts,
-                            onPickMedia = { pickMediaLauncher.launch(arrayOf("image/*", "video/*")) },
-                            onRemoveMedia = { part -> draftMediaParts = draftMediaParts.filterNot { it == part } },
-                            onGenerateImage = {
-                                if (inputText.isNotBlank()) {
-                                    if (currentGroupChat?.activationStrategy == GroupActivationStrategy.MANUAL
-                                        && currentSpeakerId == null) {
-                                        scope.launch { snackbarHostState.showSnackbar(pleaseSelectAssistantFirst) }
-                                        return@MessageInput
-                                    }
-                                    viewModel.generateImage(actualChatId ?: chatId, inputText)
-                                    inputText = ""
-                                    draftMediaParts = emptyList()
-                                }
-                            },
-                            inputHint = inputHint,
-                            sendContentDescription = sendContentDescription
+                // 输入区域（工具栏 + 助手选择器 + 输入框），固定在底部并跟随 IME 上移
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .imePadding()
+                        .onSizeChanged { inputAreaHeightPx = it.height }
+                ) {
+                    // 深度研究进度提示
+                    AnimatedVisibility(visible = isDeepResearching) {
+                        GroupDeepResearchIndicator(
+                            text = deepResearchInProgressText
                         )
                     }
+
+                    // 助手选择器（手动模式）
+                    if (currentGroupChat?.activationStrategy == GroupActivationStrategy.MANUAL) {
+                        AssistantSelector(
+                            assistants = assistants.filter { assistant ->
+                                groupMembers.any { it.assistantId == assistant.id }
+                            },
+                            currentSpeakerId = currentSpeakerId,
+                            onAssistantSelected = { assistantId ->
+                                viewModel.selectAssistant(assistantId)
+                            },
+                            speakingAssistantLabel = speakingAssistantLabel,
+                            selectAssistantHint = selectAssistantHint
+                        )
+                    }
+
+                    // 工具栏
+                    if (availableModels.isNotEmpty()) {
+                        InputToolbar(
+                            availableModels = availableModels,
+                            currentModel = currentModel,
+                            onModelSelected = onModelSelected,
+                            enabledToolsCount = enabledTools.size,
+                            onToolsClick = {
+                                showToolSheet = true
+                                scope.launch { toolSheetState.show() }
+                            },
+                            onDeepResearch = onDeepResearch?.let { callback ->
+                                {
+                                    val query = inputText.takeIf { it.isNotBlank() }
+                                    callback(query)
+                                    if (query != null) {
+                                        inputText = ""
+                                    }
+                                }
+                            },
+                            isDeepResearching = isDeepResearching,
+                            toolbarSettings = chatToolbarSettings,
+                            toolsText = toolsText,
+                            toolsWithCountFormat = toolsWithCountFormat,
+                            deepResearchText = deepResearchText,
+                            deepResearchRunningText = deepResearchRunningText
+                        )
+                    }
+
+                    // 输入框
+                    MessageInput(
+                        text = inputText,
+                        onTextChange = { inputText = it },
+                        onSend = {
+                            if (inputText.isNotBlank() || draftMediaParts.isNotEmpty()) {
+                                // 如果是手动模式且没有选择助手，提示用户
+                                if (currentGroupChat?.activationStrategy == GroupActivationStrategy.MANUAL
+                                    && currentSpeakerId == null) {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(pleaseSelectAssistantFirst)
+                                    }
+                                    return@MessageInput
+                                }
+
+                                viewModel.sendMessage(
+                                    chatId = actualChatId ?: chatId,
+                                    content = inputText,
+                                    selectedAssistantId = currentSpeakerId,
+                                    mediaParts = draftMediaParts
+                                )
+                                inputText = ""
+                                draftMediaParts = emptyList()
+                            }
+                        },
+                        mediaParts = draftMediaParts,
+                        onPickMedia = { pickMediaLauncher.launch(arrayOf("image/*", "video/*")) },
+                        onRemoveMedia = { part -> draftMediaParts = draftMediaParts.filterNot { it == part } },
+                        onGenerateImage = {
+                            if (inputText.isNotBlank()) {
+                                if (currentGroupChat?.activationStrategy == GroupActivationStrategy.MANUAL
+                                    && currentSpeakerId == null) {
+                                    scope.launch { snackbarHostState.showSnackbar(pleaseSelectAssistantFirst) }
+                                    return@MessageInput
+                                }
+                                viewModel.generateImage(actualChatId ?: chatId, inputText)
+                                inputText = ""
+                                draftMediaParts = emptyList()
+                            }
+                        },
+                        inputHint = inputHint,
+                        sendContentDescription = sendContentDescription
+                    )
                 }
-                is ChatUiState.Error -> {
+            }
+            is ChatUiState.Error -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(text = "Error: ${state.message}")
                 }
             }
@@ -380,7 +400,9 @@ fun GroupChatScreen(
         // Snackbar 显示在底部
         SnackbarHost(
             hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .imePadding()
         )
     }
 }
