@@ -1,6 +1,7 @@
 package com.tchat.wanxiaot.ui.settings
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,26 +13,22 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -43,6 +40,11 @@ import com.tchat.wanxiaot.settings.OcrModel
 import com.tchat.wanxiaot.settings.OcrSettings
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionCard
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,7 +53,7 @@ fun OcrSettingsScreen(
     onBack: () -> Unit,
     showTopBar: Boolean = true
 ) {
-    val settings by settingsManager.settings.collectAsState()
+    val settings by settingsManager.settings.collectAsStateWithLifecycle()
     val ocrSettings = settings.ocrSettings
     val selectedModel = OcrModel.fromName(ocrSettings.model)
 
@@ -63,26 +65,12 @@ fun OcrSettingsScreen(
     var showModelDialog by remember { mutableStateOf(false) }
     var showPromptDialog by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            if (showTopBar) {
-                TopAppBar(
-                    title = { Text("OCR") },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Lucide.ArrowLeft,
-                                contentDescription = "返回"
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.surface
+    AppPageScaffold(
+        title = "OCR",
+        eyebrow = "Recognition",
+        subtitle = "识别模型、AI Provider 与识别提示词",
+        showTopBar = showTopBar,
+        onBack = onBack
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -91,134 +79,143 @@ fun OcrSettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            Text(
-                text = "识别模型",
-                style = MaterialTheme.typography.titleMedium
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "用于打野助手框选屏幕内容进行 OCR（识别并提取 API Key / URL）。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            AppHeroCard(
+                eyebrow = "Screen Parsing",
+                title = "把截图识别链路配置得更稳一些",
+                description = "OCR 会直接影响密钥、URL 与界面文本提取质量，模型选择不能随便凑合。",
+                icon = Lucide.Pencil,
+                trailing = {
+                    AppPill(text = selectedModel.displayName)
+                }
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // ML Kit Latin 选项
-            OcrModelCard(
-                model = OcrModel.MLKIT_LATIN,
-                isSelected = selectedModel == OcrModel.MLKIT_LATIN,
-                description = "适合英文/数字（API Key、URL 识别更稳）",
-                onClick = {
-                    settingsManager.updateOcrSettings(ocrSettings.copy(model = OcrModel.MLKIT_LATIN.name))
-                }
-            )
+            AppSectionCard(
+                title = "识别模型",
+                description = "用于打野助手框选屏幕内容进行 OCR（识别并提取 API Key / URL）。"
+            ) {
+                OcrModelCard(
+                    model = OcrModel.MLKIT_LATIN,
+                    isSelected = selectedModel == OcrModel.MLKIT_LATIN,
+                    description = "适合英文/数字（API Key、URL 识别更稳）",
+                    onClick = {
+                        settingsManager.updateOcrSettings(ocrSettings.copy(model = OcrModel.MLKIT_LATIN.name))
+                    }
+                )
 
-            // ML Kit Chinese 选项
-            OcrModelCard(
-                model = OcrModel.MLKIT_CHINESE,
-                isSelected = selectedModel == OcrModel.MLKIT_CHINESE,
-                description = "适合包含中文界面的截图（会自动识别英文/数字）",
-                onClick = {
-                    settingsManager.updateOcrSettings(ocrSettings.copy(model = OcrModel.MLKIT_CHINESE.name))
-                }
-            )
+                OcrModelCard(
+                    model = OcrModel.MLKIT_CHINESE,
+                    isSelected = selectedModel == OcrModel.MLKIT_CHINESE,
+                    description = "适合包含中文界面的截图（会自动识别英文/数字）",
+                    onClick = {
+                        settingsManager.updateOcrSettings(ocrSettings.copy(model = OcrModel.MLKIT_CHINESE.name))
+                    }
+                )
 
-            // AI Vision 选项
-            OcrModelCard(
-                model = OcrModel.AI_VISION,
-                isSelected = selectedModel == OcrModel.AI_VISION,
-                description = "使用已配置的 AI 提供商进行 OCR 识别（需要网络）",
-                onClick = {
-                    settingsManager.updateOcrSettings(ocrSettings.copy(model = OcrModel.AI_VISION.name))
-                }
-            )
+                OcrModelCard(
+                    model = OcrModel.AI_VISION,
+                    isSelected = selectedModel == OcrModel.AI_VISION,
+                    description = "使用已配置的 AI 提供商进行 OCR 识别（需要网络）",
+                    onClick = {
+                        settingsManager.updateOcrSettings(ocrSettings.copy(model = OcrModel.AI_VISION.name))
+                    }
+                )
+            }
 
             // 当选择 AI 视觉模型时，显示额外配置
             if (selectedModel == OcrModel.AI_VISION) {
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Text(
-                    text = "AI 提供商配置",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // AI 提供商选择
-                OutlinedCard(
-                    onClick = { showProviderDialog = true },
-                    modifier = Modifier.fillMaxWidth()
+                AppSectionCard(
+                    title = "AI 提供商配置",
+                    description = "当使用 AI Vision 时，需要额外指定服务商、模型和识别提示词。"
                 ) {
-                    ListItem(
-                        headlineContent = {
-                            Text(selectedProvider?.name ?: "请选择提供商")
-                        },
-                        supportingContent = {
-                            if (selectedProvider == null && providers.isEmpty()) {
-                                Text(
-                                    "请先在设置中添加 AI 提供商",
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            } else if (selectedProvider == null) {
-                                Text("点击选择一个提供商")
-                            } else {
-                                Text(selectedProvider.providerType.displayName)
-                            }
-                        },
-                        trailingContent = {
-                            Icon(Lucide.ChevronRight, contentDescription = null)
-                        }
-                    )
-                }
-
-                // 模型选择（如果已选择提供商）
-                if (selectedProvider != null) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedCard(
-                        onClick = { showModelDialog = true },
-                        modifier = Modifier.fillMaxWidth()
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                        tonalElevation = 0.dp
                     ) {
                         ListItem(
+                            modifier = Modifier.clickable { showProviderDialog = true },
                             headlineContent = {
-                                Text(ocrSettings.aiModel.ifEmpty { "请选择模型" })
+                                Text(selectedProvider?.name ?: "请选择提供商")
                             },
                             supportingContent = {
-                                Text("用于 OCR 识别的视觉模型")
+                                if (selectedProvider == null && providers.isEmpty()) {
+                                    Text(
+                                        "请先在设置中添加 AI 提供商",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                } else if (selectedProvider == null) {
+                                    Text("点击选择一个提供商")
+                                } else {
+                                    Text(selectedProvider.providerType.displayName)
+                                }
                             },
                             trailingContent = {
                                 Icon(Lucide.ChevronRight, contentDescription = null)
                             }
                         )
                     }
-                }
 
-                // 自定义 Prompt
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedCard(
-                    onClick = { showPromptDialog = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    ListItem(
-                        headlineContent = { Text("识别提示词") },
-                        supportingContent = {
-                            Text(
-                                ocrSettings.customPrompt.take(50) + if (ocrSettings.customPrompt.length > 50) "..." else "",
-                                maxLines = 2
+                    if (selectedProvider != null) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.large,
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                            tonalElevation = 0.dp
+                        ) {
+                            ListItem(
+                                modifier = Modifier.clickable { showModelDialog = true },
+                                headlineContent = {
+                                    Text(ocrSettings.aiModel.ifEmpty { "请选择模型" })
+                                },
+                                supportingContent = {
+                                    Text("用于 OCR 识别的视觉模型")
+                                },
+                                trailingContent = {
+                                    Icon(Lucide.ChevronRight, contentDescription = null)
+                                }
                             )
-                        },
-                        trailingContent = {
-                            Icon(Lucide.Pencil, contentDescription = null)
                         }
-                    )
+                    }
+
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                        tonalElevation = 0.dp
+                    ) {
+                        ListItem(
+                            modifier = Modifier.clickable { showPromptDialog = true },
+                            headlineContent = { Text("识别提示词") },
+                            supportingContent = {
+                                Text(
+                                    ocrSettings.customPrompt.take(50) + if (ocrSettings.customPrompt.length > 50) "..." else "",
+                                    maxLines = 2
+                                )
+                            },
+                            trailingContent = {
+                                Icon(Lucide.Pencil, contentDescription = null)
+                            }
+                        )
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "提示：首次使用 OCR 需要授权「录屏/屏幕捕获」权限。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            AppSectionCard(title = "提示") {
+                Text(
+                    text = "首次使用 OCR 需要授权「录屏/屏幕捕获」权限。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 
@@ -274,22 +271,22 @@ private fun OcrModelCard(
     description: String,
     onClick: () -> Unit
 ) {
-    OutlinedCard(
-        onClick = onClick,
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp),
+            .padding(vertical = 6.dp)
+            .clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.large,
         border = BorderStroke(
             width = if (isSelected) 2.dp else 1.dp,
             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
         ),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = if (isSelected) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
-        )
+        color = if (isSelected) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        tonalElevation = 0.dp
     ) {
         Row(
             modifier = Modifier
@@ -337,15 +334,18 @@ private fun ProviderSelectionDialog(
                 } else {
                     providers.forEach { provider ->
                         val isSelected = provider.id == selectedId
-                        OutlinedCard(
-                            onClick = { onSelect(provider.id) },
+                        Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp),
+                                .padding(vertical = 4.dp)
+                                .clickable { onSelect(provider.id) },
+                            shape = MaterialTheme.shapes.large,
                             border = BorderStroke(
                                 width = if (isSelected) 2.dp else 1.dp,
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                            )
+                            ),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                            tonalElevation = 0.dp
                         ) {
                             Row(
                                 modifier = Modifier
@@ -402,15 +402,18 @@ private fun ModelSelectionDialog(
                 } else {
                     models.forEach { model ->
                         val isSelected = model == selectedModel
-                        OutlinedCard(
-                            onClick = { onSelect(model) },
+                        Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp),
+                                .padding(vertical = 4.dp)
+                                .clickable { onSelect(model) },
+                            shape = MaterialTheme.shapes.large,
                             border = BorderStroke(
                                 width = if (isSelected) 2.dp else 1.dp,
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                            )
+                            ),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                            tonalElevation = 0.dp
                         ) {
                             Row(
                                 modifier = Modifier

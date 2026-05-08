@@ -14,6 +14,9 @@ interface ChatDao {
     fun getAllChats(): Flow<List<ChatEntity>>
 
     @Query("SELECT * FROM chats WHERE id = :chatId")
+    fun observeChatById(chatId: String): Flow<ChatEntity?>
+
+    @Query("SELECT * FROM chats WHERE id = :chatId")
     suspend fun getChatById(chatId: String): ChatEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

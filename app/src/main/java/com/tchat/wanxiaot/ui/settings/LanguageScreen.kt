@@ -1,24 +1,32 @@
 package com.tchat.wanxiaot.ui.settings
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tchat.wanxiaot.i18n.Language
 import com.tchat.wanxiaot.i18n.strings
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 
-/**
- * 语言选择页面
- * 支持平滑切换语言，无需重启应用
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LanguageScreen(
@@ -26,34 +34,36 @@ fun LanguageScreen(
     onLanguageSelected: (Language) -> Unit,
     onBack: () -> Unit
 ) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(strings.languageTitle) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = strings.back
-                        )
-                    }
-                }
-            )
-        }
+    AppPageScaffold(
+        title = strings.languageTitle,
+        eyebrow = "Language",
+        subtitle = "切换界面语言，无需重启应用",
+        onBack = onBack
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentPadding = PaddingValues(vertical = 8.dp)
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            item {
+                AppHeroCard(
+                    eyebrow = "Localization",
+                    title = "选择最顺手的界面语言",
+                    description = "系统语言模式会自动跟随设备语言，手动选择则固定显示对应翻译。",
+                    icon = Icons.Default.Language,
+                    trailing = {
+                        AppPill(text = currentLanguage.nativeName)
+                    }
+                )
+            }
+
             items(Language.entries) { language ->
                 LanguageItem(
                     language = language,
                     isSelected = language == currentLanguage,
-                    onClick = {
-                        onLanguageSelected(language)
-                    }
+                    onClick = { onLanguageSelected(language) }
                 )
             }
         }
@@ -66,7 +76,6 @@ private fun LanguageItem(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    // 对于 SYSTEM 选项，使用当前语言的本地化字符串
     val displayNativeName = if (language == Language.SYSTEM) {
         strings.languageFollowSystem
     } else {
@@ -74,38 +83,68 @@ private fun LanguageItem(
     }
 
     val displayName = if (language == Language.SYSTEM) {
-        // 显示当前系统语言
         val systemLanguage = Language.getActualLanguage(Language.SYSTEM)
         "${language.displayName} (${systemLanguage.nativeName})"
     } else {
         language.displayName
     }
 
-    ListItem(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        headlineContent = {
-            Text(
-                text = displayNativeName,
-                style = MaterialTheme.typography.bodyLarge
-            )
-        },
-        supportingContent = {
-            Text(
-                text = displayName,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        },
-        trailingContent = {
-            if (isSelected) {
+    AppSectionSurface {
+        androidx.compose.material3.Surface(
+            onClick = onClick,
+            color = if (isSelected) {
+                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.62f)
+            } else {
+                androidx.compose.ui.graphics.Color.Transparent
+            }
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 15.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
                 Icon(
-                    imageVector = Icons.Default.Check,
+                    imageVector = Icons.Default.Language,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = if (isSelected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
+                androidx.compose.foundation.layout.Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = displayNativeName,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.74f)
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+                if (isSelected) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
-    )
+    }
 }

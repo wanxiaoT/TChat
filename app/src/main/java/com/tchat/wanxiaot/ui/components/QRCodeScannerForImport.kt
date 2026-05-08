@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
 import android.util.Size
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -19,15 +20,13 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -39,6 +38,8 @@ import com.google.zxing.common.HybridBinarizer
 import com.tchat.wanxiaot.util.ExportData
 import com.tchat.wanxiaot.util.QRCodeUtils
 import java.util.concurrent.Executors
+
+private const val QR_IMPORT_SCANNER_TAG = "QRCodeScannerImport"
 
 /**
  * 通用二维码扫描器（用于导入功能）
@@ -122,19 +123,66 @@ fun QRCodeScannerForImport(
         onBack()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("扫描二维码") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (!hasCameraPermission) {
+            AppPageBackground()
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                AppEmptyState(
+                    title = "需要相机权限",
+                    description = "允许相机访问后，才能扫描导入二维码。",
+                    icon = Icons.Default.Lock,
+                    action = {
+                        Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                            Text("授予权限")
+                        }
                     }
-                },
-                actions = {
+                )
+            }
+        } else {
+            CameraPreviewWithQRScanner(
+                isScanning = isScanning,
+                onCodeScanned = { code ->
+                    if (isScanning) {
+                        isScanning = false
+                        val trimmed = code.trim()
+                        val exportData = runCatching { ExportData.fromJson(trimmed) }.getOrNull()
+                        if (exportData != null) {
+                            onDataScanned(exportData)
+                        } else if (password != null) {
+                            val decrypted = runCatching { com.tchat.wanxiaot.util.EncryptionUtils.decrypt(trimmed, password) }.getOrNull()
+                            val decryptedExportData = decrypted?.let { runCatching { ExportData.fromJson(it) }.getOrNull() }
+                            if (decryptedExportData != null) {
+                                onDataScanned(decryptedExportData)
+                            } else {
+                                Toast.makeText(context, "无法解析二维码（可能密码错误）", Toast.LENGTH_SHORT).show()
+                                isScanning = true
+                            }
+                        } else {
+                            scannedEncryptedData = trimmed
+                            showPasswordDialog = true
+                        }
+                    }
+                }
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 18.dp)
+            ) {
+                ScannerTopBar(
+                    title = "扫描二维码",
+                    subtitle = "支持相机和相册导入",
+                    onBack = onBack,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 6.dp)
+                ) {
                     IconButton(onClick = { imagePickerLauncher.launch("image/*") }) {
                         Icon(
                             Icons.Default.Photo,
@@ -142,70 +190,20 @@ fun QRCodeScannerForImport(
                         )
                     }
                 }
-            )
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentAlignment = Alignment.Center
-        ) {
-            if (!hasCameraPermission) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text("需要相机权限才能扫描二维码")
-                    Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
-                        Text("授予权限")
-                    }
-                }
-            } else {
-                CameraPreviewWithQRScanner(
-                    isScanning = isScanning,
-                    onCodeScanned = { code ->
-                        if (isScanning) {
-                            isScanning = false
-                            val trimmed = code.trim()
-                            val exportData = runCatching { ExportData.fromJson(trimmed) }.getOrNull()
-                            if (exportData != null) {
-                                onDataScanned(exportData)
-                            } else if (password != null) {
-                                val decrypted = runCatching { com.tchat.wanxiaot.util.EncryptionUtils.decrypt(trimmed, password) }.getOrNull()
-                                val decryptedExportData = decrypted?.let { runCatching { ExportData.fromJson(it) }.getOrNull() }
-                                if (decryptedExportData != null) {
-                                    onDataScanned(decryptedExportData)
-                                } else {
-                                    Toast.makeText(context, "无法解析二维码（可能密码错误）", Toast.LENGTH_SHORT).show()
-                                    isScanning = true
-                                }
-                            } else {
-                                scannedEncryptedData = trimmed
-                                showPasswordDialog = true
-                            }
-                        }
-                    }
+
+                ScannerFrame(
+                    modifier = Modifier.align(Alignment.Center)
                 )
 
-                // 扫描框
-                Box(
-                    modifier = Modifier
-                        .size(250.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.Transparent)
-                ) {
-                    ScannerOverlay()
-                }
-
-                Text(
-                    text = "将二维码放入框内扫描",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White,
+                ScannerHintCard(
+                    title = if (isScanning) "对准二维码" else "正在解析",
+                    description = "也可以直接从相册选择带有二维码的图片进行导入。",
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 100.dp)
-                )
+                        .padding(bottom = 12.dp)
+                ) {
+                    AppPill(text = if (password != null) "已带密码" else "可输密码")
+                }
             }
         }
     }
@@ -317,7 +315,7 @@ private fun CameraPreviewWithQRScanner(
                         imageAnalysis
                     )
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e(QR_IMPORT_SCANNER_TAG, "Failed to bind camera use cases", e)
                 }
             }, ContextCompat.getMainExecutor(ctx))
 
@@ -421,75 +419,3 @@ private fun processImageProxy(imageProxy: ImageProxy, onCodeScanned: (String) ->
     }
 }
 
-@Composable
-private fun ScannerOverlay() {
-    val cornerLength = 40.dp
-    val cornerWidth = 4.dp
-    val color = MaterialTheme.colorScheme.primary
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        // 左上角
-        Surface(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .width(cornerLength)
-                .height(cornerWidth),
-            color = color
-        ) {}
-        Surface(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .width(cornerWidth)
-                .height(cornerLength),
-            color = color
-        ) {}
-
-        // 右上角
-        Surface(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .width(cornerLength)
-                .height(cornerWidth),
-            color = color
-        ) {}
-        Surface(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .width(cornerWidth)
-                .height(cornerLength),
-            color = color
-        ) {}
-
-        // 左下角
-        Surface(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .width(cornerLength)
-                .height(cornerWidth),
-            color = color
-        ) {}
-        Surface(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .width(cornerWidth)
-                .height(cornerLength),
-            color = color
-        ) {}
-
-        // 右下角
-        Surface(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .width(cornerLength)
-                .height(cornerWidth),
-            color = color
-        ) {}
-        Surface(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .width(cornerWidth)
-                .height(cornerLength),
-            color = color
-        ) {}
-    }
-}

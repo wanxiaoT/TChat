@@ -2,6 +2,7 @@ package com.tchat.data.repository
 
 import com.tchat.core.util.Result
 import com.tchat.data.model.Chat
+import com.tchat.data.model.GroupMessageMetadata
 import com.tchat.data.model.Message
 import com.tchat.data.tool.Tool
 import com.tchat.data.util.RegexRuleData
@@ -28,13 +29,16 @@ data class ChatConfig(
     val providerId: String? = null,  // 提供商ID（用于按提供商统计token）
     val shouldRecordTokens: Boolean = true,  // 是否记录token统计
     val regexRules: List<RegexRuleData> = emptyList(),  // 正则规则（用于流式处理）
-    val enabledSkillIds: List<String> = emptyList()  // 启用的技能ID列表
+    val enabledSkillIds: List<String> = emptyList(),  // 启用的技能ID列表
+    val groupMetadata: GroupMessageMetadata? = null  // 群聊消息元数据
 )
 
 interface ChatRepository {
     fun getAllChats(): Flow<List<Chat>>
     fun getChatById(chatId: String): Flow<Chat?>
     fun getMessagesByChatId(chatId: String): Flow<List<Message>>
+    fun observeRecentMessages(chatId: String, limit: Int): Flow<List<Message>>
+    suspend fun getMessagesBefore(chatId: String, beforeTimestamp: Long, limit: Int): List<Message>
     suspend fun createChat(title: String): Result<Chat>
     suspend fun updateChatTitle(chatId: String, title: String): Result<Unit>
     suspend fun deleteChat(chatId: String): Result<Unit>

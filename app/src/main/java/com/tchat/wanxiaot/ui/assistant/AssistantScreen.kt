@@ -15,29 +15,25 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,13 +41,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tchat.data.model.Assistant
+import com.tchat.wanxiaot.ui.components.AppEmptyState
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppIconTile
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.AppSheetSurface
 
-/**
- * 助手列表页面
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AssistantScreen(
@@ -61,39 +62,25 @@ fun AssistantScreen(
     showTopBar: Boolean = true
 ) {
     val context = LocalContext.current
-    val assistants by viewModel.assistants.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    val assistants by viewModel.assistants.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
 
     var showCreateSheet by remember { mutableStateOf(false) }
     var assistantToDelete by remember { mutableStateOf<Assistant?>(null) }
 
-    Scaffold(
-        topBar = {
-            if (showTopBar) {
-                TopAppBar(
-                    title = { Text("助手") },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回"
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-            }
-        },
+    AppPageScaffold(
+        title = "助手",
+        eyebrow = "Assistant Library",
+        subtitle = if (assistants.isEmpty()) "定义不同角色、工具和知识库组合" else "已配置 ${assistants.size} 位助手",
+        showTopBar = showTopBar,
+        onBack = onBack,
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showCreateSheet = true }
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "添加助手")
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.surface
+            ExtendedFloatingActionButton(
+                onClick = { showCreateSheet = true },
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("新建助手") }
+            )
+        }
     ) { innerPadding ->
         if (isLoading) {
             Box(
@@ -104,59 +91,61 @@ fun AssistantScreen(
             ) {
                 CircularProgressIndicator()
             }
-        } else if (assistants.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
-                    Text(
-                        text = "暂无助手",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "点击右下角按钮创建新助手",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
-            }
         } else {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                items(assistants, key = { it.id }) { assistant ->
-                    AssistantItem(
-                        assistant = assistant,
-                        onClick = { onAssistantClick(assistant.id) },
-                        onCopy = {
-                            viewModel.copyAssistant(assistant)
-                            Toast.makeText(context, "已复制助手", Toast.LENGTH_SHORT).show()
+                item {
+                    AppHeroCard(
+                        eyebrow = "Workspace",
+                        title = if (assistants.isEmpty()) "为不同场景准备专属助手" else "把常用角色整理成清晰的助手库",
+                        description = if (assistants.isEmpty()) {
+                            "你可以为每个助手独立配置提示词、本地工具、MCP 和知识库。"
+                        } else {
+                            "当前共 ${assistants.size} 位助手，建议按任务拆分而不是把所有能力塞进一个角色。"
                         },
-                        onDelete = { assistantToDelete = assistant }
+                        icon = Icons.Default.Person,
+                        trailing = {
+                            if (assistants.isNotEmpty()) {
+                                AppPill(text = "${assistants.size} 项")
+                            }
+                        }
                     )
+                }
+
+                if (assistants.isEmpty()) {
+                    item {
+                        AppEmptyState(
+                            icon = Icons.Default.Person,
+                            title = "还没有助手",
+                            description = "点击右下角创建第一个助手，给不同任务建立更明确的工作边界。"
+                        )
+                    }
+                } else {
+                    items(assistants, key = { it.id }) { assistant ->
+                        AssistantItem(
+                            assistant = assistant,
+                            onClick = { onAssistantClick(assistant.id) },
+                            onCopy = {
+                                viewModel.copyAssistant(assistant)
+                                Toast.makeText(context, "已复制助手", Toast.LENGTH_SHORT).show()
+                            },
+                            onDelete = { assistantToDelete = assistant }
+                        )
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(84.dp))
+                    }
                 }
             }
         }
     }
 
-    // 创建助手底部弹窗
     if (showCreateSheet) {
         CreateAssistantSheet(
             onDismiss = { showCreateSheet = false },
@@ -169,7 +158,6 @@ fun AssistantScreen(
         )
     }
 
-    // 删除确认对话框
     assistantToDelete?.let { assistant ->
         AlertDialog(
             onDismissRequest = { assistantToDelete = null },
@@ -195,9 +183,6 @@ fun AssistantScreen(
     }
 }
 
-/**
- * 助手列表项
- */
 @Composable
 private fun AssistantItem(
     assistant: Assistant,
@@ -205,92 +190,94 @@ private fun AssistantItem(
     onCopy: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
-        onClick = onClick,
+    AppSectionSurface(
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+        androidx.compose.material3.Surface(
+            onClick = onClick,
+            color = androidx.compose.ui.graphics.Color.Transparent
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column {
+                    AppIconTile(icon = Icons.Default.Person)
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Text(
                             text = assistant.name.ifEmpty { "未命名助手" },
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (assistant.systemPrompt.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = assistant.systemPrompt,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                        Text(
+                            text = assistant.systemPrompt.ifBlank { "未设置系统提示词，适合继续补充角色边界与输出风格。" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (assistant.localTools.isNotEmpty()) {
+                        AppPill(text = "本地工具 ${assistant.localTools.size}")
+                    }
+                    if (assistant.mcpServerIds.isNotEmpty()) {
+                        AppPill(text = "MCP ${assistant.mcpServerIds.size}")
+                    }
+                    if (assistant.knowledgeBaseId != null) {
+                        AppPill(text = "已绑定知识库")
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 本地工具标签
-            if (assistant.localTools.isNotEmpty()) {
-                Text(
-                    text = "已启用 ${assistant.localTools.size} 个本地工具",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            // 操作按钮
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                IconButton(onClick = onCopy, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.ContentCopy,
-                        contentDescription = "复制",
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                    )
-                }
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "删除",
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onCopy) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "复制",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "删除",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-/**
- * 创建助手底部弹窗
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CreateAssistantSheet(
@@ -301,25 +288,28 @@ private fun CreateAssistantSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = androidx.compose.ui.graphics.Color.Transparent
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        AppSheetSurface(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Text(
                 text = "创建新助手",
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "先给它一个清晰名称，后续再补提示词、工具和知识库。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
                 label = { Text("助手名称") },
-                placeholder = { Text("请输入助手名称") },
+                placeholder = { Text("例如：产品分析助手") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )

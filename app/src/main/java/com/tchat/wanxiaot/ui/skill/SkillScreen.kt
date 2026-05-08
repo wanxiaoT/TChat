@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -21,7 +20,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tchat.data.model.Skill
+import com.tchat.wanxiaot.ui.components.AppEmptyState
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Skills 管理页面
@@ -35,105 +43,96 @@ fun SkillScreen(
     onCreateSkill: () -> Unit,
     showTopBar: Boolean = true
 ) {
-    val skills by viewModel.skills.collectAsState()
+    val skills by viewModel.skills.collectAsStateWithLifecycle()
+    val importResult by viewModel.importResult.collectAsStateWithLifecycle()
     val context = LocalContext.current
-
-    // 导入结果状态
-    var importResult by remember { mutableStateOf<String?>(null) }
-    var showImportResultDialog by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     // 文件选择器
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         uri?.let {
-            try {
-                val inputStream = context.contentResolver.openInputStream(it)
-                val content = inputStream?.bufferedReader()?.readText() ?: ""
-                inputStream?.close()
-
-                val result = viewModel.importSkill(content)
-                importResult = result
-                showImportResultDialog = true
-            } catch (e: Exception) {
-                importResult = "导入失败: ${e.message}"
-                showImportResultDialog = true
+            scope.launch {
+                try {
+                    val content = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(it)?.bufferedReader()?.use { reader ->
+                            reader.readText()
+                        } ?: throw IllegalArgumentException("无法读取所选文件")
+                    }
+                    viewModel.importSkill(content)
+                } catch (e: Exception) {
+                    viewModel.reportImportFailure("导入失败: ${e.message}")
+                }
             }
         }
     }
 
     // 导入结果对话框
-    if (showImportResultDialog) {
+    if (importResult != null) {
         AlertDialog(
-            onDismissRequest = { showImportResultDialog = false },
+            onDismissRequest = { viewModel.clearImportResult() },
             title = { Text("导入结果") },
             text = { Text(importResult ?: "") },
             confirmButton = {
-                TextButton(onClick = { showImportResultDialog = false }) {
+                TextButton(onClick = { viewModel.clearImportResult() }) {
                     Text("确定")
                 }
             }
         )
     }
 
-    Scaffold(
-        topBar = {
-            if (showTopBar) {
-                TopAppBar(
-                    title = { Text("Skills") },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    },
-                    actions = {
-                        // 导入按钮
-                        IconButton(onClick = {
-                            filePickerLauncher.launch(arrayOf("*/*"))
-                        }) {
-                            Icon(Icons.Default.FileOpen, contentDescription = "导入 Skill")
-                        }
-                        // 添加按钮
-                        IconButton(onClick = onCreateSkill) {
-                            Icon(Icons.Default.Add, contentDescription = "添加 Skill")
-                        }
-                    }
-                )
+    AppPageScaffold(
+        title = "Skills",
+        eyebrow = "Automation",
+        subtitle = "管理内置与自定义技能",
+        showTopBar = showTopBar,
+        onBack = if (showTopBar) onBack else null,
+        actions = {
+            IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
+                Icon(Icons.Default.FileOpen, contentDescription = "导入 Skill")
+            }
+            IconButton(onClick = onCreateSkill) {
+                Icon(Icons.Default.Add, contentDescription = "添加 Skill")
             }
         }
     ) { padding ->
-        if (skills.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "暂无 Skills",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = onCreateSkill) {
-                            Text("创建 Skill")
-                        }
-                        TextButton(onClick = {
-                            filePickerLauncher.launch(arrayOf("*/*"))
-                        }) {
-                            Text("导入 Skill")
-                        }
-                    }
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                AppHeroCard(
+                    title = "技能库",
+                    description = "在这里管理系统能力扩展，包括导入、复制、启用和创建自定义 Skills。",
+                    eyebrow = "Skill System"
+                ) {
+                    AppPill(text = "${skills.size} 个技能")
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+
+            if (skills.isEmpty()) {
+                item {
+                    AppEmptyState(
+                        title = "暂无 Skills",
+                        description = "可以创建一个新技能，或者从文件中导入已有 Skill。",
+                        icon = Icons.Default.Add,
+                        action = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = onCreateSkill) {
+                                    Text("创建 Skill")
+                                }
+                                TextButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
+                                    Text("导入 Skill")
+                                }
+                            }
+                        }
+                    )
+                }
+            } else {
                 items(skills, key = { it.id }) { skill ->
                     SkillCard(
                         skill = skill,
@@ -158,10 +157,8 @@ private fun SkillCard(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    OutlinedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
+    AppSectionSurface(
+        modifier = Modifier.clickable(onClick = onClick)
     ) {
         Row(
             modifier = Modifier
@@ -177,17 +174,7 @@ private fun SkillCard(
                     )
                     if (skill.isBuiltIn) {
                         Spacer(Modifier.width(8.dp))
-                        Surface(
-                            shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.tertiaryContainer
-                        ) {
-                            Text(
-                                text = "内置",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
+                        AppPill(text = "内置")
                     }
                 }
                 Spacer(Modifier.height(4.dp))
@@ -208,11 +195,7 @@ private fun SkillCard(
                 }
                 if (skill.tools.isNotEmpty()) {
                     Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = "${skill.tools.size} 个工具",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
+                    AppPill(text = "${skill.tools.size} 个工具")
                 }
             }
 

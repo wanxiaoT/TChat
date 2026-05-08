@@ -9,10 +9,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import com.composables.icons.lucide.ArrowLeft
@@ -36,7 +39,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.BookOpen
 import com.composables.icons.lucide.Download
 import com.composables.icons.lucide.Globe
@@ -444,13 +450,27 @@ private fun TabletSettingsLayout(
         }
     }
 
-    Row(modifier = Modifier.fillMaxSize()) {
-        // 左侧：设置列表（带自己的 TopAppBar）
-        Scaffold(
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Surface(
             modifier = Modifier
                 .width(TABLET_LIST_WIDTH)
                 .fillMaxHeight(),
-            topBar = {
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(0.dp)
+            ) {
                 TopAppBar(
                     title = {
                         if (showSearchBar) {
@@ -470,7 +490,17 @@ private fun TabletSettingsLayout(
                                 )
                             )
                         } else {
-                            Text(strings.settingsTitle)
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = "Control Center",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = strings.settingsTitle,
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
+                                )
+                            }
                         }
                     },
                     navigationIcon = {
@@ -499,26 +529,23 @@ private fun TabletSettingsLayout(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
+                        containerColor = Color.Transparent
                     )
                 )
-            },
-            containerColor = MaterialTheme.colorScheme.surface
-        ) { innerPadding ->
-            SettingsListContent(
-                modifier = Modifier.padding(innerPadding),
-                currentSubPage = currentSubPage,
-                searchQuery = searchQuery,
-                onSubPageChange = onSubPageChange
-            )
+
+                SettingsListContent(
+                    modifier = Modifier.weight(1f),
+                    currentSubPage = currentSubPage,
+                    searchQuery = searchQuery,
+                    onSubPageChange = onSubPageChange
+                )
+            }
         }
 
-        // 右侧：详情内容
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .background(MaterialTheme.colorScheme.surfaceContainerLow)
         ) {
             AnimatedContent(
                 targetState = currentSubPage,
@@ -529,7 +556,6 @@ private fun TabletSettingsLayout(
             ) { page ->
                 when (page) {
                     is SettingsSubPage.MAIN -> {
-                        // 主页面显示欢迎提示
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -538,13 +564,30 @@ private fun TabletSettingsLayout(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center
                             ) {
-                                Icon(
-                                    imageVector = Lucide.Settings2,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(64.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f),
+                                    modifier = Modifier.size(72.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Lucide.Settings2,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(32.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = "设置中心",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Spacer(modifier = Modifier.height(16.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = strings.settingsSelectHint,
                                     style = MaterialTheme.typography.bodyLarge,
@@ -638,7 +681,7 @@ private fun TabletSettingsLayout(
                         )
                     }
                     is SettingsSubPage.USAGE_STATS -> {
-                        val settings by settingsManager.settings.collectAsState()
+                        val settings by settingsManager.settings.collectAsStateWithLifecycle()
                         UsageStatsScreen(
                             messageDao = database.messageDao(),
                             onBack = { onSubPageChange(SettingsSubPage.MAIN) },
@@ -678,7 +721,7 @@ private fun TabletSettingsLayout(
                         )
                     }
                     is SettingsSubPage.GROUP_CHAT -> {
-                        val groups by groupChatRepository.getAllGroups().collectAsState(initial = emptyList())
+                        val groups by groupChatRepository.getAllGroups().collectAsStateWithLifecycle(initialValue = emptyList())
                         GroupChatListScreen(
                             groups = groups,
                             onBackClick = { onSubPageChange(SettingsSubPage.MAIN) },
@@ -693,7 +736,7 @@ private fun TabletSettingsLayout(
                         )
                     }
                     is SettingsSubPage.CREATE_GROUP_CHAT -> {
-                        val assistants by assistantRepository.getAllAssistants().collectAsState(initial = emptyList())
+                        val assistants by assistantRepository.getAllAssistants().collectAsStateWithLifecycle(initialValue = emptyList())
                         CreateGroupChatScreen(
                             availableAssistants = assistants,
                             onBackClick = { onSubPageChange(SettingsSubPage.GROUP_CHAT) },
@@ -706,8 +749,8 @@ private fun TabletSettingsLayout(
                         )
                     }
                     is SettingsSubPage.EDIT_GROUP_CHAT -> {
-                        val assistants by assistantRepository.getAllAssistants().collectAsState(initial = emptyList())
-                        val editingGroup by groupChatRepository.getGroupByIdFlow(page.id).collectAsState(initial = null)
+                        val assistants by assistantRepository.getAllAssistants().collectAsStateWithLifecycle(initialValue = emptyList())
+                        val editingGroup by groupChatRepository.getGroupByIdFlow(page.id).collectAsStateWithLifecycle(initialValue = null)
                         editingGroup?.let { group ->
                             CreateGroupChatScreen(
                                 availableAssistants = assistants,
@@ -747,7 +790,7 @@ private fun TabletSettingsLayout(
                         val viewModel = remember(skillRepository) {
                             SkillViewModel(skillRepository)
                         }
-                        val skills by viewModel.skills.collectAsState()
+                        val skills by viewModel.skills.collectAsStateWithLifecycle()
                         val skill = page.id?.let { id -> skills.find { it.id == id } }
                         SkillDetailScreen(
                             skill = skill,
@@ -764,7 +807,7 @@ private fun TabletSettingsLayout(
                         )
                     }
                     is SettingsSubPage.TTS -> {
-                        val settings by settingsManager.settings.collectAsState()
+                        val settings by settingsManager.settings.collectAsStateWithLifecycle()
                         val ttsService = remember { TtsService.getInstanceOrNull() }
                         TtsSettingsScreen(
                             ttsSettings = settings.ttsSettings,
@@ -796,7 +839,7 @@ private fun TabletSettingsLayout(
                         )
                     }
                     is SettingsSubPage.LANGUAGE -> {
-                        val settings by settingsManager.settings.collectAsState()
+                        val settings by settingsManager.settings.collectAsStateWithLifecycle()
                         LanguageScreen(
                             currentLanguage = Language.fromCode(settings.language),
                             onLanguageSelected = { language ->
@@ -958,7 +1001,7 @@ private fun PhoneSettingsLayout(
                 )
             }
             is SettingsSubPage.USAGE_STATS -> {
-                val settings by settingsManager.settings.collectAsState()
+                val settings by settingsManager.settings.collectAsStateWithLifecycle()
                 UsageStatsScreen(
                     messageDao = database.messageDao(),
                     onBack = { onSubPageChange(SettingsSubPage.MAIN) },
@@ -996,7 +1039,7 @@ private fun PhoneSettingsLayout(
                 )
             }
             is SettingsSubPage.GROUP_CHAT -> {
-                val groups by groupChatRepository.getAllGroups().collectAsState(initial = emptyList())
+                val groups by groupChatRepository.getAllGroups().collectAsStateWithLifecycle(initialValue = emptyList())
                 GroupChatListScreen(
                     groups = groups,
                     onBackClick = { onSubPageChange(SettingsSubPage.MAIN) },
@@ -1011,7 +1054,7 @@ private fun PhoneSettingsLayout(
                 )
             }
             is SettingsSubPage.CREATE_GROUP_CHAT -> {
-                val assistants by assistantRepository.getAllAssistants().collectAsState(initial = emptyList())
+                val assistants by assistantRepository.getAllAssistants().collectAsStateWithLifecycle(initialValue = emptyList())
                 CreateGroupChatScreen(
                     availableAssistants = assistants,
                     onBackClick = { onSubPageChange(SettingsSubPage.GROUP_CHAT) },
@@ -1024,8 +1067,8 @@ private fun PhoneSettingsLayout(
                 )
             }
             is SettingsSubPage.EDIT_GROUP_CHAT -> {
-                val assistants by assistantRepository.getAllAssistants().collectAsState(initial = emptyList())
-                val editingGroup by groupChatRepository.getGroupByIdFlow(page.id).collectAsState(initial = null)
+                val assistants by assistantRepository.getAllAssistants().collectAsStateWithLifecycle(initialValue = emptyList())
+                val editingGroup by groupChatRepository.getGroupByIdFlow(page.id).collectAsStateWithLifecycle(initialValue = null)
                 editingGroup?.let { group ->
                     CreateGroupChatScreen(
                         availableAssistants = assistants,
@@ -1064,7 +1107,7 @@ private fun PhoneSettingsLayout(
                 val viewModel = remember(skillRepository) {
                     SkillViewModel(skillRepository)
                 }
-                val skills by viewModel.skills.collectAsState()
+                val skills by viewModel.skills.collectAsStateWithLifecycle()
                 val skill = page.id?.let { id -> skills.find { it.id == id } }
                 SkillDetailScreen(
                     skill = skill,
@@ -1080,7 +1123,7 @@ private fun PhoneSettingsLayout(
                 )
             }
             is SettingsSubPage.TTS -> {
-                val settings by settingsManager.settings.collectAsState()
+                val settings by settingsManager.settings.collectAsStateWithLifecycle()
                 val ttsService = remember { TtsService.getInstanceOrNull() }
                 TtsSettingsScreen(
                     ttsSettings = settings.ttsSettings,
@@ -1110,7 +1153,7 @@ private fun PhoneSettingsLayout(
                 )
             }
             is SettingsSubPage.LANGUAGE -> {
-                val settings by settingsManager.settings.collectAsState()
+                val settings by settingsManager.settings.collectAsStateWithLifecycle()
                 LanguageScreen(
                     currentLanguage = Language.fromCode(settings.language),
                     onLanguageSelected = { language ->
@@ -1138,54 +1181,61 @@ private fun SettingsMainContent(
     val groupOrder = listOf(strings.settingsGeneral, strings.settingsOther)
     val groupedItems = allItems.groupBy { it.group }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(strings.settingsTitle) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Lucide.ArrowLeft,
-                            contentDescription = strings.back
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+    Column(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        TopAppBar(
+            title = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "Control Center",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = strings.settingsTitle,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
+                    )
+                }
+            },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Lucide.ArrowLeft,
+                        contentDescription = strings.back
+                    )
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent
             )
-        },
-        containerColor = MaterialTheme.colorScheme.surface
-    ) { innerPadding ->
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
                 .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            SettingsHeroCard()
+
             groupOrder.forEach { group ->
                 val items = groupedItems[group] ?: return@forEach
 
-                // 分组标题
-                Text(
-                    text = group,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
-                )
-
-                // 设置项卡片
-                items.forEach { item ->
-                    SettingsCardItem(
-                        item = item,
-                        onClick = { onSubPageChange(item.targetPage) }
-                    )
-                }
-
-                if (group != groupOrder.last()) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                SettingsSectionCard(title = group) {
+                    items.forEachIndexed { index, item ->
+                        SettingsCardItem(
+                            item = item,
+                            onClick = { onSubPageChange(item.targetPage) }
+                        )
+                        if (index != items.lastIndex) {
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
+                                modifier = Modifier.padding(start = 58.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1201,54 +1251,11 @@ private fun SettingsCardItem(
     item: SettingsItemData,
     onClick: () -> Unit
 ) {
-    OutlinedCard(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            when (val icon = item.icon) {
-                is SettingsIcon.Material -> Icon(
-                    icon.icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                is SettingsIcon.Lucide -> Icon(
-                    icon.icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = item.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Icon(
-                Lucide.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
+    SettingsEntryRow(
+        item = item,
+        isSelected = false,
+        onClick = onClick
+    )
 }
 
 /**
@@ -1281,9 +1288,9 @@ private fun SettingsListContent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         if (filteredItems.isEmpty()) {
             // 无搜索结果
@@ -1303,24 +1310,22 @@ private fun SettingsListContent(
             groupOrder.forEach { group ->
                 val items = groupedItems[group] ?: return@forEach
 
-                // 分组标题
-                Text(
-                    text = group,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
-                )
-
-                items.forEach { item ->
-                    val isSelected = isSettingsItemSelected(item.id, currentSubPage)
-                    SettingsListItemFromData(
-                        item = item,
-                        isSelected = isSelected,
-                        onClick = { onSubPageChange(item.targetPage) }
-                    )
+                SettingsSidebarSection(title = group) {
+                    items.forEachIndexed { index, item ->
+                        val isSelected = isSettingsItemSelected(item.id, currentSubPage)
+                        SettingsListItemFromData(
+                            item = item,
+                            isSelected = isSelected,
+                            onClick = { onSubPageChange(item.targetPage) }
+                        )
+                        if (index != items.lastIndex) {
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f),
+                                modifier = Modifier.padding(start = 58.dp)
+                            )
+                        }
+                    }
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
             }
         }
     }
@@ -1335,65 +1340,192 @@ private fun SettingsListItemFromData(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val containerColor = if (isSelected) {
-        MaterialTheme.colorScheme.secondaryContainer
-    } else {
-        MaterialTheme.colorScheme.surface
+    SettingsEntryRow(
+        item = item,
+        isSelected = isSelected,
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun SettingsSidebarSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 10.dp)
+        )
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+            content = content
+        )
     }
+}
+
+@Composable
+private fun SettingsHeroCard() {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = "Control Center",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = "统一管理模型、知识库、外观和工具能力",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "把高频配置集中到一处，减少默认组件堆叠带来的廉价感。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 4.dp)
+        )
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                content = content
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsEntryRow(
+    item: SettingsItemData,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
     val contentColor = if (isSelected) {
-        MaterialTheme.colorScheme.onSecondaryContainer
+        MaterialTheme.colorScheme.onSurface
     } else {
         MaterialTheme.colorScheme.onSurface
     }
-    val iconTint = if (isSelected) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
+    val subtitleColor = if (isSelected) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val containerColor = if (isSelected) {
+        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.26f)
+    } else {
+        Color.Transparent
+    }
 
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = containerColor
+        shape = RoundedCornerShape(16.dp),
+        color = containerColor,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            when (val icon = item.icon) {
-                is SettingsIcon.Material -> Icon(
-                    icon.icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = iconTint
-                )
-                is SettingsIcon.Lucide -> Icon(
-                    icon.icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = iconTint
-                )
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (isSelected) {
+                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.10f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f)
+                },
+                modifier = Modifier.size(34.dp),
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    when (val icon = item.icon) {
+                        is SettingsIcon.Material -> Icon(
+                            icon.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp),
+                            tint = if (isSelected) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        is SettingsIcon.Lucide -> Icon(
+                            icon.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp),
+                            tint = if (isSelected) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
-
-            Spacer(modifier = Modifier.width(16.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = contentColor
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
+                    color = contentColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = item.subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (isSelected) contentColor.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = subtitleColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
             Icon(
-                Lucide.ChevronRight,
+                imageVector = Lucide.ChevronRight,
                 contentDescription = null,
-                tint = if (isSelected) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                tint = subtitleColor
             )
         }
     }

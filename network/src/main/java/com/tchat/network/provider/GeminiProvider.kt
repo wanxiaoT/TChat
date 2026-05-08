@@ -10,6 +10,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.util.Collections
 import java.util.concurrent.TimeUnit
 
 /**
@@ -43,7 +44,7 @@ class GeminiProvider(
         .protocols(listOf(Protocol.HTTP_1_1))
         .build()
 
-    private var currentCall: Call? = null
+    private val activeCalls = Collections.synchronizedSet(mutableSetOf<Call>())
 
     override suspend fun streamChat(messages: List<ChatMessage>): Flow<StreamChunk> {
         return streamChatWithTools(messages, emptyList())
@@ -79,8 +80,9 @@ class GeminiProvider(
         // 工具调用构建器
         val toolCallsBuilder = mutableMapOf<Int, ToolCallBuilder>()
 
-        currentCall = client.newCall(request)
-        currentCall?.enqueue(object : Callback {
+        val call = client.newCall(request)
+        activeCalls += call
+        call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 val duration = System.currentTimeMillis() - startTime
                 NetworkLogger.logError(requestId, "网络连接失败: ${e.message}", duration)
@@ -176,6 +178,7 @@ class GeminiProvider(
                         originalError = e
                     )))
                 } finally {
+                    activeCalls.remove(call)
                     response.close()
                     close()
                 }
@@ -183,12 +186,14 @@ class GeminiProvider(
         })
 
         awaitClose {
-            currentCall?.cancel()
+            activeCalls.remove(call)
+            call.cancel()
         }
     }
 
     override fun cancel() {
-        currentCall?.cancel()
+        activeCalls.toList().forEach { it.cancel() }
+        activeCalls.clear()
     }
 
     /**

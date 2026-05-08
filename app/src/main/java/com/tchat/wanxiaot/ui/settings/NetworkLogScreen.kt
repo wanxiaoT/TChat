@@ -27,24 +27,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -64,6 +58,11 @@ import androidx.compose.ui.unit.sp
 import com.tchat.network.log.NetworkLogEntry
 import com.tchat.network.log.NetworkLogStatus
 import com.tchat.network.log.NetworkLogger
+import com.tchat.wanxiaot.ui.components.AppEmptyState
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import org.json.JSONObject
 
 /**
@@ -88,76 +87,62 @@ fun NetworkLogScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("网络日志") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                actions = {
-                    // 刷新按钮
-                    IconButton(onClick = { logs = NetworkLogger.getLogs() }) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "刷新"
-                        )
-                    }
-                    // 清除按钮
-                    IconButton(onClick = {
-                        NetworkLogger.clear()
-                        logs = emptyList()
-                        Toast.makeText(context, "日志已清除", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "清除"
-                        )
-                    }
-                }
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.surface
+    AppPageScaffold(
+        title = "网络日志",
+        eyebrow = "Diagnostics",
+        subtitle = "请求与响应链路留痕",
+        onBack = onBack,
+        actions = {
+            IconButton(onClick = { logs = NetworkLogger.getLogs() }) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "刷新"
+                )
+            }
+            IconButton(onClick = {
+                NetworkLogger.clear()
+                logs = emptyList()
+                Toast.makeText(context, "日志已清除", Toast.LENGTH_SHORT).show()
+            }) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "清除"
+                )
+            }
+        }
     ) { innerPadding ->
-        if (logs.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            item {
+                AppHeroCard(
+                    title = "调试留痕",
+                    description = if (logs.isEmpty()) {
+                        "当前还没有请求记录，发起一次对话后这里会出现完整的请求与响应。"
+                    } else {
+                        "保留最近 ${logs.size} 条请求记录，适合快速定位模型响应、超时和报错。"
+                    },
+                    eyebrow = "Network Trace"
                 ) {
-                    Text(
-                        text = "暂无网络日志",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "发送消息后这里会显示请求和响应信息",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (logs.isNotEmpty()) {
+                        AppPill(text = "${logs.size} 条")
+                    }
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
-            ) {
+
+            if (logs.isEmpty()) {
+                item {
+                    AppEmptyState(
+                        title = "暂无网络日志",
+                        description = "发送消息后，这里会显示接口请求、响应与报错信息。",
+                        icon = Icons.Default.Refresh
+                    )
+                }
+            } else {
                 items(logs, key = { it.id }) { entry ->
                     NetworkLogItem(
                         entry = entry,
@@ -181,20 +166,13 @@ private fun NetworkLogItem(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        ),
-        shape = RoundedCornerShape(12.dp)
-    ) {
+    AppSectionSurface {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { expanded = !expanded }
-                .padding(12.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            // 头部信息
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -211,8 +189,7 @@ private fun NetworkLogItem(
                     Column {
                         Text(
                             text = entry.provider,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Medium
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium)
                         )
                         Text(
                             text = entry.model,
@@ -226,7 +203,6 @@ private fun NetworkLogItem(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 时间和耗时
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
                             text = entry.formattedTimestamp(),
@@ -237,13 +213,15 @@ private fun NetworkLogItem(
                             Text(
                                 text = "${ms}ms",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (ms > 5000) MaterialTheme.colorScheme.error
-                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (ms > 5000) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             )
                         }
                     }
 
-                    // 展开/收起按钮
                     Icon(
                         imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                         contentDescription = if (expanded) "收起" else "展开",
@@ -253,7 +231,6 @@ private fun NetworkLogItem(
                 }
             }
 
-            // URL
             Text(
                 text = entry.url,
                 style = MaterialTheme.typography.bodySmall,
@@ -269,8 +246,8 @@ private fun NetworkLogItem(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp),
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = RoundedCornerShape(8.dp)
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
                     Text(
                         text = error,
@@ -281,7 +258,6 @@ private fun NetworkLogItem(
                 }
             }
 
-            // 展开的详细内容
             AnimatedVisibility(
                 visible = expanded,
                 enter = expandVertically(),
@@ -293,18 +269,16 @@ private fun NetworkLogItem(
                         .padding(top = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    HorizontalDivider()
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
 
-                    // 请求体
                     JsonSection(
                         title = "请求 (Request Body)",
                         json = entry.requestBody,
                         onCopy = onCopy
                     )
 
-                    // 响应体
                     entry.responseBody?.let { response ->
-                        HorizontalDivider()
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
                         JsonSection(
                             title = "响应 (Response)",
                             json = response,
@@ -321,9 +295,9 @@ private fun NetworkLogItem(
 @Composable
 private fun StatusIndicator(status: NetworkLogStatus) {
     val color = when (status) {
-        NetworkLogStatus.PENDING -> Color(0xFFFFA500) // Orange
-        NetworkLogStatus.SUCCESS -> Color(0xFF4CAF50) // Green
-        NetworkLogStatus.ERROR -> Color(0xFFF44336) // Red
+        NetworkLogStatus.PENDING -> Color(0xFFC88D2A)
+        NetworkLogStatus.SUCCESS -> Color(0xFF4F8A64)
+        NetworkLogStatus.ERROR -> Color(0xFFB75A56)
     }
 
     Box(
@@ -383,9 +357,12 @@ private fun JsonSection(
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = if (isResponse) MaterialTheme.colorScheme.surfaceContainerHigh
-                   else MaterialTheme.colorScheme.surfaceContainer,
-            shape = RoundedCornerShape(8.dp)
+            color = if (isResponse) {
+                MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.72f)
+            },
+            shape = RoundedCornerShape(18.dp)
         ) {
             Box(
                 modifier = Modifier

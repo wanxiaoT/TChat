@@ -120,6 +120,8 @@ data class Message(
     val modelName: String? = null,
     // 提供商ID（用于按提供商统计token）
     val providerId: String? = null,
+    // 群聊元数据（用于标识该消息来自哪个群成员）
+    val groupMetadata: GroupMessageMetadata? = null,
     // 变体支持（仅 AI 消息使用）
     val variants: List<MessageVariant> = emptyList(),
     val selectedVariantIndex: Int = 0

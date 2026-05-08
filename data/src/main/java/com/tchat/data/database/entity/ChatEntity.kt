@@ -1,6 +1,7 @@
 package com.tchat.data.database.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -8,7 +9,10 @@ import androidx.room.PrimaryKey
  *
  * 借鉴cherry-studio的Topic模型设计
  */
-@Entity(tableName = "chats")
+@Entity(
+    tableName = "chats",
+    indices = [Index(value = ["updatedAt"])]
+)
 data class ChatEntity(
     @PrimaryKey
     val id: String,

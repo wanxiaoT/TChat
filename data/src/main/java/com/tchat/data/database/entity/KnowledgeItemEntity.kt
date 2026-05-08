@@ -41,7 +41,11 @@ enum class KnowledgeItemType {
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index(value = ["knowledgeBaseId"])]
+    indices = [
+        Index(value = ["knowledgeBaseId"]),
+        Index(value = ["knowledgeBaseId", "updatedAt"]),
+        Index(value = ["knowledgeBaseId", "status"])
+    ]
 )
 data class KnowledgeItemEntity(
     @PrimaryKey

@@ -1,27 +1,60 @@
 package com.tchat.wanxiaot.ui.mcp
 
 import android.widget.Toast
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tchat.data.model.McpServer
 import com.tchat.data.model.McpServerType
+import com.tchat.wanxiaot.ui.components.AppEmptyState
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionCard
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 
-/**
- * MCP 服务器管理页面
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun McpScreen(
@@ -29,15 +62,14 @@ fun McpScreen(
     onBack: () -> Unit,
     showTopBar: Boolean = true
 ) {
-    val context = LocalContext.current
-    val servers by viewModel.servers.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val testResult by viewModel.testResult.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val servers by viewModel.servers.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val testResult by viewModel.testResult.collectAsStateWithLifecycle()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editingServer by remember { mutableStateOf<McpServer?>(null) }
 
-    // 处理测试结果
     LaunchedEffect(testResult) {
         when (val result = testResult) {
             is McpViewModel.TestResult.Success -> {
@@ -56,43 +88,62 @@ fun McpScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            if (showTopBar) {
-                TopAppBar(
-                    title = { Text("MCP 服务器") },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-            }
-        },
+    AppPageScaffold(
+        title = "MCP 服务器",
+        eyebrow = "MCP Network",
+        subtitle = if (servers.isEmpty()) "连接外部工具能力" else "已配置 ${servers.size} 个 MCP 服务",
+        showTopBar = showTopBar,
+        onBack = onBack,
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
-                Icon(Icons.Default.Add, "添加服务器")
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.surface
+            ExtendedFloatingActionButton(
+                onClick = { showAddDialog = true },
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("添加服务器") }
+            )
+        }
     ) { innerPadding ->
         if (servers.isEmpty()) {
-            EmptyState(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-            )
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    AppHeroCard(
+                        eyebrow = "Tool Bridge",
+                        title = "把外部工具能力接进来",
+                        description = "MCP 让助手调用搜索、文件、自动化等外部能力，但连接层本身必须足够清晰。",
+                        icon = Icons.Default.Cloud
+                    )
+                    AppEmptyState(
+                        icon = Icons.Default.Cloud,
+                        title = "暂无 MCP 服务器",
+                        description = "点击右下角添加一个 MCP 服务，然后再为助手按需开放对应能力。"
+                    )
+                }
+            }
         } else {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                item {
+                    AppHeroCard(
+                        eyebrow = "Tool Bridge",
+                        title = "集中维护 MCP 服务连接与启用状态",
+                        description = "建议把不同工具能力拆成独立服务，而不是把所有能力堆到一个端点里。",
+                        icon = Icons.Default.Cloud,
+                        trailing = {
+                            AppPill(text = "${servers.count { it.enabled }} 个启用中")
+                        }
+                    )
+                }
+
                 items(servers, key = { it.id }) { server ->
                     McpServerCard(
                         server = server,
@@ -105,11 +156,14 @@ fun McpScreen(
                         }
                     )
                 }
+
+                item {
+                    Spacer(modifier = Modifier.height(84.dp))
+                }
             }
         }
     }
 
-    // 添加对话框
     if (showAddDialog) {
         McpServerDialog(
             server = null,
@@ -121,7 +175,6 @@ fun McpScreen(
         )
     }
 
-    // 编辑对话框
     editingServer?.let { server ->
         McpServerDialog(
             server = server,
@@ -134,40 +187,6 @@ fun McpScreen(
     }
 }
 
-/**
- * 空状态
- */
-@Composable
-private fun EmptyState(modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.Cloud,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "暂无 MCP 服务器",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "点击右下角按钮添加服务器",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-        )
-    }
-}
-
-/**
- * MCP 服务器卡片
- */
 @Composable
 private fun McpServerCard(
     server: McpServer,
@@ -179,8 +198,11 @@ private fun McpServerCard(
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
 
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    AppSectionSurface {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -190,6 +212,7 @@ private fun McpServerCard(
                     Text(
                         text = server.name,
                         style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -198,7 +221,7 @@ private fun McpServerCard(
                             text = server.description,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
@@ -209,8 +232,6 @@ private fun McpServerCard(
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
             Text(
                 text = server.url,
                 style = MaterialTheme.typography.bodySmall,
@@ -219,7 +240,29 @@ private fun McpServerCard(
                 overflow = TextOverflow.Ellipsis
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AppPill(
+                    text = if (server.enabled) "已启用" else "已停用",
+                    containerColor = if (server.enabled) {
+                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    },
+                    contentColor = if (server.enabled) {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+                AppPill(
+                    text = if (server.type == McpServerType.SSE) "SSE" else "Streamable HTTP",
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -276,9 +319,6 @@ private fun McpServerCard(
     }
 }
 
-/**
- * MCP 服务器编辑对话框
- */
 @Composable
 private fun McpServerDialog(
     server: McpServer?,
@@ -321,18 +361,19 @@ private fun McpServerDialog(
                     singleLine = true
                 )
 
-                Text("传输类型", style = MaterialTheme.typography.labelMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = type == McpServerType.SSE,
-                        onClick = { type = McpServerType.SSE },
-                        label = { Text("SSE") }
-                    )
-                    FilterChip(
-                        selected = type == McpServerType.STREAMABLE_HTTP,
-                        onClick = { type = McpServerType.STREAMABLE_HTTP },
-                        label = { Text("Streamable HTTP") }
-                    )
+                AppSectionCard(title = "传输类型") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = type == McpServerType.SSE,
+                            onClick = { type = McpServerType.SSE },
+                            label = { Text("SSE") }
+                        )
+                        FilterChip(
+                            selected = type == McpServerType.STREAMABLE_HTTP,
+                            onClick = { type = McpServerType.STREAMABLE_HTTP },
+                            label = { Text("Streamable HTTP") }
+                        )
+                    }
                 }
             }
         },

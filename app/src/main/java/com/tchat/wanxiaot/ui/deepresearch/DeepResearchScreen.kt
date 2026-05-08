@@ -29,6 +29,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.BrainCircuit
 import com.composables.icons.lucide.Lucide
@@ -43,6 +44,13 @@ import com.tchat.data.deepresearch.service.WebSearchProvider
 import com.tchat.wanxiaot.settings.DeepResearchSettings
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.ui.ProviderSelectionSheet
+import com.tchat.wanxiaot.ui.components.AppEmptyState
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppIconTile
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionCard
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import com.tchat.feature.chat.markdown.MarkdownText
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -66,13 +74,13 @@ fun DeepResearchScreen(
     onProviderSelected: (String) -> Unit = {},
     onModelSelected: (String) -> Unit = {}
 ) {
-    val state by viewModel.state.collectAsState()
-    val nodes by viewModel.nodes.collectAsState()
-    val learnings by viewModel.learnings.collectAsState()
-    val report by viewModel.report.collectAsState()
-    val config by viewModel.config.collectAsState()
-    val deepResearchSettings by viewModel.deepResearchSettings.collectAsState()
-    val historyList by viewModel.historyList.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val nodes by viewModel.nodes.collectAsStateWithLifecycle()
+    val learnings by viewModel.learnings.collectAsStateWithLifecycle()
+    val report by viewModel.report.collectAsStateWithLifecycle()
+    val config by viewModel.config.collectAsStateWithLifecycle()
+    val deepResearchSettings by viewModel.deepResearchSettings.collectAsStateWithLifecycle()
+    val historyList by viewModel.historyList.collectAsStateWithLifecycle()
 
     var query by remember { mutableStateOf("") }
     var showSettings by remember { mutableStateOf(false) }
@@ -80,34 +88,42 @@ fun DeepResearchScreen(
     var showProviderSelection by remember { mutableStateOf(false) }
     var configError by remember { mutableStateOf<String?>(null) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("深度研究") },
-                navigationIcon = {
-                    if (showTopBar) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showHistory = true }) {
-                        Icon(Icons.Default.History, contentDescription = "历史记录")
-                    }
-                    IconButton(onClick = { showSettings = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "设置")
-                    }
-                }
-            )
+    AppPageScaffold(
+        title = "深度研究",
+        eyebrow = "Research Lab",
+        subtitle = "多轮检索、分析与报告生成",
+        showTopBar = showTopBar,
+        onBack = if (showTopBar) onBack else null,
+        actions = {
+            IconButton(onClick = { showHistory = true }) {
+                Icon(Icons.Default.History, contentDescription = "历史记录")
+            }
+            IconButton(onClick = { showSettings = true }) {
+                Icon(Icons.Default.Settings, contentDescription = "设置")
+            }
         }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 输入区域
+            AppHeroCard(
+                title = "研究编排",
+                description = "输入问题后，系统会按搜索、归纳和报告生成三个阶段推进。",
+                eyebrow = "Pipeline",
+                icon = Lucide.BrainCircuit
+            ) {
+                if (currentProviderName.isNotBlank()) {
+                    AppPill(text = currentProviderName)
+                }
+                if (currentModel.isNotBlank()) {
+                    AppPill(text = getModelDisplayName(currentModel))
+                }
+            }
+
             InputSection(
                 query = query,
                 onQueryChange = { query = it },
@@ -126,7 +142,6 @@ fun DeepResearchScreen(
                 onCancel = { viewModel.cancelResearch() }
             )
 
-            // 服务商和模型选择工具栏
             if (providers.isNotEmpty()) {
                 DeepResearchToolbar(
                     currentProviderName = currentProviderName,
@@ -137,18 +152,10 @@ fun DeepResearchScreen(
                 )
             }
 
-            // 配置错误提示
             configError?.let { error ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
+                AppSectionSurface {
                     Row(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
@@ -156,7 +163,7 @@ fun DeepResearchScreen(
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.error
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = error,
                             color = MaterialTheme.colorScheme.onErrorContainer,
@@ -169,31 +176,31 @@ fun DeepResearchScreen(
                 }
             }
 
-            // 状态指示器
             StateIndicator(state = state)
 
-            // 内容区域
-            when (state) {
-                is ResearchState.Idle -> {
-                    IdleContent()
-                }
-                is ResearchState.Researching, is ResearchState.GeneratingReport -> {
-                    ResearchProgress(
-                        nodes = nodes,
-                        report = report,
-                        isGeneratingReport = state is ResearchState.GeneratingReport
-                    )
-                }
-                is ResearchState.Complete -> {
-                    val completeState = state as ResearchState.Complete
-                    ResearchResult(
-                        learnings = completeState.learnings,
-                        report = completeState.report
-                    )
-                }
-                is ResearchState.Error -> {
-                    val errorState = state as ResearchState.Error
-                    ErrorContent(message = errorState.message)
+            Box(modifier = Modifier.fillMaxSize()) {
+                when (state) {
+                    is ResearchState.Idle -> {
+                        IdleContent()
+                    }
+                    is ResearchState.Researching, is ResearchState.GeneratingReport -> {
+                        ResearchProgress(
+                            nodes = nodes,
+                            report = report,
+                            isGeneratingReport = state is ResearchState.GeneratingReport
+                        )
+                    }
+                    is ResearchState.Complete -> {
+                        val completeState = state as ResearchState.Complete
+                        ResearchResult(
+                            learnings = completeState.learnings,
+                            report = completeState.report
+                        )
+                    }
+                    is ResearchState.Error -> {
+                        val errorState = state as ResearchState.Error
+                        ErrorContent(message = errorState.message)
+                    }
                 }
             }
         }
@@ -248,43 +255,45 @@ private fun InputSection(
     onStartResearch: () -> Unit,
     onCancel: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
+    AppSectionCard(
+        title = "研究问题",
+        description = "输入明确的问题或任务，让系统开始多轮检索与分析。"
     ) {
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth(),
             label = { Text("输入研究问题") },
-            placeholder = { Text("例如：2024年人工智能的最新进展") },
+            placeholder = { Text("例如：2024 年人工智能的最新进展") },
             enabled = !isResearching,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { onStartResearch() }),
-            maxLines = 3,
-            shape = RoundedCornerShape(12.dp)
+            minLines = 3,
+            maxLines = 5,
+            shape = RoundedCornerShape(22.dp)
         )
 
-        Spacer(modifier = Modifier.width(8.dp))
-
-        if (isResearching) {
-            FilledTonalButton(
-                onClick = onCancel,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Icon(Icons.Default.Stop, contentDescription = null)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("停止")
-            }
-        } else {
-            Button(onClick = onStartResearch, enabled = query.isNotBlank()) {
-                Icon(Icons.Default.Search, contentDescription = null)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("研究")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            if (isResearching) {
+                FilledTonalButton(
+                    onClick = onCancel,
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Icon(Icons.Default.Stop, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("停止")
+                }
+            } else {
+                Button(onClick = onStartResearch, enabled = query.isNotBlank()) {
+                    Icon(Icons.Default.Search, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("开始研究")
+                }
             }
         }
     }
@@ -303,14 +312,11 @@ private fun DeepResearchToolbar(
 ) {
     var modelMenuExpanded by remember { mutableStateOf(false) }
 
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 1.dp
-    ) {
+    AppSectionSurface {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -471,58 +477,39 @@ private fun StateIndicator(state: ResearchState) {
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (state is ResearchState.Researching || state is ResearchState.GeneratingReport) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
+        AppSectionSurface {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (state is ResearchState.Researching || state is ResearchState.GeneratingReport) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = color
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = color
                 )
-                Spacer(modifier = Modifier.width(8.dp))
             }
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = color
-            )
         }
     }
 }
 
 @Composable
 private fun IdleContent() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                Icons.Default.Psychology,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "输入问题开始深度研究",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "AI 将通过多轮搜索和分析，为您生成详细的研究报告",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-            )
-        }
-    }
+    AppEmptyState(
+        title = "输入问题开始深度研究",
+        description = "系统会进行多轮搜索、归纳和报告生成，输出可直接阅读的研究结果。",
+        icon = Icons.Default.Psychology,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable
@@ -536,34 +523,22 @@ private fun ResearchProgress(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .verticalScroll(scrollState)
+            .verticalScroll(scrollState),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 节点列表
-        Text(
-            text = "研究进度",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
-
-        nodes.values.sortedBy { it.id }.forEach { node ->
-            NodeItem(node = node)
+        AppSectionCard(
+            title = "研究进度",
+            description = "节点会按查询生成、搜索、处理和收束报告的顺序推进。"
+        ) {
+            nodes.values.sortedBy { it.id }.forEach { node ->
+                NodeItem(node = node)
+            }
         }
 
-        // 报告预览
         if (report.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "研究报告",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                )
+            AppSectionCard(
+                title = "研究报告",
+                description = if (isGeneratingReport) "报告仍在生成，内容会继续补全。" else "当前生成的研究报告预览。"
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     MarkdownText(markdown = report)
@@ -574,8 +549,6 @@ private fun ResearchProgress(
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(32.dp))
     }
 }
 
@@ -599,13 +572,8 @@ private fun NodeItem(node: ResearchNode) {
         NodeStatus.ERROR -> Icons.Default.Error
     }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        )
+    AppSectionSurface(
+        modifier = Modifier.padding(vertical = 2.dp)
     ) {
         Row(
             modifier = Modifier
@@ -676,47 +644,55 @@ private fun ResearchResult(
 ) {
     var selectedTab by remember { mutableStateOf(0) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Tab 切换
-        PrimaryTabRow(selectedTabIndex = selectedTab) {
-            Tab(
-                selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
-                text = { Text("研究报告") }
-            )
-            Tab(
-                selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
-                text = { Text("来源 (${learnings.size})") }
-            )
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        AppSectionSurface {
+            PrimaryTabRow(selectedTabIndex = selectedTab) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text("研究报告") }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text("来源 (${learnings.size})") }
+                )
+            }
         }
 
         when (selectedTab) {
             0 -> {
-                // 报告内容
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp)
-                        .verticalScroll(rememberScrollState())
+                AppSectionCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    title = "最终报告",
+                    description = "整理后的结论和分析会在这里呈现。"
                 ) {
-                    if (report.isNullOrEmpty()) {
-                        Text(
-                            text = "报告生成中...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        MarkdownText(markdown = report)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        if (report.isNullOrEmpty()) {
+                            Text(
+                                text = "报告生成中...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            MarkdownText(markdown = report)
+                        }
                     }
                 }
             }
+
             1 -> {
-                // 来源列表
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    contentPadding = PaddingValues(bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(learnings) { learning ->
                         LearningItem(learning = learning)
@@ -729,12 +705,7 @@ private fun ResearchResult(
 
 @Composable
 private fun LearningItem(learning: Learning) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        )
-    ) {
+    AppSectionSurface {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
                 text = learning.title ?: learning.url,
@@ -765,33 +736,12 @@ private fun LearningItem(learning: Learning) {
 
 @Composable
 private fun ErrorContent(message: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                Icons.Default.Error,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.error
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "研究失败",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.error
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
+    AppEmptyState(
+        title = "研究失败",
+        description = message,
+        icon = Icons.Default.Error,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1226,13 +1176,8 @@ private fun HistoryItem(
 ) {
     val dateFormat = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        )
+    AppSectionSurface(
+        modifier = Modifier.clickable(onClick = onClick)
     ) {
         Row(
             modifier = Modifier

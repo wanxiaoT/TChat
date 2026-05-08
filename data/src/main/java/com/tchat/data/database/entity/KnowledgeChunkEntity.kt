@@ -22,7 +22,11 @@ import kotlin.uuid.Uuid
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index(value = ["itemId"]), Index(value = ["knowledgeBaseId"])]
+    indices = [
+        Index(value = ["itemId"]),
+        Index(value = ["knowledgeBaseId"]),
+        Index(value = ["itemId", "chunkIndex"])
+    ]
 )
 data class KnowledgeChunkEntity(
     @PrimaryKey

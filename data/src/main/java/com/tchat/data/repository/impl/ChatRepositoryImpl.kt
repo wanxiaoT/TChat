@@ -6,6 +6,8 @@ import com.tchat.data.database.dao.MessageDao
 import com.tchat.data.database.entity.ChatEntity
 import com.tchat.data.database.entity.MessageEntity
 import com.tchat.data.model.Chat
+import com.tchat.data.model.GroupActivationStrategy
+import com.tchat.data.model.GroupMessageMetadata
 import com.tchat.data.model.Message
 import com.tchat.data.model.MessagePart
 import com.tchat.data.model.MessageRole
@@ -36,6 +38,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 import java.util.Base64
@@ -68,15 +71,28 @@ class ChatRepositoryImpl(
         }
     }
 
-    override fun getChatById(chatId: String): Flow<Chat?> = flow {
-        val chatEntity = chatDao.getChatById(chatId)
-        emit(chatEntity?.toChat())
+    override fun getChatById(chatId: String): Flow<Chat?> {
+        return chatDao.observeChatById(chatId).map { it?.toChat() }
     }
 
     override fun getMessagesByChatId(chatId: String): Flow<List<Message>> {
         return messageDao.getMessagesByChatId(chatId).map { entities ->
             entities.map { it.toMessage() }
         }
+    }
+
+    override fun observeRecentMessages(chatId: String, limit: Int): Flow<List<Message>> {
+        return messageDao.observeRecentMessages(chatId, limit).map { entities ->
+            entities.map { it.toMessage() }
+        }
+    }
+
+    override suspend fun getMessagesBefore(
+        chatId: String,
+        beforeTimestamp: Long,
+        limit: Int
+    ): List<Message> {
+        return messageDao.getMessagesBefore(chatId, beforeTimestamp, limit).map { it.toMessage() }
     }
 
     override suspend fun createChat(title: String): Result<Chat> {
@@ -120,10 +136,6 @@ class ChatRepositoryImpl(
         mediaParts: List<MessagePart>
     ): Flow<Result<Message>> = flow {
         try {
-            println("=== sendMessage 开始 ===")
-            println("chatId: $chatId")
-            println("config tools: ${config?.tools?.size ?: 0}")
-
             val normalizedMediaParts = mediaParts.filter { it is MessagePart.Image || it is MessagePart.Video }
             if (providerType != AIProviderFactory.ProviderType.GEMINI &&
                 normalizedMediaParts.any { it is MessagePart.Video }
@@ -189,6 +201,7 @@ class ChatRepositoryImpl(
 
             // 转换工具定义
             val toolDefinitions = allTools.map { it.toToolDefinition() }
+            val groupMetadata = config?.groupMetadata?.newGeneration()
 
             // 创建 AI 消息占位符
             val assistantId = UUID.randomUUID().toString()
@@ -197,7 +210,8 @@ class ChatRepositoryImpl(
                 chatId = chatId,
                 role = MessageRole.ASSISTANT,
                 parts = emptyList(),
-                isStreaming = true
+                isStreaming = true,
+                groupMetadata = groupMetadata
             )
             emit(Result.Success(initialAssistantMessage))
 
@@ -212,6 +226,7 @@ class ChatRepositoryImpl(
                 providerId = config?.providerId,
                 shouldRecordTokens = config?.shouldRecordTokens ?: true,
                 regexRules = config?.regexRules ?: emptyList(),
+                groupMetadata = groupMetadata,
                 onStreamingUpdate = { msg -> emit(Result.Success(msg)) }
             )
 
@@ -318,6 +333,7 @@ class ChatRepositoryImpl(
 
             // 转换工具定义
             val toolDefinitions = allTools.map { it.toToolDefinition() }
+            val groupMetadata = config?.groupMetadata?.newGeneration()
 
             // 创建 AI 消息占位符
             val assistantId = UUID.randomUUID().toString()
@@ -326,7 +342,8 @@ class ChatRepositoryImpl(
                 chatId = chatId,
                 role = MessageRole.ASSISTANT,
                 parts = emptyList(),
-                isStreaming = true
+                isStreaming = true,
+                groupMetadata = groupMetadata
             )
             emit(Result.Success(MessageResult(chatId, initialAssistantMessage)))
 
@@ -341,6 +358,7 @@ class ChatRepositoryImpl(
                 providerId = config?.providerId,
                 shouldRecordTokens = config?.shouldRecordTokens ?: true,
                 regexRules = config?.regexRules ?: emptyList(),
+                groupMetadata = groupMetadata,
                 onStreamingUpdate = { msg -> emit(Result.Success(MessageResult(chatId, msg))) }
             )
 
@@ -373,12 +391,14 @@ class ChatRepositoryImpl(
 
             // 生成占位 AI 消息
             val assistantId = UUID.randomUUID().toString()
+            val groupMetadata = config?.groupMetadata?.newGeneration()
             emit(Result.Success(Message(
                 id = assistantId,
                 chatId = chatId,
                 role = MessageRole.ASSISTANT,
                 parts = listOf(MessagePart.Text("图片生成中...")),
-                isStreaming = true
+                isStreaming = true,
+                groupMetadata = groupMetadata
             )))
 
             val result = aiProvider.generateImage(
@@ -400,7 +420,8 @@ class ChatRepositoryImpl(
                 parts = savedParts,
                 isStreaming = false,
                 modelName = config?.modelName,
-                providerId = config?.providerId
+                providerId = config?.providerId,
+                groupMetadata = groupMetadata
             )
 
             saveMessageToDb(finalMessage)
@@ -447,12 +468,14 @@ class ChatRepositoryImpl(
 
             // 生成占位 AI 消息
             val assistantId = UUID.randomUUID().toString()
+            val groupMetadata = config?.groupMetadata?.newGeneration()
             emit(Result.Success(MessageResult(chatId, Message(
                 id = assistantId,
                 chatId = chatId,
                 role = MessageRole.ASSISTANT,
                 parts = listOf(MessagePart.Text("图片生成中...")),
-                isStreaming = true
+                isStreaming = true,
+                groupMetadata = groupMetadata
             ))))
 
             val result = aiProvider.generateImage(
@@ -474,7 +497,8 @@ class ChatRepositoryImpl(
                 parts = savedParts,
                 isStreaming = false,
                 modelName = config?.modelName,
-                providerId = config?.providerId
+                providerId = config?.providerId,
+                groupMetadata = groupMetadata
             )
             saveMessageToDb(finalMessage)
             chatDao.updateChatTimestamp(chatId, System.currentTimeMillis())
@@ -530,6 +554,7 @@ class ChatRepositoryImpl(
         providerId: String? = null,
         shouldRecordTokens: Boolean = true,
         regexRules: List<RegexRuleData> = emptyList(),
+        groupMetadata: GroupMessageMetadata? = null,
         onStreamingUpdate: suspend (Message) -> Unit
     ): Message {
         var currentContent = ""
@@ -554,14 +579,6 @@ class ChatRepositoryImpl(
 
         while (iteration < maxIterations) {
             iteration++
-
-            // 调试日志：检查工具定义是否传递
-            println("=== 工具调用调试 ===")
-            println("工具定义数量: ${toolDefinitions.size}")
-            toolDefinitions.forEach { tool ->
-                println("  - ${tool.name}: ${tool.description.take(50)}...")
-            }
-            println("==================")
 
             val flow = if (toolDefinitions.isNotEmpty()) {
                 aiProvider.streamChatWithTools(messages, toolDefinitions)
@@ -597,7 +614,8 @@ class ChatRepositoryImpl(
                             chatId = chatId,
                             role = MessageRole.ASSISTANT,
                             parts = streamingParts,
-                            isStreaming = true
+                            isStreaming = true,
+                            groupMetadata = groupMetadata
                         ))
                     }
                     is StreamChunk.ToolCall -> {
@@ -635,11 +653,6 @@ class ChatRepositoryImpl(
 
             // 执行每个工具并收集结果
             for (toolCall in toolCalls) {
-                println("=== 执行工具 ===")
-                println("工具名称: ${toolCall.name}")
-                println("工具ID: ${toolCall.id}")
-                println("参数: ${toolCall.arguments}")
-
                 // 添加 ToolCall Part
                 allParts.add(MessagePart.ToolCall(
                     toolCallId = toolCall.id,
@@ -654,23 +667,15 @@ class ChatRepositoryImpl(
                 val result = if (tool != null) {
                     try {
                         val argsObject = JSONObject(safeArgs)
-                        println("开始执行工具...")
                         val resultObject = tool.execute(argsObject)
-                        println("工具执行完成")
                         resultObject.toString()
                     } catch (e: Exception) {
-                        println("工具执行异常: ${e.message}")
-                        e.printStackTrace()
                         """{"error": "${e.message?.replace("\"", "\\\"") ?: "执行失败"}"}"""
                     }
                 } else {
-                    println("未找到工具: ${toolCall.name}")
                     """{"error": "未知工具: ${toolCall.name}"}"""
                 }
                 val executionTime = System.currentTimeMillis() - startTime
-
-                println("工具结果: $result")
-                println("执行耗时: ${executionTime}ms")
 
                 // 添加 ToolResult Part
                 allParts.add(MessagePart.ToolResult(
@@ -681,7 +686,6 @@ class ChatRepositoryImpl(
                     isError = result.contains("\"error\""),
                     executionTimeMs = executionTime
                 ))
-                println("当前 Parts 总数: ${allParts.size}")
 
                 // 添加工具结果到消息历史
                 messages.add(ChatMessage(
@@ -704,7 +708,8 @@ class ChatRepositoryImpl(
                 chatId = chatId,
                 role = MessageRole.ASSISTANT,
                 parts = streamingParts,
-                isStreaming = true
+                isStreaming = true,
+                groupMetadata = groupMetadata
             ))
 
             pendingToolCalls = null
@@ -726,19 +731,6 @@ class ChatRepositoryImpl(
         finalParts.addAll(allParts.filterIsInstance<MessagePart.ToolCall>())
         finalParts.addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
 
-        // 保存最终消息到数据库
-        println("=== 准备保存最终消息 ===")
-        println("Parts 数量: ${finalParts.size}")
-        finalParts.forEach { part ->
-            when (part) {
-                is MessagePart.Text -> println("  文本: ${part.content.take(50)}...")
-                is MessagePart.ToolCall -> println("  工具调用: ${part.toolName}")
-                is MessagePart.ToolResult -> println("  工具结果: ${part.toolName}, ID: ${part.toolCallId}")
-                is MessagePart.Image -> println("  图片: ${part.fileName ?: part.filePath}")
-                is MessagePart.Video -> println("  视频: ${part.fileName ?: part.filePath}")
-            }
-        }
-
         val finalMessage = Message(
             id = assistantId,
             chatId = chatId,
@@ -750,10 +742,10 @@ class ChatRepositoryImpl(
             tokensPerSecond = if (shouldRecordTokens) tokensPerSecond else 0.0,
             firstTokenLatency = if (shouldRecordTokens) firstTokenLatency else 0,
             modelName = modelName,
-            providerId = if (shouldRecordTokens) providerId else null
+            providerId = if (shouldRecordTokens) providerId else null,
+            groupMetadata = groupMetadata
         )
 
-        println("finalMessage.parts 数量: ${finalMessage.parts.size}")
         saveMessageToDb(finalMessage)
         chatDao.updateChatTimestamp(chatId, System.currentTimeMillis())
 
@@ -784,14 +776,17 @@ class ChatRepositoryImpl(
             }
             messages.addAll(allMessages.take(userMessageIndex + 1).map {
                 val msg = it.toMessage()
-                ChatMessage(
-                    role = when (it.role) {
-                        "user" -> ProviderMessageRole.USER
-                        "assistant" -> ProviderMessageRole.ASSISTANT
-                        else -> ProviderMessageRole.SYSTEM
-                    },
-                    content = msg.getTextContent()
-                )
+                when (it.role) {
+                    "user" -> ChatMessage(
+                        role = ProviderMessageRole.USER,
+                        content = msg.getTextContent()
+                    )
+                    "assistant" -> buildAssistantChatMessage(msg)
+                    else -> ChatMessage(
+                        role = ProviderMessageRole.SYSTEM,
+                        content = msg.getTextContent()
+                    )
+                }
             })
 
             val streamingMessage = originalMessage.copy(parts = emptyList(), isStreaming = true)
@@ -1069,8 +1064,19 @@ class ChatRepositoryImpl(
 
     private fun buildAssistantChatMessage(message: Message): ChatMessage {
         val text = buildString {
+            message.groupMetadata?.assistantName
+                ?.takeIf { it.isNotBlank() }
+                ?.let { assistantName ->
+                    append("[")
+                    append(assistantName)
+                    append("]")
+                }
+
             val base = message.getTextContent()
-            if (base.isNotBlank()) append(base)
+            if (base.isNotBlank()) {
+                if (isNotEmpty()) append("\n")
+                append(base)
+            }
 
             val images = message.parts.filterIsInstance<MessagePart.Image>()
             val videos = message.parts.filterIsInstance<MessagePart.Video>()
@@ -1119,11 +1125,9 @@ class ChatRepositoryImpl(
                 )
                 return@forEach
             }
-            val bytes = file.readBytes()
-            val encoded = Base64.getEncoder().encodeToString(bytes)
             parts.add(
                 MessageContent.Image(
-                    base64Data = encoded,
+                    base64Data = encodeFileToBase64(file),
                     mimeType = image.mimeType
                 )
             )
@@ -1148,17 +1152,25 @@ class ChatRepositoryImpl(
                 )
                 return@forEach
             }
-            val bytes = file.readBytes()
-            val encoded = Base64.getEncoder().encodeToString(bytes)
             parts.add(
                 MessageContent.Video(
-                    base64Data = encoded,
+                    base64Data = encodeFileToBase64(file),
                     mimeType = video.mimeType
                 )
             )
         }
 
         parts.takeIf { it.isNotEmpty() }
+    }
+
+    private fun encodeFileToBase64(file: File): String {
+        val output = ByteArrayOutputStream()
+        file.inputStream().buffered().use { input ->
+            Base64.getEncoder().wrap(output).use { encodedOutput ->
+                input.copyTo(encodedOutput)
+            }
+        }
+        return output.toString(Charsets.UTF_8.name())
     }
 
     private suspend fun autoGenerateTitle(chatId: String, firstUserMessage: String) {
@@ -1177,20 +1189,6 @@ class ChatRepositoryImpl(
     }
 
     private suspend fun saveMessageToDb(message: Message) {
-        println("=== 保存消息到数据库 ===")
-        println("消息ID: ${message.id}")
-        println("角色: ${message.role}")
-        println("Parts 数量: ${message.parts.size}")
-        message.parts.forEach { part ->
-            when (part) {
-                is MessagePart.Text -> println("  - 文本: ${part.content.take(50)}...")
-                is MessagePart.ToolCall -> println("  - 工具调用: ${part.toolName}")
-                is MessagePart.ToolResult -> println("  - 工具结果: ${part.toolName}, 错误: ${part.isError}")
-                is MessagePart.Image -> println("  - 图片: ${part.fileName ?: part.filePath}")
-                is MessagePart.Video -> println("  - 视频: ${part.fileName ?: part.filePath}")
-            }
-        }
-
         val entity = MessageEntity(
             id = message.id,
             chatId = message.chatId,
@@ -1203,13 +1201,16 @@ class ChatRepositoryImpl(
             firstTokenLatency = message.firstTokenLatency,
             modelName = message.modelName,
             providerId = message.providerId,
+            groupId = message.groupMetadata?.groupId,
+            groupAssistantId = message.groupMetadata?.assistantId,
+            groupAssistantName = message.groupMetadata?.assistantName,
+            groupActivationStrategy = message.groupMetadata?.activationStrategy?.name,
+            groupGenerationId = message.groupMetadata?.generationId,
             variantsJson = if (message.variants.isNotEmpty()) variantsToJson(message.variants) else null,
             selectedVariantIndex = message.selectedVariantIndex
         )
 
-        println("partsJson 长度: ${entity.partsJson.length}")
         messageDao.insertMessage(entity)
-        println("=== 消息保存完成 ===")
     }
 
     /**
@@ -1309,9 +1310,6 @@ class ChatRepositoryImpl(
         }
 
         val parts = MessagePartSerializer.deserializeParts(partsJson)
-        println("=== 加载消息 ===")
-        println("消息ID: $id")
-        println("Parts 数量: ${parts.size}")
 
         return Message(
             id = id,
@@ -1326,8 +1324,30 @@ class ChatRepositoryImpl(
             firstTokenLatency = currentVariant?.firstTokenLatency ?: firstTokenLatency,
             modelName = modelName,
             providerId = providerId,
+            groupMetadata = toGroupMetadata(),
             variants = variants,
             selectedVariantIndex = selectedVariantIndex
         )
+    }
+
+    private fun MessageEntity.toGroupMetadata(): GroupMessageMetadata? {
+        val resolvedGroupId = groupId ?: return null
+        val resolvedAssistantId = groupAssistantId ?: return null
+        val resolvedStrategy = groupActivationStrategy
+            ?.runCatching { GroupActivationStrategy.valueOf(this) }
+            ?.getOrNull()
+            ?: GroupActivationStrategy.MANUAL
+
+        return GroupMessageMetadata(
+            groupId = resolvedGroupId,
+            assistantId = resolvedAssistantId,
+            assistantName = groupAssistantName,
+            activationStrategy = resolvedStrategy,
+            generationId = groupGenerationId ?: UUID.randomUUID().toString()
+        )
+    }
+
+    private fun GroupMessageMetadata.newGeneration(): GroupMessageMetadata {
+        return copy(generationId = UUID.randomUUID().toString())
     }
 }

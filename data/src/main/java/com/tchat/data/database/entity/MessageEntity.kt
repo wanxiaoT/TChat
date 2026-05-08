@@ -21,7 +21,12 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index(value = ["chatId"])]
+    indices = [
+        Index(value = ["chatId"]),
+        Index(value = ["chatId", "timestamp"]),
+        Index(value = ["role", "providerId"]),
+        Index(value = ["role", "modelName"])
+    ]
 )
 data class MessageEntity(
     @PrimaryKey
@@ -39,6 +44,12 @@ data class MessageEntity(
     val modelName: String? = null,
     // 提供商ID（用于按提供商统计token）
     val providerId: String? = null,
+    // 群聊元数据
+    val groupId: String? = null,
+    val groupAssistantId: String? = null,
+    val groupAssistantName: String? = null,
+    val groupActivationStrategy: String? = null,
+    val groupGenerationId: String? = null,
     // 变体支持（JSON 格式存储）
     val variantsJson: String? = null,
     val selectedVariantIndex: Int = 0

@@ -2,6 +2,7 @@ package com.tchat.wanxiaot.util
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.util.Log
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
@@ -17,6 +18,8 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
  * 使用ZXing库生成和解析二维码
  */
 object QRCodeUtils {
+    private const val TAG = "QRCodeUtils"
+
     /**
      * 生成二维码
      * @param content 二维码内容
@@ -56,7 +59,7 @@ object QRCodeUtils {
                 setPixels(pixels, 0, width, 0, 0, width, height)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Failed to generate QR code", e)
             null
         }
     }
@@ -85,7 +88,7 @@ object QRCodeUtils {
             val result = reader.decode(binaryBitmap, hints)
             result.text
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Failed to decode QR code", e)
             null
         }
     }
@@ -117,7 +120,7 @@ object QRCodeUtils {
         return try {
             EncryptionUtils.decrypt(encrypted, password)
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Failed to decrypt QR code payload", e)
             null
         }
     }

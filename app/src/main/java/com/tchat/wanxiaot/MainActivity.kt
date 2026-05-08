@@ -1,6 +1,7 @@
 package com.tchat.wanxiaot
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -11,8 +12,11 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
@@ -22,13 +26,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tchat.data.MessageSender
 import com.tchat.data.database.AppDatabase
 import com.tchat.data.database.entity.AssistantEntity
 import com.tchat.data.model.Assistant
 import com.tchat.data.model.GroupChat
+import com.tchat.data.model.GroupMessageMetadata
 import com.tchat.data.model.LocalToolOption
+import com.tchat.data.repository.ChatConfig
 import com.tchat.data.repository.impl.ChatRepositoryImpl
 import com.tchat.data.repository.impl.KnowledgeRepositoryImpl
 import com.tchat.data.repository.impl.GroupChatRepositoryImpl
@@ -71,11 +80,12 @@ import com.tchat.data.deepresearch.service.WebSearchServiceFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // 默认助手ID - 固定值，确保只创建一次
 const val DEFAULT_ASSISTANT_ID = "default_assistant"
+private const val MAIN_ACTIVITY_TAG = "MainActivity"
 
 // 导航状态
 private enum class MainNavState {
@@ -141,10 +151,13 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            val settings by settingsManager.settings.collectAsState()
+            val settings by settingsManager.settings.collectAsStateWithLifecycle()
             val language = Language.fromCode(settings.language)
 
-            TChatTheme(language = language) {
+            TChatTheme(
+                language = language,
+                dynamicColor = false
+            ) {
                 MainScreen(
                     settingsManager = settingsManager,
                     database = database,
@@ -171,10 +184,11 @@ class MainActivity : ComponentActivity() {
     ) {
         val assistantDao = database.assistantDao()
         val existingAssistant = assistantDao.getAssistantById(DEFAULT_ASSISTANT_ID)
+        val loadedSettings = settingsManager.awaitLoadedSettings()
 
         if (existingAssistant == null) {
             // 根据当前语言获取字符串
-            val currentLanguage = Language.fromCode(settingsManager.settings.first().language)
+            val currentLanguage = Language.fromCode(loadedSettings.language)
             val actualLanguage = Language.getActualLanguage(currentLanguage)
             val localStrings = when (actualLanguage) {
                 Language.ZH_CN -> StringsZhCN
@@ -200,13 +214,11 @@ class MainActivity : ComponentActivity() {
                 updatedAt = now
             )
             assistantDao.insertAssistant(defaultAssistant)
-            println("Created default assistant")
         }
 
         // 如果当前没有选中的助手，则选中默认助手
-        if (settingsManager.settings.first().currentAssistantId.isEmpty()) {
+        if (loadedSettings.currentAssistantId.isEmpty()) {
             settingsManager.setCurrentAssistant(DEFAULT_ASSISTANT_ID)
-            println("Set default assistant as current")
         }
     }
 }
@@ -220,7 +232,7 @@ fun MainScreen(
 ) {
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val settings by settingsManager.settings.collectAsState()
+    val settings by settingsManager.settings.collectAsStateWithLifecycle()
     val currentProvider = settings.getCurrentProvider()
     val context = LocalContext.current
     val chatMediaDir = remember(context) { File(context.filesDir, "chat_media") }
@@ -261,11 +273,17 @@ fun MainScreen(
     // null表示新对话（懒创建模式）
     var currentChatId by remember { mutableStateOf<String?>(null) }
     var currentGroupChatId by remember { mutableStateOf<String?>(null) }
-    var chatList by remember { mutableStateOf(emptyList<com.tchat.data.model.Chat>()) }
+    var allChatList by remember { mutableStateOf(emptyList<com.tchat.data.model.Chat>()) }
     var groupChatList by remember { mutableStateOf(emptyList<GroupChat>()) }
     var repository by remember { mutableStateOf<ChatRepositoryImpl?>(null) }
     var currentNavState by remember { mutableStateOf(MainNavState.CHAT) }
     var isDrawerRequested by remember { mutableStateOf(false) }
+    val chatList = remember(allChatList, groupChatList) {
+        val activeGroupChatIds = groupChatList
+            .mapNotNull { it.activeChatId }
+            .toSet()
+        allChatList.filterNot { chat -> chat.id in activeGroupChatIds }
+    }
 
     // 当前助手
     var currentAssistant by remember { mutableStateOf<Assistant?>(null) }
@@ -274,22 +292,21 @@ fun MainScreen(
     var enabledTools by remember { mutableStateOf<Set<LocalToolOption>>(emptySet()) }
 
     // 深度研究状态
-    val deepResearchSession by DeepResearchManager.currentSession.collectAsState()
+    val deepResearchSession by DeepResearchManager.currentSession.collectAsStateWithLifecycle()
     val isDeepResearching = deepResearchSession?.state is ResearchState.Researching ||
             deepResearchSession?.state is ResearchState.GeneratingReport
 
     // 加载当前助手
     LaunchedEffect(settings.currentAssistantId) {
-        if (settings.currentAssistantId.isNotEmpty()) {
-            scope.launch(Dispatchers.IO) {
-                val entity = assistantDao.getAssistantById(settings.currentAssistantId)
-                entity?.let {
-                    currentAssistant = entityToAssistant(it)
-                    // 初始化启用的工具为助手配置的工具
-                    enabledTools = currentAssistant?.localTools?.toSet() ?: emptySet()
-                }
+        val resolvedAssistant = if (settings.currentAssistantId.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                assistantDao.getAssistantById(settings.currentAssistantId)?.let(::entityToAssistant)
             }
+        } else {
+            null
         }
+        currentAssistant = resolvedAssistant
+        enabledTools = resolvedAssistant?.localTools?.toSet() ?: emptySet()
     }
 
     // 同步 isDrawerRequested 和 drawerState - 监听 targetValue 以便滑动关闭时也能重置
@@ -323,19 +340,6 @@ fun MainScreen(
                 )
 
             if (currentProvider != null && hasCredential) {
-                println("=== 当前服务商 ===")
-                println("Name: ${currentProvider.name}")
-                println("Type: ${currentProvider.providerType.displayName}")
-                if (currentProvider.multiKeyEnabled && currentProvider.apiKeys.isNotEmpty()) {
-                    val enabledCount = currentProvider.apiKeys.count { it.isEnabled && it.status == com.tchat.wanxiaot.settings.ApiKeyStatus.ACTIVE }
-                    println("API Keys: ${currentProvider.apiKeys.size} (enabled: $enabledCount)")
-                } else {
-                    println("API Key: ${currentProvider.apiKey.take(10)}...")
-                }
-                println("Endpoint: ${currentProvider.endpoint}")
-                println("Model: $activeModel")
-                println("==================")
-
                 val selectedModel = activeModel
 
                 val mappedType = when (currentProvider.providerType) {
@@ -374,12 +378,11 @@ fun MainScreen(
                 // 初始化 MessageSender 的 repository
                 messageSender.init(newRepo)
             } else {
-                println("No valid provider configured")
                 repository = null
             }
         } catch (e: Exception) {
-            println("Error creating provider: ${e.message}")
-            e.printStackTrace()
+            Log.e(MAIN_ACTIVITY_TAG, "Failed to create provider client", e)
+            repository = null
         }
     }
 
@@ -387,7 +390,7 @@ fun MainScreen(
     LaunchedEffect(repository) {
         repository?.let { repo ->
             repo.getAllChats().collect { chats ->
-                chatList = chats
+                allChatList = chats
             }
         }
     }
@@ -466,7 +469,10 @@ fun MainScreen(
         scrimColor = Color.Transparent, // 禁用默认遮罩，使用自定义遮罩
         drawerContent = {
             ModalDrawerSheet(
-                modifier = Modifier.width(280.dp)
+                modifier = Modifier.width(296.dp),
+                drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
+                drawerContainerColor = MaterialTheme.colorScheme.surface,
+                drawerContentColor = MaterialTheme.colorScheme.onSurface
             ) {
                 DrawerContent(
                     chats = chatList,
@@ -483,7 +489,7 @@ fun MainScreen(
                     },
                     onGroupChatSelected = { groupChatId ->
                         currentGroupChatId = groupChatId
-                        currentChatId = null // 切换到群聊模式
+                        currentChatId = groupChatList.find { it.id == groupChatId }?.activeChatId
                         scope.launch { drawerState.close() }
                     },
                     onNewChat = {
@@ -514,41 +520,70 @@ fun MainScreen(
     ) {
         // 自定义遮罩层 - 使用本地状态立即响应
         val scrimAlpha by animateFloatAsState(
-            targetValue = if (isDrawerRequested) 0.32f else 0f,
+            targetValue = if (isDrawerRequested) 0.12f else 0f,
             label = "scrim"
         )
 
         Box(modifier = Modifier.fillMaxSize()) {
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
+                containerColor = Color.Transparent,
                 topBar = {
                     TopAppBar(
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                            scrolledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface
+                        ),
                         title = {
                             Column {
+                                Text(
+                                    text = "当前会话",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                                )
                                 Text(
                                     text = when {
                                         currentGroupChatId != null -> {
                                             groupChatList.find { it.id == currentGroupChatId }?.name ?: "群聊"
                                         }
                                         else -> currentAssistant?.name ?: "AI 聊天"
-                                    }
+                                    },
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = "${currentProvider?.name ?: "未配置"} > ${settings.getActiveModel()}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         },
                         navigationIcon = {
-                            IconButton(onClick = {
-                                isDrawerRequested = true
-                                scope.launch { drawerState.open() }
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Menu,
-                                    contentDescription = strings.chatMenu
-                                )
+                            Surface(
+                                modifier = Modifier.padding(start = 8.dp),
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.26f)
+                                ),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 0.dp
+                            ) {
+                                IconButton(onClick = {
+                                    isDrawerRequested = true
+                                    scope.launch { drawerState.open() }
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Menu,
+                                        contentDescription = strings.chatMenu
+                                    )
+                                }
                             }
                         }
                     )
@@ -566,20 +601,32 @@ fun MainScreen(
                             val groupChatViewModel = remember(repository, groupChatRepository, currentGroupChatId) {
                                 GroupChatViewModel(repository!!, groupChatRepository, messageSender)
                             }
+                            val actualGroupChatId by groupChatViewModel.actualChatId.collectAsStateWithLifecycle()
 
                             // 加载助手列表
                             val groupChat = groupChatList.find { it.id == currentGroupChatId }
-                            val groupAssistants = remember(groupChat?.memberIds, assistantDao) {
-                                val memberIds = groupChat?.memberIds ?: emptyList()
-                                if (memberIds.isEmpty()) {
+                            var groupAssistants by remember(currentGroupChatId) {
+                                mutableStateOf<List<Assistant>>(emptyList())
+                            }
+                            LaunchedEffect(groupChat?.memberIds) {
+                                val memberIds = groupChat?.memberIds.orEmpty()
+                                groupAssistants = if (memberIds.isEmpty()) {
                                     emptyList()
                                 } else {
-                                    // 同步加载助手信息
-                                    memberIds.mapNotNull { memberId ->
-                                        kotlinx.coroutines.runBlocking {
-                                            assistantDao.getAssistantById(memberId)?.let { entityToAssistant(it) }
+                                    withContext(Dispatchers.IO) {
+                                        memberIds.mapNotNull { memberId ->
+                                            assistantDao.getAssistantById(memberId)?.let(::entityToAssistant)
                                         }
                                     }
+                                }
+                            }
+
+                            LaunchedEffect(actualGroupChatId, currentGroupChatId) {
+                                if (currentGroupChatId != null &&
+                                    actualGroupChatId != null &&
+                                    currentChatId != actualGroupChatId
+                                ) {
+                                    currentChatId = actualGroupChatId
                                 }
                             }
 
@@ -587,6 +634,96 @@ fun MainScreen(
                             val context = LocalContext.current
                             val localTools = remember(context) {
                                 LocalTools(context)
+                            }
+                            var groupEnabledTools by remember(currentGroupChatId) {
+                                mutableStateOf<Set<LocalToolOption>>(emptySet())
+                            }
+                            var groupAssistantConfigs by remember(currentGroupChatId) {
+                                mutableStateOf<Map<String, ChatConfig>>(emptyMap())
+                            }
+
+                            LaunchedEffect(
+                                groupChat?.id,
+                                groupChat?.name,
+                                groupAssistants,
+                                settings.regexRules,
+                                settings.currentProviderId,
+                                settings.tokenRecordingStatus,
+                                settings.getActiveModel()
+                            ) {
+                                groupAssistantConfigs = groupAssistants.associate { assistant ->
+                                    val knowledgeTools = assistant.knowledgeBaseId?.let { kbId ->
+                                        listOf(
+                                            KnowledgeSearchTool.create(
+                                                knowledgeService = knowledgeService,
+                                                repository = knowledgeRepository,
+                                                getEmbeddingProvider = { knowledgeBaseId ->
+                                                    getEmbeddingProviderForKnowledgeBase(
+                                                        knowledgeBaseId = knowledgeBaseId,
+                                                        knowledgeRepository = knowledgeRepository,
+                                                        settingsManager = settingsManager
+                                                    )
+                                                },
+                                                knowledgeBaseId = kbId
+                                            )
+                                        )
+                                    } ?: emptyList()
+
+                                    val mcpTools = runCatching {
+                                        if (assistant.mcpServerIds.isNotEmpty()) {
+                                            mcpToolService.getToolsForServers(assistant.mcpServerIds)
+                                        } else {
+                                            emptyList()
+                                        }
+                                    }.getOrDefault(emptyList())
+
+                                    val assistantRegexRules = settings.regexRules
+                                        .filter { rule ->
+                                            rule.id in assistant.enabledRegexRuleIds && rule.isEnabled
+                                        }
+                                        .sortedBy { it.order }
+                                        .map { rule ->
+                                            RegexRuleData(
+                                                pattern = rule.pattern,
+                                                replacement = rule.replacement,
+                                                isEnabled = true,
+                                                order = rule.order
+                                            )
+                                        }
+
+                                    assistant.id to ChatConfig(
+                                        systemPrompt = buildGroupAssistantSystemPrompt(
+                                            groupName = groupChat?.name,
+                                            assistant = assistant
+                                        ),
+                                        tools = (
+                                            localTools.getToolsForOptions(assistant.localTools) +
+                                                knowledgeTools +
+                                                mcpTools
+                                            ).distinctBy { it.name },
+                                        temperature = assistant.temperature,
+                                        topP = assistant.topP,
+                                        maxTokens = assistant.maxTokens,
+                                        modelName = settings.getActiveModel(),
+                                        providerId = settings.currentProviderId,
+                                        shouldRecordTokens = settings.tokenRecordingStatus ==
+                                            com.tchat.wanxiaot.settings.TokenRecordingStatus.ENABLED,
+                                        regexRules = assistantRegexRules,
+                                        enabledSkillIds = assistant.enabledSkillIds,
+                                        groupMetadata = groupChat?.let { group ->
+                                            GroupMessageMetadata(
+                                                groupId = group.id,
+                                                assistantId = assistant.id,
+                                                assistantName = assistant.name,
+                                                activationStrategy = group.activationStrategy
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+
+                            LaunchedEffect(groupAssistantConfigs, groupChatViewModel) {
+                                groupChatViewModel.setAssistantConfigs(groupAssistantConfigs)
                             }
 
                             GroupChatScreen(
@@ -600,12 +737,12 @@ fun MainScreen(
                                     settingsManager.setCurrentModel(model)
                                 },
                                 providerIcon = currentProvider?.providerType?.icon?.invoke(),
-                                enabledTools = enabledTools,
+                                enabledTools = groupEnabledTools,
                                 onToolToggle = { tool, enabled ->
-                                    enabledTools = if (enabled) {
-                                        enabledTools + tool
+                                    groupEnabledTools = if (enabled) {
+                                        groupEnabledTools + tool
                                     } else {
-                                        enabledTools - tool
+                                        groupEnabledTools - tool
                                     }
                                 },
                                 getToolsForOptions = { options ->
@@ -624,9 +761,7 @@ fun MainScreen(
                                     } else if (query != null) {
                                         startDeepResearch(
                                             query = query,
-                                            settingsManager = settingsManager,
-                                            viewModel = ChatViewModel(repository!!, messageSender),
-                                            chatId = currentChatId
+                                            settingsManager = settingsManager
                                         )
                                     } else {
                                         currentNavState = MainNavState.DEEP_RESEARCH
@@ -654,7 +789,7 @@ fun MainScreen(
                             }
 
                             // 监听actualChatId变化，同步到currentChatId
-                            val actualChatId by viewModel.actualChatId.collectAsState()
+                            val actualChatId by viewModel.actualChatId.collectAsStateWithLifecycle()
                             LaunchedEffect(actualChatId) {
                                 if (actualChatId != null && currentChatId == null) {
                                     // 懒创建完成，更新currentChatId
@@ -671,9 +806,6 @@ fun MainScreen(
                             // 计算知识库搜索工具（当 currentAssistant 变化时重新计算）
                             val knowledgeTools = remember(currentAssistant?.knowledgeBaseId, knowledgeService, knowledgeRepository) {
                                 currentAssistant?.knowledgeBaseId?.let { kbId ->
-                                    println("=== 知识库工具已启用 ===")
-                                    println("知识库ID: $kbId")
-                                    println("助手: ${currentAssistant?.name}")
                                     listOf(
                                         KnowledgeSearchTool.create(
                                             knowledgeService = knowledgeService,
@@ -689,10 +821,7 @@ fun MainScreen(
                                             knowledgeBaseId = kbId
                                         )
                                     )
-                                } ?: run {
-                                    println("=== 未绑定知识库 ===")
-                                    emptyList()
-                                }
+                                } ?: emptyList()
                             }
 
                             // 计算 MCP 工具（当 currentAssistant 变化时重新计算）
@@ -700,10 +829,7 @@ fun MainScreen(
                             LaunchedEffect(currentAssistant?.mcpServerIds) {
                                 val serverIds = currentAssistant?.mcpServerIds ?: emptyList()
                                 if (serverIds.isNotEmpty()) {
-                                    println("=== MCP 工具加载中 ===")
-                                    println("服务器IDs: $serverIds")
                                     mcpTools = mcpToolService.getToolsForServers(serverIds)
-                                    println("已加载 ${mcpTools.size} 个 MCP 工具")
                                 } else {
                                     mcpTools = emptyList()
                                 }
@@ -774,9 +900,7 @@ fun MainScreen(
                                         // 有输入内容，直接开始研究
                                         startDeepResearch(
                                             query = query,
-                                            settingsManager = settingsManager,
-                                            viewModel = viewModel,
-                                            chatId = currentChatId
+                                            settingsManager = settingsManager
                                         )
                                     } else {
                                         // 没有输入，打开深度研究页面
@@ -824,7 +948,7 @@ fun MainScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = scrimAlpha))
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = scrimAlpha))
                         .pointerInput(Unit) {
                             detectTapGestures {
                                 isDrawerRequested = false
@@ -871,6 +995,15 @@ private fun entityToAssistant(entity: AssistantEntity): Assistant {
         emptyList()
     }
 
+    val skillIds: List<String> = try {
+        val jsonArray = org.json.JSONArray(entity.enabledSkillIds)
+        (0 until jsonArray.length()).map { i ->
+            jsonArray.getString(i)
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
     return Assistant(
         id = entity.id,
         name = entity.name,
@@ -885,25 +1018,46 @@ private fun entityToAssistant(entity: AssistantEntity): Assistant {
         knowledgeBaseId = entity.knowledgeBaseId,
         mcpServerIds = mcpIds,
         enabledRegexRuleIds = regexRuleIds,
+        enabledSkillIds = skillIds,
         createdAt = entity.createdAt,
         updatedAt = entity.updatedAt
     )
+}
+
+private fun buildGroupAssistantSystemPrompt(groupName: String?, assistant: Assistant): String {
+    val assistantPrompt = assistant.systemPrompt.trim()
+    val groupContext = buildString {
+        if (!groupName.isNullOrBlank()) {
+            append("你正在参与群聊“")
+            append(groupName)
+            append("”，当前发言身份是助手“")
+            append(assistant.name)
+            append("”。请严格保持该助手的人设、职责和语气。")
+        } else {
+            append("你当前发言身份是助手“")
+            append(assistant.name)
+            append("”。请严格保持该助手的人设、职责和语气。")
+        }
+    }
+
+    return if (assistantPrompt.isBlank()) {
+        groupContext
+    } else {
+        "$groupContext\n\n$assistantPrompt"
+    }
 }
 
 /**
  * 根据知识库配置获取对应的 Embedding Provider
  * 知识库使用自己配置的 Embedding 服务商，与对话模型提供商独立
  */
-private fun getEmbeddingProviderForKnowledgeBase(
+private suspend fun getEmbeddingProviderForKnowledgeBase(
     knowledgeBaseId: String,
     knowledgeRepository: KnowledgeRepositoryImpl,
     settingsManager: SettingsManager
 ): com.tchat.network.provider.EmbeddingProvider? {
     return try {
-        // 获取知识库配置（同步方式，因为我们在工具执行时需要）
-        val base = kotlinx.coroutines.runBlocking {
-            knowledgeRepository.getBaseById(knowledgeBaseId)
-        } ?: return null
+        val base = knowledgeRepository.getBaseById(knowledgeBaseId) ?: return null
         
         // 获取设置中的服务商配置
         val settings = settingsManager.settings.value
@@ -923,7 +1077,7 @@ private fun getEmbeddingProviderForKnowledgeBase(
             baseUrl = providerConfig.endpoint.ifBlank { null }
         )
     } catch (e: Exception) {
-        e.printStackTrace()
+        Log.e(MAIN_ACTIVITY_TAG, "Failed to create embedding provider for knowledge base", e)
         null
     }
 }
@@ -933,9 +1087,7 @@ private fun getEmbeddingProviderForKnowledgeBase(
  */
 private fun startDeepResearch(
     query: String,
-    settingsManager: SettingsManager,
-    viewModel: ChatViewModel,
-    chatId: String?
+    settingsManager: SettingsManager
 ) {
     val settings = settingsManager.settings.value
     val deepResearchSettings = settings.deepResearchSettings

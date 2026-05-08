@@ -25,6 +25,10 @@ import com.tchat.wanxiaot.settings.KeySelectionStrategy
 import com.tchat.wanxiaot.settings.ModelCustomParams
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionCard
 import com.tchat.wanxiaot.ui.components.QRCodeDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -508,32 +512,26 @@ fun ProviderEditScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (isNew) "添加服务商" else "编辑服务商") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    if (!isNew) {
-                        IconButton(onClick = { showQRDialog = true }) {
-                            Icon(Icons.Outlined.Share, contentDescription = "分享")
-                        }
-                        if (onDelete != null) {
-                            IconButton(onClick = { showDeleteDialog = true }) {
-                                Icon(
-                                    Icons.Outlined.Delete,
-                                    contentDescription = "删除",
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            }
-                        }
+    AppPageScaffold(
+        title = if (isNew) "添加服务商" else "编辑服务商",
+        eyebrow = "Provider Editor",
+        subtitle = providerType.displayName,
+        onBack = onBack,
+        actions = {
+            if (!isNew) {
+                IconButton(onClick = { showQRDialog = true }) {
+                    Icon(Icons.Outlined.Share, contentDescription = "分享")
+                }
+                if (onDelete != null) {
+                    IconButton(onClick = { showDeleteDialog = true }) {
+                        Icon(
+                            Icons.Outlined.Delete,
+                            contentDescription = "删除",
+                            tint = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
-            )
+            }
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
@@ -547,7 +545,6 @@ fun ProviderEditScreen(
                         selectedModel = selectedModel,
                         availableModels = savedModels,
                         modelCustomParams = modelCustomParams,
-                        // 多 Key 管理
                         apiKeys = apiKeys,
                         multiKeyEnabled = multiKeyEnabled,
                         keySelectionStrategy = keySelectionStrategy,
@@ -562,9 +559,7 @@ fun ProviderEditScreen(
                     onBack()
                 },
                 icon = { Icon(Icons.Default.Check, contentDescription = null) },
-                text = { Text(if (isNew) "添加" else "保存") },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
+                text = { Text(if (isNew) "添加服务商" else "保存修改") },
                 expanded = true
             )
         }
@@ -577,20 +572,23 @@ fun ProviderEditScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // 基本信息卡片
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "基本信息",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+            AppHeroCard(
+                eyebrow = "Connection Setup",
+                title = if (isNew) "先把服务商接入方式配置扎实" else "把连接参数、Key 策略和模型列表维护干净",
+                description = "这里决定了模型调用稳定性、可用模型范围和多 Key 容灾策略。",
+                icon = providerType.icon(),
+                trailing = {
+                    if (savedModels.isNotEmpty()) {
+                        AppPill(text = "${savedModels.size} 个模型")
+                    }
+                }
+            )
 
+            // 基本信息卡片
+            AppSectionCard(
+                title = "基本信息",
+                description = "先定义服务商类型、名称和默认端点。"
+            ) {
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
@@ -659,23 +657,13 @@ fun ProviderEditScreen(
                             }
                         }
                     }
-                }
             }
 
             // API 配置卡片
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth()
+            AppSectionCard(
+                title = "API 配置",
+                description = "单 Key 直连或作为多 Key 方案的备用入口。"
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "API 配置",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-
                     OutlinedTextField(
                         value = apiKey,
                         onValueChange = { apiKey = it },
@@ -703,23 +691,13 @@ fun ProviderEditScreen(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
-                }
             }
 
             // 多 Key 管理卡片
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth()
+            AppSectionCard(
+                title = "多 Key 管理",
+                description = "用于轮询、优先级和故障切换，降低单 Key 失效风险。"
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "多 Key 管理",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -896,17 +874,13 @@ fun ProviderEditScreen(
                             }
                         }
                     }
-                }
             }
 
             // 模型配置卡片
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth()
+            AppSectionCard(
+                title = "模型配置",
+                description = "拉取、筛选并维护这个服务商可用的聊天模型。"
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
                     val modelFetchKey = remember(apiKey, multiKeyEnabled, apiKeys) {
                         if (multiKeyEnabled && apiKeys.isNotEmpty()) {
                             apiKeys.firstOrNull { it.isEnabled }?.key ?: apiKey
@@ -1115,7 +1089,6 @@ fun ProviderEditScreen(
                             Icon(Icons.Default.Add, contentDescription = "添加")
                         }
                     }
-                }
             }
 
             // 底部留空给 FAB

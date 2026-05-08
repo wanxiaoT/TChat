@@ -57,8 +57,8 @@ import com.tchat.data.database.entity.SkillEntity
         AppSettingsEntity::class,
         SkillEntity::class
     ],
-    version = 24,
-    exportSchema = false
+    version = 28,
+    exportSchema = true
 )
 @TypeConverters(LocalToolOptionConverter::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -453,6 +453,65 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // 迁移:为群聊添加绑定的实际会话ID
+        private val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE group_chats ADD COLUMN activeChatId TEXT DEFAULT NULL")
+            }
+        }
+
+        // 迁移:为消息添加群聊元数据字段
+        private val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN groupId TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE messages ADD COLUMN groupAssistantId TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE messages ADD COLUMN groupAssistantName TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE messages ADD COLUMN groupActivationStrategy TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE messages ADD COLUMN groupGenerationId TEXT DEFAULT NULL")
+            }
+        }
+
+        // 迁移:为热查询添加排序和统计索引
+        private val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_chats_updatedAt ON chats(updatedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_group_chats_updatedAt ON group_chats(updatedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_chatId_timestamp ON messages(chatId, timestamp)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_role_providerId ON messages(role, providerId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_role_modelName ON messages(role, modelName)")
+            }
+        }
+
+        private val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_knowledge_items_knowledgeBaseId_updatedAt " +
+                        "ON knowledge_items(knowledgeBaseId, updatedAt)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_knowledge_items_knowledgeBaseId_status " +
+                        "ON knowledge_items(knowledgeBaseId, status)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_knowledge_chunks_itemId_chunkIndex " +
+                        "ON knowledge_chunks(itemId, chunkIndex)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_chat_folders_parentId_sort_order_name " +
+                        "ON chat_folders(parentId, sort_order, name)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_chat_folder_relations_folderId_addedAt " +
+                        "ON chat_folder_relations(folderId, addedAt)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_bases_updatedAt ON knowledge_bases(updatedAt)")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_deep_research_history_endTime " +
+                        "ON deep_research_history(endTime)"
+                )
+            }
+        }
+
         // 迁移:采用 MessagePart 架构，将旧字段迁移到 partsJson
         private val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -596,7 +655,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                         MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-                        MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24
+                        MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
+                        MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28
                     )
                     .build()
                 INSTANCE = instance

@@ -2,6 +2,7 @@ package com.tchat.wanxiaot.ui.components
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import android.util.Size
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -16,14 +17,12 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -35,6 +34,8 @@ import com.google.zxing.common.HybridBinarizer
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.util.QRCodeGenerator
 import java.util.concurrent.Executors
+
+private const val QR_PROVIDER_SCANNER_TAG = "QRCodeScanner"
 
 /**
  * 扫码导入服务商配置页面
@@ -77,75 +78,70 @@ fun QRCodeScannerScreen(
         onBack()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("扫码导入") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentAlignment = Alignment.Center
-        ) {
-            if (!hasCameraPermission) {
-                // 无权限提示
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text("需要相机权限才能扫描二维码")
-                    Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
-                        Text("授予权限")
-                    }
-                }
-            } else {
-                // 相机预览
-                CameraPreviewWithScanner(
-                    isScanning = isScanning,
-                    onCodeScanned = { code ->
-                        if (isScanning) {
-                            isScanning = false
-                            val provider = QRCodeGenerator.jsonToProvider(code)
-                            if (provider != null) {
-                                onProviderScanned(provider)
-                            } else {
-                                Toast.makeText(context, "无效的配置二维码", Toast.LENGTH_SHORT).show()
-                                isScanning = true
-                            }
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (!hasCameraPermission) {
+            AppPageBackground()
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                AppEmptyState(
+                    title = "需要相机权限",
+                    description = "允许相机访问后，才能扫描供应商配置二维码。",
+                    icon = Icons.Default.Lock,
+                    action = {
+                        Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                            Text("授予权限")
                         }
                     }
                 )
-
-                // 扫描框提示
-                Box(
-                    modifier = Modifier
-                        .size(250.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.Transparent)
-                ) {
-                    // 四角装饰
-                    ScannerOverlay()
+            }
+        } else {
+            CameraPreviewWithScanner(
+                isScanning = isScanning,
+                onCodeScanned = { code ->
+                    if (isScanning) {
+                        isScanning = false
+                        val provider = QRCodeGenerator.jsonToProvider(code)
+                        if (provider != null) {
+                            onProviderScanned(provider)
+                        } else {
+                            Toast.makeText(context, "无效的配置二维码", Toast.LENGTH_SHORT).show()
+                            isScanning = true
+                        }
+                    }
                 }
+            )
 
-                Text(
-                    text = "将二维码放入框内扫描",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White,
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 18.dp)
+            ) {
+                ScannerTopBar(
+                    title = "扫码导入",
+                    subtitle = "识别供应商配置二维码",
+                    onBack = onBack,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 6.dp)
+                )
+
+                ScannerFrame(
+                    modifier = Modifier.align(Alignment.Center)
+                )
+
+                ScannerHintCard(
+                    title = if (isScanning) "对准二维码" else "正在解析",
+                    description = "保持画面稳定，将二维码放入框内即可自动识别。",
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 100.dp)
-                )
+                        .padding(bottom = 12.dp)
+                ) {
+                    AppPill(text = if (isScanning) "扫描中" else "处理中")
+                }
             }
         }
     }
@@ -234,7 +230,7 @@ private fun CameraPreviewWithScanner(
                         imageAnalysis
                     )
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e(QR_PROVIDER_SCANNER_TAG, "Failed to bind camera use cases", e)
                 }
             }, ContextCompat.getMainExecutor(ctx))
 
@@ -244,95 +240,3 @@ private fun CameraPreviewWithScanner(
     )
 }
 
-@Composable
-private fun ScannerOverlay() {
-    val cornerColor = MaterialTheme.colorScheme.primary
-    val cornerSize = 30.dp
-    val cornerWidth = 4.dp
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        // 左上角
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .size(cornerSize)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(cornerWidth)
-                    .background(cornerColor)
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(cornerWidth)
-                    .background(cornerColor)
-            )
-        }
-
-        // 右上角
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .size(cornerSize)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(cornerWidth)
-                    .background(cornerColor)
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .fillMaxHeight()
-                    .width(cornerWidth)
-                    .background(cornerColor)
-            )
-        }
-
-        // 左下角
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .size(cornerSize)
-        ) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .height(cornerWidth)
-                    .background(cornerColor)
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(cornerWidth)
-                    .background(cornerColor)
-            )
-        }
-
-        // 右下角
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .size(cornerSize)
-        ) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .fillMaxWidth()
-                    .height(cornerWidth)
-                    .background(cornerColor)
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .fillMaxHeight()
-                    .width(cornerWidth)
-                    .background(cornerColor)
-            )
-        }
-    }
-}

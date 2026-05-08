@@ -7,7 +7,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,9 +17,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.*
 import com.tchat.wanxiaot.settings.R2Settings
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionCard
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import com.tchat.wanxiaot.util.CloudBackupManager
 import kotlinx.coroutines.launch
 
@@ -32,7 +37,7 @@ fun R2SettingsScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val settings by settingsManager.settings.collectAsState()
+    val settings by settingsManager.settings.collectAsStateWithLifecycle()
     val r2Settings = settings.r2Settings
 
     // 本地编辑状态
@@ -103,26 +108,20 @@ fun R2SettingsScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("云备份设置") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    if (hasChanges) {
-                        TextButton(onClick = { saveSettings() }) {
-                            Text("保存")
-                        }
-                    }
+    AppPageScaffold(
+        title = "云备份设置",
+        eyebrow = "Cloud Backup",
+        subtitle = "Cloudflare R2 连接与凭证管理",
+        onBack = onBack,
+        actions = {
+            if (hasChanges) {
+                TextButton(onClick = { saveSettings() }) {
+                    Text("保存")
                 }
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+            }
+        }
     ) { paddingValues ->
+        SnackbarHost(hostState = snackbarHostState)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -131,50 +130,22 @@ fun R2SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 说明卡片
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Lucide.Cloud,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Cloudflare R2 云备份",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+            AppHeroCard(
+                eyebrow = "Remote Storage",
+                title = "把备份链路配置成一个稳定的恢复通道",
+                description = "R2 适合承载数据库备份文件，但账号、桶和凭证必须清晰可验证。",
+                icon = Lucide.Cloud,
+                trailing = {
+                    if (hasChanges) {
+                        AppPill(text = "未保存更改")
                     }
-                    Text(
-                        text = "将数据库备份文件同步到 Cloudflare R2 对象存储，实现跨设备数据恢复。R2 提供 10GB 免费存储空间，且无出口流量费用。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
-            }
+            )
 
-            // 配置表单
-            OutlinedCard(
-                modifier = Modifier.fillMaxWidth()
+            AppSectionCard(
+                title = "R2 配置",
+                description = "填写账户、Key 和目标 Bucket。高级设置只在需要自定义端点时开启。"
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "R2 配置",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-
                     OutlinedTextField(
                         value = accountId,
                         onValueChange = { accountId = it },
@@ -257,10 +228,8 @@ fun R2SettingsScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
-                }
             }
 
-            // 测试连接按钮
             val isConfigComplete = accountId.isNotBlank() &&
                     accessKeyId.isNotBlank() &&
                     secretAccessKey.isNotBlank() &&
@@ -292,16 +261,7 @@ fun R2SettingsScreen(
 
             // 测试结果
             testResult?.let { result ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (testSuccess) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.errorContainer
-                        }
-                    )
-                ) {
+                AppSectionSurface {
                     Row(
                         modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -329,52 +289,50 @@ fun R2SettingsScreen(
                 }
             }
 
-            // 帮助链接
-            OutlinedCard(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://developers.cloudflare.com/r2/api/s3/tokens/"))
-                    context.startActivity(intent)
-                }
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.HelpOutline,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "如何获取 R2 凭证？",
-                            style = MaterialTheme.typography.bodyMedium
+            AppSectionCard(title = "帮助") {
+                AppSectionSurface {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.HelpOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                        Text(
-                            text = "点击查看 Cloudflare R2 API 令牌创建指南",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "如何获取 R2 凭证？",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "点击查看 Cloudflare R2 API 令牌创建指南",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://developers.cloudflare.com/r2/api/s3/tokens/"))
+                                context.startActivity(intent)
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Lucide.ExternalLink,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                    Icon(
-                        imageVector = Lucide.ExternalLink,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
 
-            // 安全提示
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
+            AppSectionCard(title = "安全建议") {
                 Row(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Icon(
@@ -383,10 +341,6 @@ fun R2SettingsScreen(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Column {
-                        Text(
-                            text = "安全建议",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
                         Text(
                             text = "建议创建仅具有单个 Bucket 读写权限的 API 令牌，以最小化安全风险。",
                             style = MaterialTheme.typography.bodySmall,

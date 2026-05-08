@@ -1,22 +1,46 @@
 package com.tchat.feature.chat
-
-import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.Check
@@ -31,7 +55,6 @@ import com.composables.icons.lucide.Share2
 import com.composables.icons.lucide.Trash2
 import com.composables.icons.lucide.Volume2
 import com.composables.icons.lucide.X
-import com.composables.icons.lucide.Wrench
 import com.tchat.data.model.Message
 import com.tchat.data.model.MessagePart
 import com.tchat.data.model.MessageRole
@@ -52,26 +75,55 @@ fun MessageItem(
     onDelete: ((messageId: String) -> Unit)? = null
 ) {
     val isUser = message.role == MessageRole.USER
-    val textContent = message.getTextContent()
+    val colorScheme = MaterialTheme.colorScheme
+    val textContent = remember(message.parts, message.selectedVariantIndex, message.variants) {
+        message.getCurrentContent().ifBlank { message.getTextContent() }
+    }
     val imageParts = remember(message.parts) { message.parts.filterIsInstance<MessagePart.Image>() }
     val videoParts = remember(message.parts) { message.parts.filterIsInstance<MessagePart.Video>() }
+    val displayedModelName = remember(message.modelName, modelName) {
+        message.modelName?.takeIf { it.isNotBlank() } ?: modelName
+    }
+    val speakerName = remember(message.groupMetadata) {
+        message.groupMetadata?.assistantName?.takeIf { it.isNotBlank() }
+    }
+    val assistantCardColor = colorScheme.surface.copy(alpha = 0.82f)
+    val assistantBorderColor = colorScheme.outlineVariant.copy(alpha = 0.34f)
 
     if (isUser) {
-        // 用户消息：右对齐气泡样式
+        val bubbleShape = RoundedCornerShape(
+            topStart = 21.dp,
+            topEnd = 21.dp,
+            bottomStart = 21.dp,
+            bottomEnd = 7.dp
+        )
+        val bubbleStart = colorScheme.primary
+        val bubbleEnd = lerp(colorScheme.primary, colorScheme.tertiary, 0.38f)
+
         Column(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
+                .padding(horizontal = 4.dp),
             horizontalAlignment = Alignment.End
         ) {
-            Surface(
-                modifier = Modifier.widthIn(max = 280.dp),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.secondaryContainer
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 328.dp)
+                    .clip(bubbleShape)
+                    .background(
+                        brush = Brush.linearGradient(
+                            colors = listOf(bubbleStart, bubbleEnd)
+                        )
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = Color.White.copy(alpha = 0.18f),
+                        shape = bubbleShape
+                    )
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (imageParts.isNotEmpty() || videoParts.isNotEmpty()) {
                         MessageMediaSection(
@@ -85,7 +137,7 @@ fun MessageItem(
                         SelectionContainer {
                             Text(
                                 text = textContent,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                color = colorScheme.onPrimary,
                                 style = MaterialTheme.typography.bodyLarge
                             )
                         }
@@ -94,111 +146,92 @@ fun MessageItem(
             }
         }
     } else {
-        // AI 消息：头像和模型名称在上方，内容在下方
         Column(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
-            // 头像和模型名称行
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            AssistantMessageHeader(
+                providerIcon = providerIcon,
+                modelName = displayedModelName,
+                speakerName = speakerName
+            )
+
+            Surface(
+                shape = RoundedCornerShape(
+                    topStart = 20.dp,
+                    topEnd = 20.dp,
+                    bottomStart = 20.dp,
+                    bottomEnd = 8.dp
+                ),
+                color = assistantCardColor,
+                border = BorderStroke(1.dp, assistantBorderColor),
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp
             ) {
-                // AI 提供商图标
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.size(28.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 13.dp, vertical = 11.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        Icon(
-                            imageVector = providerIcon ?: Lucide.Bot,
-                            contentDescription = "AI Provider",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
+                    if (imageParts.isNotEmpty() || videoParts.isNotEmpty()) {
+                        MessageMediaSection(
+                            imageParts = imageParts,
+                            videoParts = videoParts,
+                            isUser = false
+                        )
+                    }
+
+                    val toolResults = message.getToolResults()
+                    if (toolResults.isNotEmpty()) {
+                        ToolResultsSection(toolResults = toolResults)
+                    }
+
+                    if (textContent.isNotEmpty()) {
+                        MarkdownText(
+                            markdown = textContent,
+                            modifier = Modifier.fillMaxWidth(),
+                            selectable = true
                         )
                     }
                 }
-
-                // 模型名称
-                if (modelName.isNotEmpty()) {
-                    Text(
-                        text = modelName,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 消息内容（支持系统原生选择复制）
-            Column(modifier = Modifier.fillMaxWidth()) {
-                if (imageParts.isNotEmpty() || videoParts.isNotEmpty()) {
-                    MessageMediaSection(
-                        imageParts = imageParts,
-                        videoParts = videoParts,
-                        isUser = false
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // 工具执行结果（如果有）
-                val toolResults = message.getToolResults()
-                if (toolResults.isNotEmpty()) {
-                    ToolResultsSection(toolResults = toolResults)
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                if (textContent.isNotEmpty()) {
-                    MarkdownText(
-                        markdown = textContent,
-                        modifier = Modifier.fillMaxWidth(),
-                        selectable = true
-                    )
-                }
-            }
-
-            // 流式加载指示器或统计信息和变体选择器
             if (message.isStreaming) {
-                Spacer(modifier = Modifier.height(8.dp))
                 Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    StreamingIndicator()
+                    MetaChip {
+                        StreamingIndicator()
+                        Spacer(modifier = Modifier.size(2.dp))
+                        Text(
+                            text = "生成中",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colorScheme.onSurfaceVariant
+                        )
+                    }
 
-                    // 重新生成按钮（流式加载时也显示）
                     if (previousMessage != null &&
                         previousMessage.role == MessageRole.USER &&
                         onRegenerate != null
                     ) {
-                        IconButton(
+                        BubbleActionButton(
                             onClick = { onRegenerate(previousMessage.id, message.id) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Lucide.RefreshCw,
-                                contentDescription = "重新生成",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+                            icon = Lucide.RefreshCw,
+                            contentDescription = "重新生成"
+                        )
                     }
                 }
             } else {
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // 第一行：变体选择器和统计信息
                 Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 变体选择器（当有多个变体时显示）
                     val variantCount = message.variantCount()
                     if (variantCount > 1 && onSelectVariant != null) {
                         VariantSelector(
@@ -215,7 +248,6 @@ fun MessageItem(
                         )
                     }
 
-                    // 统计信息
                     if (message.inputTokens > 0 || message.outputTokens > 0) {
                         StatisticsInfo(
                             inputTokens = message.inputTokens,
@@ -226,90 +258,171 @@ fun MessageItem(
                     }
                 }
 
-                // 第二行：操作按钮
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(0.dp),
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 复制按钮
                     if (onCopy != null) {
-                        IconButton(
+                        BubbleActionButton(
                             onClick = { onCopy(textContent) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Lucide.Copy,
-                                contentDescription = "复制",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+                            icon = Lucide.Copy,
+                            contentDescription = "复制"
+                        )
                     }
 
-                    // 朗读按钮
                     if (onSpeak != null) {
-                        IconButton(
+                        BubbleActionButton(
                             onClick = { onSpeak(textContent) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Lucide.Volume2,
-                                contentDescription = "朗读",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+                            icon = Lucide.Volume2,
+                            contentDescription = "朗读"
+                        )
                     }
 
-                    // 分享按钮
                     if (onShare != null) {
-                        IconButton(
+                        BubbleActionButton(
                             onClick = { onShare(textContent) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Lucide.Share2,
-                                contentDescription = "分享",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+                            icon = Lucide.Share2,
+                            contentDescription = "分享"
+                        )
                     }
 
-                    // 重新生成按钮（仅当上一条是用户消息时显示）
                     if (previousMessage != null &&
                         previousMessage.role == MessageRole.USER &&
                         onRegenerate != null
                     ) {
-                        IconButton(
+                        BubbleActionButton(
                             onClick = { onRegenerate(previousMessage.id, message.id) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Lucide.RefreshCw,
-                                contentDescription = "重新生成",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+                            icon = Lucide.RefreshCw,
+                            contentDescription = "重新生成"
+                        )
                     }
 
-                    // 删除按钮
                     if (onDelete != null) {
-                        IconButton(
+                        BubbleActionButton(
                             onClick = { onDelete(message.id) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Lucide.Trash2,
-                                contentDescription = "删除",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+                            icon = Lucide.Trash2,
+                            contentDescription = "删除",
+                            tint = colorScheme.error
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AssistantMessageHeader(
+    providerIcon: ImageVector?,
+    modelName: String,
+    speakerName: String? = null
+) {
+    val colorScheme = MaterialTheme.colorScheme
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = colorScheme.surface.copy(alpha = 0.78f),
+            border = BorderStroke(1.dp, colorScheme.outlineVariant.copy(alpha = 0.38f)),
+            modifier = Modifier.size(30.dp)
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Icon(
+                    imageVector = providerIcon ?: Lucide.Bot,
+                    contentDescription = "AI Provider",
+                    tint = colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        Column(
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(
+                text = if (speakerName != null) "群聊成员" else "AI 助手",
+                style = MaterialTheme.typography.labelSmall,
+                color = colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+            )
+            Text(
+                text = speakerName ?: if (modelName.isNotBlank()) modelName else "智能回复",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (speakerName != null && modelName.isNotBlank()) {
+                Text(
+                    text = modelName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetaChip(
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.56f),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.40f)
+        ),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            content = content
+        )
+    }
+}
+
+@Composable
+private fun BubbleActionButton(
+    onClick: () -> Unit,
+    icon: ImageVector,
+    contentDescription: String,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant
+) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.56f),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f)
+        ),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(15.dp)
+            )
         }
     }
 }
@@ -320,14 +433,27 @@ private fun MessageMediaSection(
     videoParts: List<MessagePart.Video>,
     isUser: Boolean
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+    val mediaShape = RoundedCornerShape(18.dp)
+    val mediaBorder = colorScheme.outlineVariant.copy(alpha = 0.36f)
+    val targetImageSizePx = with(LocalDensity.current) { 360.dp.roundToPx() }
+    val fallbackColor = if (isUser) {
+        colorScheme.secondaryContainer.copy(alpha = 0.72f)
+    } else {
+        colorScheme.surfaceColorAtElevation(3.dp)
+    }
+    val fallbackTextColor = if (isUser) {
+        colorScheme.onSecondaryContainer
+    } else {
+        colorScheme.onSurfaceVariant
+    }
+
     Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         imageParts.forEach { img ->
-            val bitmap = remember(img.filePath) {
-                runCatching { BitmapFactory.decodeFile(img.filePath) }.getOrNull()
-            }
+            val bitmap = rememberScaledBitmap(img.filePath, targetImageSizePx)
 
             if (bitmap != null) {
                 Image(
@@ -335,26 +461,23 @@ private fun MessageMediaSection(
                     contentDescription = img.fileName ?: "image",
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 240.dp)
-                        .clip(MaterialTheme.shapes.medium)
+                        .heightIn(max = 220.dp)
+                        .clip(mediaShape)
+                        .border(1.dp, mediaBorder, mediaShape),
+                    contentScale = ContentScale.Crop
                 )
             } else {
                 Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = if (isUser)
-                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
-                    else
-                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = mediaShape,
+                    color = fallbackColor,
+                    border = BorderStroke(1.dp, mediaBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = "图片不可用：${img.fileName ?: img.filePath}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (isUser)
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(10.dp)
+                        color = fallbackTextColor,
+                        modifier = Modifier.padding(12.dp)
                     )
                 }
             }
@@ -362,11 +485,9 @@ private fun MessageMediaSection(
 
         videoParts.forEach { vid ->
             Surface(
-                shape = MaterialTheme.shapes.medium,
-                color = if (isUser)
-                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = mediaShape,
+                color = fallbackColor,
+                border = BorderStroke(1.dp, mediaBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -374,21 +495,27 @@ private fun MessageMediaSection(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(
-                        imageVector = Lucide.ChevronRight,
-                        contentDescription = null,
-                        tint = if (isUser)
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = if (isUser) 0.22f else 0.78f),
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Lucide.ChevronRight,
+                                contentDescription = null,
+                                tint = fallbackTextColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
                     Text(
                         text = vid.fileName ?: "视频",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (isUser)
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        else
-                            MaterialTheme.colorScheme.onSurface
+                        color = if (isUser) fallbackTextColor else colorScheme.onSurface
                     )
                 }
             }
@@ -403,7 +530,7 @@ private fun MessageMediaSection(
 @Composable
 private fun ToolResultsSection(toolResults: List<MessagePart.ToolResult>) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         toolResults.forEach { result ->
@@ -445,31 +572,34 @@ private fun ToolCallCard(result: MessagePart.ToolResult) {
 
     Surface(
         onClick = { expanded = !expanded },
-        shape = MaterialTheme.shapes.medium,
+        shape = RoundedCornerShape(16.dp),
         color = if (result.isError)
-            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
+            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.62f)
         else
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-        tonalElevation = 1.dp,
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.34f),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f)
+        ),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
             modifier = Modifier.padding(12.dp)
         ) {
-            // 工具调用标题行
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // 状态图标
                 Surface(
-                    shape = MaterialTheme.shapes.small,
+                    shape = CircleShape,
                     color = if (result.isError)
                         MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
                     else
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(30.dp)
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,
@@ -487,20 +617,18 @@ private fun ToolCallCard(result: MessagePart.ToolResult) {
                     }
                 }
 
-                // 工具名称和简要信息
                 Column(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = result.toolName,  // 改为 toolName
+                        text = result.toolName,
                         style = MaterialTheme.typography.labelLarge,
                         color = if (result.isError)
                             MaterialTheme.colorScheme.error
                         else
                             MaterialTheme.colorScheme.primary
                     )
-                    
-                    // 参数摘要（如果有）
+
                     if (formattedArgs != null) {
                         Text(
                             text = formattedArgs,
@@ -511,17 +639,17 @@ private fun ToolCallCard(result: MessagePart.ToolResult) {
                         )
                     }
                 }
-                
-                // 执行时间
+
                 if (result.executionTimeMs > 0) {
-                    Text(
-                        text = "${result.executionTimeMs}ms",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    MetaChip {
+                        Text(
+                            text = "${result.executionTimeMs}ms",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                
-                // 展开/收起图标
+
                 Icon(
                     imageVector = if (expanded) Lucide.ChevronUp else Lucide.ChevronDown,
                     contentDescription = if (expanded) "收起" else "查看详情",
@@ -529,14 +657,12 @@ private fun ToolCallCard(result: MessagePart.ToolResult) {
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            
-            // 展开后显示详细信息
+
             AnimatedVisibility(visible = expanded) {
                 Column(
                     modifier = Modifier.padding(top = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // 输入参数
                     if (result.arguments.isNotEmpty() && result.arguments != "{}") {
                         ToolDetailSection(
                             title = "输入参数",
@@ -544,8 +670,7 @@ private fun ToolCallCard(result: MessagePart.ToolResult) {
                             isInput = true
                         )
                     }
-                    
-                    // 输出结果
+
                     ToolDetailSection(
                         title = if (result.isError) "错误信息" else "执行结果",
                         content = formatJson(result.result),
@@ -568,7 +693,7 @@ private fun ToolDetailSection(
     isError: Boolean = false
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Text(
             text = title,
@@ -579,10 +704,14 @@ private fun ToolDetailSection(
                 else -> MaterialTheme.colorScheme.primary
             }
         )
-        
+
         Surface(
-            shape = MaterialTheme.shapes.small,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            ),
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
@@ -630,37 +759,34 @@ private fun VariantSelector(
     onPrevious: () -> Unit,
     onNext: () -> Unit
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(0.dp)
-    ) {
+    MetaChip {
         IconButton(
             onClick = onPrevious,
-            modifier = Modifier.size(28.dp)
+            modifier = Modifier.size(24.dp)
         ) {
             Icon(
                 imageVector = Lucide.ChevronLeft,
                 contentDescription = "上一个",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(14.dp)
             )
         }
 
         Text(
-            text = "${currentIndex + 1}/$totalCount",
+            text = "版本 ${currentIndex + 1}/$totalCount",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         IconButton(
             onClick = onNext,
-            modifier = Modifier.size(28.dp)
+            modifier = Modifier.size(24.dp)
         ) {
             Icon(
                 imageVector = Lucide.ChevronRight,
                 contentDescription = "下一个",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(14.dp)
             )
         }
     }
@@ -688,11 +814,7 @@ private fun StatisticsInfo(
     tokensPerSecond: Double,
     firstTokenLatency: Long
 ) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // 上行 Token
+    MetaChip {
         if (inputTokens > 0) {
             Text(
                 text = "↑$inputTokens",
@@ -701,7 +823,6 @@ private fun StatisticsInfo(
             )
         }
 
-        // 下行 Token
         if (outputTokens > 0) {
             Text(
                 text = "↓$outputTokens",
@@ -710,7 +831,6 @@ private fun StatisticsInfo(
             )
         }
 
-        // TPS (Tokens Per Second)
         if (tokensPerSecond > 0) {
             Text(
                 text = "%.1f TPS".format(tokensPerSecond),
@@ -719,7 +839,6 @@ private fun StatisticsInfo(
             )
         }
 
-        // 首字延时
         if (firstTokenLatency > 0) {
             Text(
                 text = "${firstTokenLatency}ms",

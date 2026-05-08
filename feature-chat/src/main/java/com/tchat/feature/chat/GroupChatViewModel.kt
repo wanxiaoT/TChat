@@ -44,47 +44,59 @@ class GroupChatViewModel(
     private val _actualChatId = MutableStateFlow<String?>(null)
     val actualChatId: StateFlow<String?> = _actualChatId.asStateFlow()
 
-    // 数据库中的消息
-    private val _dbMessages = MutableStateFlow<List<Message>>(emptyList())
+    private val _historyMessages = MutableStateFlow<List<Message>>(emptyList())
+    private val _streamingMessage = MutableStateFlow<Message?>(null)
+    private val _isLoadingHistory = MutableStateFlow(false)
+    private val _hasMoreHistory = MutableStateFlow(false)
 
     // 当前聊天配置（包含工具、系统提示等）
     private val _chatConfig = MutableStateFlow<ChatConfig?>(null)
     val chatConfig: StateFlow<ChatConfig?> = _chatConfig.asStateFlow()
 
+    // 每个群成员对应的助手配置
+    private val _assistantConfigs = MutableStateFlow<Map<String, ChatConfig>>(emptyMap())
+
     private var currentGroupChatId: String? = null
     private var currentChatId: String? = null
+    private var olderMessages: List<Message> = emptyList()
+    private var recentMessages: List<Message> = emptyList()
 
     // Flow订阅的Job
     private var groupLoadJob: Job? = null
     private var chatLoadJob: Job? = null
+    private var membersLoadJob: Job? = null
     private var messagesLoadJob: Job? = null
     private var streamingObserveJob: Job? = null
+    private var uiStateObserveJob: Job? = null
 
     init {
-        // 观察流式消息变化，合并到 UI 状态
+        uiStateObserveJob = viewModelScope.launch {
+            combine(
+                _historyMessages,
+                _streamingMessage,
+                _isLoadingHistory,
+                _hasMoreHistory
+            ) { messages, streamingMessage, isLoadingHistory, hasMoreHistory ->
+                ChatUiState.Success(
+                    messages = messages,
+                    streamingMessage = streamingMessage,
+                    isLoadingHistory = isLoadingHistory,
+                    hasMoreHistory = hasMoreHistory
+                )
+            }.collect { state ->
+                _uiState.value = state
+            }
+        }
+
+        // 观察流式消息变化，只更新尾消息状态
         streamingObserveJob = viewModelScope.launch {
             combine(
-                _dbMessages,
+                _actualChatId,
                 messageSender.streamingMessages
-            ) { dbMessages, streamingMap ->
-                val chatId = currentChatId ?: _actualChatId.value
-                val streamingMessage = chatId?.let { streamingMap[it] }
-
-                if (streamingMessage != null) {
-                    // 合并数据库消息和流式消息
-                    val merged = dbMessages.toMutableList()
-                    val existingIndex = merged.indexOfFirst { it.id == streamingMessage.id }
-                    if (existingIndex >= 0) {
-                        merged[existingIndex] = streamingMessage
-                    } else {
-                        merged.add(streamingMessage)
-                    }
-                    merged
-                } else {
-                    dbMessages
-                }
-            }.collect { messages ->
-                _uiState.value = ChatUiState.Success(messages)
+            ) { chatId, streamingMap ->
+                chatId?.let(streamingMap::get)
+            }.collect { message ->
+                _streamingMessage.value = message
             }
         }
 
@@ -114,6 +126,7 @@ class GroupChatViewModel(
         // 取消之前的数据库订阅
         groupLoadJob?.cancel()
         chatLoadJob?.cancel()
+        membersLoadJob?.cancel()
         messagesLoadJob?.cancel()
 
         currentGroupChatId = groupChatId
@@ -123,11 +136,16 @@ class GroupChatViewModel(
         groupLoadJob = viewModelScope.launch {
             groupChatRepository.getGroupByIdFlow(groupChatId).collect { group ->
                 _currentGroupChat.value = group
+
+                val persistedChatId = group?.activeChatId
+                if (currentChatId == null && _actualChatId.value == null && !persistedChatId.isNullOrBlank()) {
+                    attachChat(persistedChatId)
+                }
             }
         }
 
         // 加载群聊成员
-        viewModelScope.launch {
+        membersLoadJob = viewModelScope.launch {
             groupChatRepository.getMembersFlow(groupChatId).collect { members ->
                 _groupMembers.value = members
             }
@@ -135,18 +153,12 @@ class GroupChatViewModel(
 
         // 如果有关联的聊天ID，加载聊天消息
         if (chatId != null) {
-            _actualChatId.value = chatId
-
-            messagesLoadJob = viewModelScope.launch {
-                // 从数据库加载消息
-                chatRepository.getMessagesByChatId(chatId).collect { messages ->
-                    _dbMessages.value = messages
-                }
-            }
+            attachChat(chatId)
         } else {
             // 新建聊天模式：显示空消息列表
+            currentChatId = null
             _actualChatId.value = null
-            _dbMessages.value = emptyList()
+            resetMessageState()
         }
     }
 
@@ -155,7 +167,14 @@ class GroupChatViewModel(
      */
     fun setChatConfig(config: ChatConfig?) {
         _chatConfig.value = config
-        messageSender.setConfig(config)
+        messageSender.setConfig(currentChatId ?: _actualChatId.value, config)
+    }
+
+    /**
+     * 设置群成员各自的配置
+     */
+    fun setAssistantConfigs(configs: Map<String, ChatConfig>) {
+        _assistantConfigs.value = configs
     }
 
     /**
@@ -213,29 +232,28 @@ class GroupChatViewModel(
                 }
 
                 _currentSpeakerId.value = nextSpeakerId
+                val resolvedConfig = resolveChatConfig(nextSpeakerId)
 
                 // 2. 发送用户消息和助手回复
                 if (chatId == null) {
                     // 懒创建模式
-                    messageSender.sendMessageToNewChat(content, _chatConfig.value, mediaParts) { newChatId ->
-                        // 聊天创建后，更新 ID
+                    messageSender.sendMessageToNewChat(content, resolvedConfig, mediaParts) { newChatId ->
                         if (_actualChatId.value == null) {
-                            _actualChatId.value = newChatId
-                            currentChatId = newChatId
-
-                            // 开始监听新聊天的消息
-                            messagesLoadJob?.cancel()
-                            messagesLoadJob = viewModelScope.launch {
-                                chatRepository.getMessagesByChatId(newChatId).collect { messages ->
-                                    _dbMessages.value = messages
-                                }
-                            }
+                            attachChat(newChatId)
+                        }
+                        viewModelScope.launch {
+                            groupChatRepository.updateActiveChatId(groupChatId, newChatId)
                         }
                     }
                 } else {
                     // 已有聊天
-                    messageSender.sendMessage(chatId, content, _chatConfig.value, mediaParts)
+                    currentChatId = chatId
+                    _actualChatId.value = chatId
+                    groupChatRepository.updateActiveChatId(groupChatId, chatId)
+                    messageSender.sendMessage(chatId, content, resolvedConfig, mediaParts)
                 }
+
+                groupChatRepository.updateLastActiveTime(groupChatId)
 
                 // 3. 如果启用了自动模式，可以继续触发下一个助手
                 if (groupChat.autoModeEnabled) {
@@ -252,27 +270,48 @@ class GroupChatViewModel(
      *
      * 注：该能力与“群聊多个助手轮流发言”逻辑解耦，这里仅在当前 chatId 上追加生成结果。
      */
-    fun generateImage(chatId: String?, prompt: String) {
+    fun generateImage(chatId: String?, prompt: String, selectedAssistantId: String? = null) {
+        val groupChatId = currentGroupChatId ?: return
         val trimmed = prompt.trim()
         if (trimmed.isBlank()) return
 
-        if (chatId == null) {
-            messageSender.generateImageToNewChat(trimmed, _chatConfig.value) { newChatId ->
-                if (_actualChatId.value == null) {
-                    _actualChatId.value = newChatId
-                    currentChatId = newChatId
+        viewModelScope.launch {
+            try {
+                val nextSpeakerId = when {
+                    selectedAssistantId != null -> selectedAssistantId
+                    else -> groupChatRepository.selectNextSpeaker(
+                        groupId = groupChatId,
+                        lastSpeakerId = _currentSpeakerId.value,
+                        userMessage = trimmed
+                    )
+                } ?: run {
+                    _errorMessage.value = "没有可用的助手"
+                    return@launch
+                }
 
-                    // 开始监听新聊天的消息
-                    messagesLoadJob?.cancel()
-                    messagesLoadJob = viewModelScope.launch {
-                        chatRepository.getMessagesByChatId(newChatId).collect { messages ->
-                            _dbMessages.value = messages
+                _currentSpeakerId.value = nextSpeakerId
+                val resolvedConfig = resolveChatConfig(nextSpeakerId)
+
+                if (chatId == null) {
+                    messageSender.generateImageToNewChat(trimmed, resolvedConfig) { newChatId ->
+                        if (_actualChatId.value == null) {
+                            attachChat(newChatId)
+                        }
+                        viewModelScope.launch {
+                            groupChatRepository.updateActiveChatId(groupChatId, newChatId)
                         }
                     }
+                } else {
+                    currentChatId = chatId
+                    _actualChatId.value = chatId
+                    groupChatRepository.updateActiveChatId(groupChatId, chatId)
+                    messageSender.generateImage(chatId, trimmed, resolvedConfig)
                 }
+
+                groupChatRepository.updateLastActiveTime(groupChatId)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "生成图片失败"
             }
-        } else {
-            messageSender.generateImage(chatId, trimmed, _chatConfig.value)
         }
     }
 
@@ -306,7 +345,23 @@ class GroupChatViewModel(
      */
     fun regenerateMessage(userMessageId: String, aiMessageId: String) {
         val chatId = currentChatId ?: _actualChatId.value ?: return
-        messageSender.regenerateMessage(chatId, userMessageId, aiMessageId, _chatConfig.value)
+                val assistantId = (_uiState.value as? ChatUiState.Success)
+                    ?.messages
+                    ?.firstOrNull { it.id == aiMessageId }
+                    ?.groupMetadata
+                    ?.assistantId
+            ?: _currentSpeakerId.value
+
+        if (assistantId != null) {
+            _currentSpeakerId.value = assistantId
+        }
+
+        messageSender.regenerateMessage(
+            chatId,
+            userMessageId,
+            aiMessageId,
+            resolveChatConfig(assistantId)
+        )
     }
 
     /**
@@ -334,8 +389,122 @@ class GroupChatViewModel(
         }
     }
 
+    fun loadMoreHistory() {
+        val chatId = currentChatId ?: _actualChatId.value ?: return
+        if (_isLoadingHistory.value || !_hasMoreHistory.value) return
+
+        val beforeTimestamp = _historyMessages.value.firstOrNull()?.timestamp ?: return
+
+        viewModelScope.launch {
+            _isLoadingHistory.value = true
+            try {
+                val olderPage = chatRepository.getMessagesBefore(chatId, beforeTimestamp, PAGE_SIZE)
+                if (currentChatId != chatId && _actualChatId.value != chatId) {
+                    return@launch
+                }
+
+                if (olderPage.isNotEmpty()) {
+                    olderMessages = olderPage + olderMessages
+                    publishHistoryMessages()
+                }
+                _hasMoreHistory.value = olderPage.size >= PAGE_SIZE
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "加载历史消息失败"
+            } finally {
+                _isLoadingHistory.value = false
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
+        groupLoadJob?.cancel()
+        chatLoadJob?.cancel()
+        membersLoadJob?.cancel()
+        messagesLoadJob?.cancel()
         streamingObserveJob?.cancel()
+        uiStateObserveJob?.cancel()
+    }
+
+    private fun attachChat(chatId: String) {
+        currentChatId = chatId
+        _actualChatId.value = chatId
+        messageSender.setConfig(chatId, _chatConfig.value)
+        resetMessageState()
+
+        messagesLoadJob?.cancel()
+        messagesLoadJob = viewModelScope.launch {
+            chatRepository.observeRecentMessages(chatId, PAGE_SIZE).collect { messages ->
+                if (currentChatId != chatId && _actualChatId.value != chatId) {
+                    return@collect
+                }
+
+                recentMessages = messages
+                if (olderMessages.isEmpty()) {
+                    _hasMoreHistory.value = messages.size >= PAGE_SIZE
+                }
+                publishHistoryMessages()
+            }
+        }
+    }
+
+    private fun resolveChatConfig(assistantId: String?): ChatConfig? {
+        val baseConfig = _chatConfig.value
+        val assistantConfig = assistantId?.let { _assistantConfigs.value[it] }
+
+        if (baseConfig == null) return assistantConfig
+        if (assistantConfig == null) return baseConfig
+
+        return ChatConfig(
+            systemPrompt = mergeSystemPrompt(
+                assistantConfig.systemPrompt,
+                baseConfig.systemPrompt
+            ),
+            tools = (baseConfig.tools + assistantConfig.tools)
+                .distinctBy { it.name },
+            temperature = assistantConfig.temperature ?: baseConfig.temperature,
+            topP = assistantConfig.topP ?: baseConfig.topP,
+            maxTokens = assistantConfig.maxTokens ?: baseConfig.maxTokens,
+            modelName = baseConfig.modelName ?: assistantConfig.modelName,
+            providerId = baseConfig.providerId ?: assistantConfig.providerId,
+            shouldRecordTokens = baseConfig.shouldRecordTokens,
+            regexRules = (baseConfig.regexRules + assistantConfig.regexRules)
+                .distinctBy { Triple(it.pattern, it.replacement, it.order) },
+            enabledSkillIds = (baseConfig.enabledSkillIds + assistantConfig.enabledSkillIds)
+                .distinct(),
+            groupMetadata = assistantConfig.groupMetadata?.copy(
+                generationId = java.util.UUID.randomUUID().toString()
+            ) ?: baseConfig.groupMetadata
+        )
+    }
+
+    private fun mergeSystemPrompt(primary: String?, secondary: String?): String? {
+        val prompts = listOf(primary, secondary)
+            .mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
+        return prompts.takeIf { it.isNotEmpty() }?.joinToString("\n\n")
+    }
+
+    private fun publishHistoryMessages() {
+        _historyMessages.value = if (olderMessages.isEmpty()) {
+            recentMessages
+        } else {
+            buildList(olderMessages.size + recentMessages.size) {
+                addAll(olderMessages)
+                addAll(recentMessages)
+            }
+        }
+    }
+
+    private fun resetMessageState() {
+        olderMessages = emptyList()
+        recentMessages = emptyList()
+        _historyMessages.value = emptyList()
+        _streamingMessage.value = null
+        _isLoadingHistory.value = false
+        _hasMoreHistory.value = false
+    }
+
+    private companion object {
+        const val PAGE_SIZE = 100
     }
 }

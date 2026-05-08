@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,11 +19,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.FileProvider
 import com.composables.icons.lucide.*
 import com.tchat.data.database.entity.KnowledgeBaseEntity
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.wanxiaot.ui.components.AppEmptyState
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppIconTile
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionCard
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import com.tchat.wanxiaot.util.CloudBackupInfo
 import com.tchat.wanxiaot.util.CloudBackupManager
 import kotlinx.coroutines.launch
@@ -48,10 +55,10 @@ fun ExportImportScreenEnhanced(
         ExportImportViewModel(context, settingsManager)
     }
 
-    val uiState by viewModel.uiState.collectAsState()
-    val providers by viewModel.providers.collectAsState()
-    val selectedProviderIds by viewModel.selectedProviderIds.collectAsState()
-    val knowledgeBases by viewModel.knowledgeBases.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val providers by viewModel.providers.collectAsStateWithLifecycle()
+    val selectedProviderIds by viewModel.selectedProviderIds.collectAsStateWithLifecycle()
+    val knowledgeBases by viewModel.knowledgeBases.collectAsStateWithLifecycle()
 
     // 状态管理
     var showProviderSelection by remember { mutableStateOf(false) }
@@ -67,11 +74,11 @@ fun ExportImportScreenEnhanced(
     var pendingExportAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var showSkillSelection by remember { mutableStateOf(false) }
 
-    val skills by viewModel.skills.collectAsState()
-    val selectedSkillIds by viewModel.selectedSkillIds.collectAsState()
+    val skills by viewModel.skills.collectAsStateWithLifecycle()
+    val selectedSkillIds by viewModel.selectedSkillIds.collectAsStateWithLifecycle()
 
     // 云备份相关状态
-    val r2Settings = settingsManager.settings.collectAsState().value.r2Settings
+    val r2Settings = settingsManager.settings.collectAsStateWithLifecycle().value.r2Settings
     val cloudBackupManager = remember(context, settingsManager) {
         CloudBackupManager(context, settingsManager)
     }
@@ -167,293 +174,284 @@ fun ExportImportScreenEnhanced(
         }
     }
 
-    Scaffold(
-        topBar = {
-            if (showTopBar) {
-                TopAppBar(
-                    title = { Text("导出/导入") },
-                    navigationIcon = {
-                        IconButton(onClick = onBackClick) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    }
-                )
-            }
-        },
-        snackbarHost = {
-            val snackbarHostState = remember { SnackbarHostState() }
-            SnackbarHost(hostState = snackbarHostState)
+    val snackbarHostState = remember { SnackbarHostState() }
 
-            // 显示成功/错误消息
-            LaunchedEffect(uiState) {
-                when (val state = uiState) {
-                    is ExportImportUiState.Success -> {
-                        snackbarHostState.showSnackbar(
-                            message = state.message,
-                            duration = SnackbarDuration.Short
-                        )
-                        viewModel.clearUiState()
-                    }
-                    is ExportImportUiState.Error -> {
-                        snackbarHostState.showSnackbar(
-                            message = state.message,
-                            duration = SnackbarDuration.Long,
-                            actionLabel = "确定"
-                        )
-                        viewModel.clearUiState()
-                    }
-                    else -> {}
-                }
+    LaunchedEffect(uiState) {
+        when (val state = uiState) {
+            is ExportImportUiState.Success -> {
+                snackbarHostState.showSnackbar(
+                    message = state.message,
+                    duration = SnackbarDuration.Short
+                )
+                viewModel.clearUiState()
             }
-        },
+
+            is ExportImportUiState.Error -> {
+                snackbarHostState.showSnackbar(
+                    message = state.message,
+                    duration = SnackbarDuration.Long,
+                    actionLabel = "确定"
+                )
+                viewModel.clearUiState()
+            }
+
+            else -> Unit
+        }
+    }
+
+    AppPageScaffold(
+        title = "导出/导入",
+        eyebrow = "Transfer Center",
+        subtitle = "配置、数据库与云端备份迁移",
+        showTopBar = showTopBar,
+        onBack = if (showTopBar) onBackClick else null,
         modifier = modifier
     ) { paddingValues ->
-        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // 平板模式下显示标题栏
-                if (!showTopBar) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                item {
+                    AppHeroCard(
+                        title = "迁移与备份中心",
+                        description = "统一管理数据库备份、R2 云同步，以及供应商、知识库和自定义 Skills 的迁移。",
+                        eyebrow = "Safety & Portability",
+                        icon = Lucide.Archive
                     ) {
-                        Text(
-                            text = "导出/导入",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+                        AppPill(text = "${providers.size} 供应商")
+                        AppPill(text = "${knowledgeBases.size} 知识库")
                     }
-                    HorizontalDivider()
                 }
 
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // 数据库备份
-                    item {
-                        DatabaseBackupSection(
-                            onBackup = {
-                                backupFileLauncher.launch(viewModel.generateBackupFileName())
-                            },
-                            onRestore = {
-                                restoreFileLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*"))
-                            }
-                        )
-                    }
+                item {
+                    DatabaseBackupSection(
+                        onBackup = {
+                            backupFileLauncher.launch(viewModel.generateBackupFileName())
+                        },
+                        onRestore = {
+                            restoreFileLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*"))
+                        }
+                    )
+                }
 
-                    // 云备份
-                    item {
-                        CloudBackupSection(
-                            isConfigured = r2Settings.isConfigured,
-                            bucketName = r2Settings.bucketName,
-                            isUploading = isUploadingToCloud,
-                            onUpload = {
-                                // 先创建本地备份，然后上传
-                                scope.launch {
-                                    isUploadingToCloud = true
-                                    try {
-                                        // 创建临时备份文件
-                                        val backupFile = viewModel.createBackupFile()
-                                        if (backupFile != null) {
-                                            val result = cloudBackupManager.uploadBackup(backupFile)
-                                            if (result.isSuccess) {
-                                                Toast.makeText(context, "上传成功", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                Toast.makeText(context, "上传失败: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
-                                            }
-                                            // 删除临时文件
-                                            backupFile.delete()
+                item {
+                    CloudBackupSection(
+                        isConfigured = r2Settings.isConfigured,
+                        bucketName = r2Settings.bucketName,
+                        isUploading = isUploadingToCloud,
+                        onUpload = {
+                            scope.launch {
+                                isUploadingToCloud = true
+                                try {
+                                    val backupFile = viewModel.createBackupFile()
+                                    if (backupFile != null) {
+                                        val result = cloudBackupManager.uploadBackup(backupFile)
+                                        if (result.isSuccess) {
+                                            Toast.makeText(context, "上传成功", Toast.LENGTH_SHORT).show()
                                         } else {
-                                            Toast.makeText(context, "创建备份文件失败", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "上传失败: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
                                         }
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "上传失败: ${e.message}", Toast.LENGTH_LONG).show()
-                                    } finally {
-                                        isUploadingToCloud = false
-                                    }
-                                }
-                            },
-                            onShowList = {
-                                // 加载云端备份列表
-                                scope.launch {
-                                    isLoadingCloudBackups = true
-                                    cloudBackupError = null
-                                    val result = cloudBackupManager.listBackups()
-                                    if (result.isSuccess) {
-                                        cloudBackups = result.getOrDefault(emptyList())
-                                        showCloudBackupList = true
+                                        backupFile.delete()
                                     } else {
-                                        cloudBackupError = result.exceptionOrNull()?.message
-                                        Toast.makeText(context, "获取列表失败: ${cloudBackupError}", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "创建备份文件失败", Toast.LENGTH_SHORT).show()
                                     }
-                                    isLoadingCloudBackups = false
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "上传失败: ${e.message}", Toast.LENGTH_LONG).show()
+                                } finally {
+                                    isUploadingToCloud = false
                                 }
-                            },
-                            isLoadingList = isLoadingCloudBackups
-                        )
-                    }
-
-                    // 供应商配置
-                    item {
-                        ExportImportSectionConnected(
-                            title = "供应商配置",
-                            description = "导出或导入AI供应商配置（包括模型列表和自定义参数）",
-                            icon = Lucide.Server,
-                            encryptionEnabled = useEncryption,
-                            encryptionPassword = encryptionPassword,
-                            onEncryptionEnabledChange = { useEncryption = it },
-                            onEncryptionPasswordChange = { encryptionPassword = it },
-                            onExportFile = {
-                                currentExportType = ExportType.PROVIDERS
-                                pendingExportAction = null
-                                showProviderSelection = true
-                            },
-                            onExportQRCode = {
-                                currentExportType = ExportType.PROVIDERS
-                                if (selectedProviderIds.isNotEmpty()) {
-                                    viewModel.exportProvidersToQRCode(
-                                        selectedProviderIds.toList(),
-                                        useEncryption,
-                                        encryptionPassword.takeIf { useEncryption }
-                                    ) { qrCode ->
-                                        showQRCodeDialog = qrCode
-                                    }
-                                } else {
-                                    pendingExportAction = {
-                                        if (selectedProviderIds.isNotEmpty()) {
-                                            viewModel.exportProvidersToQRCode(
-                                                selectedProviderIds.toList(),
-                                                useEncryption,
-                                                encryptionPassword.takeIf { useEncryption }
-                                            ) { qrCode ->
-                                                showQRCodeDialog = qrCode
-                                            }
-                                        }
-                                    }
-                                    showProviderSelection = true
-                                }
-                            },
-                            onImportFile = {
-                                currentExportType = ExportType.PROVIDERS
-                                importFileLauncher.launch(arrayOf("application/json", "*/*"))
-                            },
-                            onImportQRCode = {
-                                currentExportType = ExportType.PROVIDERS
-                                showQRScanner = true
                             }
-                        )
-                    }
-
-                    // API配置（含密钥）
-                    item {
-                        ExportImportSectionConnected(
-                            title = "API配置",
-                            description = "导出或导入API配置（包含API密钥，强烈建议加密）",
-                            icon = Lucide.Key,
-                            encryptionEnabled = useEncryption,
-                            encryptionPassword = encryptionPassword,
-                            onEncryptionEnabledChange = { useEncryption = it },
-                            onEncryptionPasswordChange = { encryptionPassword = it },
-                            onExportFile = {
-                                currentExportType = ExportType.API_CONFIG
-                                useEncryption = true // API配置强制加密
-                                showProviderSingleSelection = true
-                                pendingExportAction = {
-                                    selectedProviderId?.let { id ->
-                                        exportFileLauncher.launch("api_config_${System.currentTimeMillis()}.json")
-                                    }
+                        },
+                        onShowList = {
+                            scope.launch {
+                                isLoadingCloudBackups = true
+                                cloudBackupError = null
+                                val result = cloudBackupManager.listBackups()
+                                if (result.isSuccess) {
+                                    cloudBackups = result.getOrDefault(emptyList())
+                                    showCloudBackupList = true
+                                } else {
+                                    cloudBackupError = result.exceptionOrNull()?.message
+                                    Toast.makeText(context, "获取列表失败: ${cloudBackupError}", Toast.LENGTH_LONG).show()
                                 }
-                            },
-                            onExportQRCode = {
-                                currentExportType = ExportType.API_CONFIG
-                                useEncryption = true
-                                showProviderSingleSelection = true
+                                isLoadingCloudBackups = false
+                            }
+                        },
+                        isLoadingList = isLoadingCloudBackups
+                    )
+                }
+
+                item {
+                    ExportImportSectionConnected(
+                        title = "供应商配置",
+                        description = "导出或导入 AI 供应商配置，包括模型列表与自定义参数。",
+                        icon = Lucide.Server,
+                        encryptionEnabled = useEncryption,
+                        encryptionPassword = encryptionPassword,
+                        onEncryptionEnabledChange = { useEncryption = it },
+                        onEncryptionPasswordChange = { encryptionPassword = it },
+                        onExportFile = {
+                            currentExportType = ExportType.PROVIDERS
+                            pendingExportAction = null
+                            showProviderSelection = true
+                        },
+                        onExportQRCode = {
+                            currentExportType = ExportType.PROVIDERS
+                            if (selectedProviderIds.isNotEmpty()) {
+                                viewModel.exportProvidersToQRCode(
+                                    selectedProviderIds.toList(),
+                                    useEncryption,
+                                    encryptionPassword.takeIf { useEncryption }
+                                ) { qrCode ->
+                                    showQRCodeDialog = qrCode
+                                }
+                            } else {
                                 pendingExportAction = {
-                                    selectedProviderId?.let { id ->
-                                        viewModel.exportApiConfigToQRCode(
-                                            id,
-                                            true,
-                                            encryptionPassword
+                                    if (selectedProviderIds.isNotEmpty()) {
+                                        viewModel.exportProvidersToQRCode(
+                                            selectedProviderIds.toList(),
+                                            useEncryption,
+                                            encryptionPassword.takeIf { useEncryption }
                                         ) { qrCode ->
                                             showQRCodeDialog = qrCode
                                         }
                                     }
                                 }
-                            },
-                            onImportFile = {
-                                currentExportType = ExportType.API_CONFIG
-                                importFileLauncher.launch(arrayOf("application/json", "*/*"))
-                            },
-                            onImportQRCode = {
-                                currentExportType = ExportType.API_CONFIG
-                                showQRScanner = true
-                            },
-                            requiresEncryption = true
-                        )
-                    }
+                                showProviderSelection = true
+                            }
+                        },
+                        onImportFile = {
+                            currentExportType = ExportType.PROVIDERS
+                            importFileLauncher.launch(arrayOf("application/json", "*/*"))
+                        },
+                        onImportQRCode = {
+                            currentExportType = ExportType.PROVIDERS
+                            showQRScanner = true
+                        }
+                    )
+                }
 
-                    // 知识库
-                    item {
-                        ExportImportSectionConnected(
-                            title = "知识库",
-                            description = "导出或导入知识库（包含原始文件、向量数据和配置）",
-                            icon = Lucide.Database,
-                            encryptionEnabled = false,
-                            encryptionPassword = "",
-                            onEncryptionEnabledChange = {},
-                            onEncryptionPasswordChange = { encryptionPassword = it },
-                            onExportFile = {
-                                currentExportType = ExportType.KNOWLEDGE_BASE
-                                showKnowledgeBaseSelection = true
-                            },
-                            onImportFile = {
-                                currentExportType = ExportType.KNOWLEDGE_BASE
-                                importFileLauncher.launch(arrayOf("application/json", "*/*"))
-                            },
-                            supportsQRCode = false
-                        )
-                    }
+                item {
+                    ExportImportSectionConnected(
+                        title = "API 配置",
+                        description = "导出或导入包含密钥的 API 配置，建议始终加密保存。",
+                        icon = Lucide.Key,
+                        encryptionEnabled = useEncryption,
+                        encryptionPassword = encryptionPassword,
+                        onEncryptionEnabledChange = { useEncryption = it },
+                        onEncryptionPasswordChange = { encryptionPassword = it },
+                        onExportFile = {
+                            currentExportType = ExportType.API_CONFIG
+                            useEncryption = true
+                            showProviderSingleSelection = true
+                            pendingExportAction = {
+                                selectedProviderId?.let {
+                                    exportFileLauncher.launch("api_config_${System.currentTimeMillis()}.json")
+                                }
+                            }
+                        },
+                        onExportQRCode = {
+                            currentExportType = ExportType.API_CONFIG
+                            useEncryption = true
+                            showProviderSingleSelection = true
+                            pendingExportAction = {
+                                selectedProviderId?.let { id ->
+                                    viewModel.exportApiConfigToQRCode(
+                                        id,
+                                        true,
+                                        encryptionPassword
+                                    ) { qrCode ->
+                                        showQRCodeDialog = qrCode
+                                    }
+                                }
+                            }
+                        },
+                        onImportFile = {
+                            currentExportType = ExportType.API_CONFIG
+                            importFileLauncher.launch(arrayOf("application/json", "*/*"))
+                        },
+                        onImportQRCode = {
+                            currentExportType = ExportType.API_CONFIG
+                            showQRScanner = true
+                        },
+                        requiresEncryption = true
+                    )
+                }
 
-                    // Skills
-                    item {
-                        ExportImportSectionConnected(
-                            title = "Skills",
-                            description = "导出或导入自定义 Skills（不包含内置 Skills）",
-                            icon = Lucide.Sparkles,
-                            encryptionEnabled = false,
-                            encryptionPassword = "",
-                            onEncryptionEnabledChange = {},
-                            onEncryptionPasswordChange = {},
-                            onExportFile = {
-                                currentExportType = ExportType.SKILLS
-                                showSkillSelection = true
-                            },
-                            onImportFile = {
-                                currentExportType = ExportType.SKILLS
-                                importFileLauncher.launch(arrayOf("application/json", "*/*"))
-                            },
-                            supportsQRCode = false
-                        )
-                    }
+                item {
+                    ExportImportSectionConnected(
+                        title = "知识库",
+                        description = "导出或导入知识库，包含原始文件、向量数据与相关配置。",
+                        icon = Lucide.Database,
+                        encryptionEnabled = false,
+                        encryptionPassword = "",
+                        onEncryptionEnabledChange = {},
+                        onEncryptionPasswordChange = { encryptionPassword = it },
+                        onExportFile = {
+                            currentExportType = ExportType.KNOWLEDGE_BASE
+                            showKnowledgeBaseSelection = true
+                        },
+                        onImportFile = {
+                            currentExportType = ExportType.KNOWLEDGE_BASE
+                            importFileLauncher.launch(arrayOf("application/json", "*/*"))
+                        },
+                        supportsQRCode = false
+                    )
+                }
+
+                item {
+                    ExportImportSectionConnected(
+                        title = "Skills",
+                        description = "迁移自定义 Skills，不包含内置系统 Skills。",
+                        icon = Lucide.Sparkles,
+                        encryptionEnabled = false,
+                        encryptionPassword = "",
+                        onEncryptionEnabledChange = {},
+                        onEncryptionPasswordChange = {},
+                        onExportFile = {
+                            currentExportType = ExportType.SKILLS
+                            showSkillSelection = true
+                        },
+                        onImportFile = {
+                            currentExportType = ExportType.SKILLS
+                            importFileLauncher.launch(arrayOf("application/json", "*/*"))
+                        },
+                        supportsQRCode = false
+                    )
                 }
             }
 
-            // Loading overlay
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp, vertical = 20.dp)
+            )
+
             if (uiState is ExportImportUiState.Loading) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Card {
-                        Column(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            CircularProgressIndicator()
-                            Text((uiState as ExportImportUiState.Loading).message)
+                    Box(modifier = Modifier.widthIn(max = 280.dp)) {
+                        AppSectionSurface {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                CircularProgressIndicator()
+                                Text(
+                                    text = (uiState as ExportImportUiState.Loading).message,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
                         }
                     }
                 }
@@ -728,84 +726,65 @@ private fun ExportImportSectionConnected(
     var showExportOptions by remember { mutableStateOf(false) }
     var showImportOptions by remember { mutableStateOf(false) }
 
-    ElevatedCard(
-        modifier = modifier.fillMaxWidth()
+    AppSectionCard(
+        modifier = modifier,
+        title = title,
+        description = description
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // 标题和图标
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            AppIconTile(icon = icon)
+            AppPill(text = if (supportsQRCode) "文件 / 二维码" else "仅文件")
+        }
+
+        if (requiresEncryption) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.74f),
+                shape = MaterialTheme.shapes.large
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Lucide.ShieldAlert,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = description,
+                        text = "包含敏感信息，建议加密导出",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onErrorContainer
                     )
                 }
             }
+        }
 
-            if (requiresEncryption) {
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Row(
-                        modifier = Modifier.padding(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Lucide.ShieldAlert,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "包含敏感信息，建议加密导出",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
-                }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = { showExportOptions = true },
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Lucide.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("导出")
             }
 
-            // 操作按钮
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Button(
+                onClick = { showImportOptions = true },
+                modifier = Modifier.weight(1f)
             ) {
-                OutlinedButton(
-                    onClick = { showExportOptions = true },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Lucide.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("导出")
-                }
-
-                Button(
-                    onClick = { showImportOptions = true },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Lucide.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("导入")
-                }
+                Icon(Lucide.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("导入")
             }
         }
     }
@@ -1061,7 +1040,7 @@ private fun ProviderSingleSelectionDialog(
         title = { Text("选择供应商") },
         text = {
             LazyColumn {
-                items(providers) { provider ->
+                items(providers, key = { it.id }) { provider ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1129,7 +1108,7 @@ private fun KnowledgeBaseSelectionDialog(
                 )
             } else {
                 LazyColumn {
-                    items(knowledgeBases) { base ->
+                    items(knowledgeBases, key = { it.id }) { base ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1207,7 +1186,7 @@ private fun SkillSelectionDialog(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     LazyColumn {
-                        items(skills) { skill ->
+                        items(skills, key = { it.id }) { skill ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1264,86 +1243,66 @@ private fun DatabaseBackupSection(
 ) {
     var showRestoreConfirmDialog by remember { mutableStateOf(false) }
 
-    ElevatedCard(
-        modifier = modifier.fillMaxWidth()
+    AppSectionCard(
+        modifier = modifier,
+        title = "数据库备份",
+        description = "备份或恢复完整数据库，包含聊天记录、助手与知识库等核心数据。"
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // 标题和图标
+            AppIconTile(icon = Lucide.HardDrive)
+            AppPill(text = "全量归档")
+        }
+
+        Surface(
+            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.76f),
+            shape = MaterialTheme.shapes.large
+        ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Lucide.HardDrive,
+                    imageVector = Lucide.Info,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
+                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.size(16.dp)
                 )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "数据库备份",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = "备份或恢复整个数据库（包含所有聊天记录、助手、知识库等）",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = "恢复数据库会覆盖当前全部数据，请先确认本地备份已经可用。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onBackup,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Lucide.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("备份")
             }
 
-            // 警告提示
-            Surface(
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                shape = MaterialTheme.shapes.small
+            Button(
+                onClick = { showRestoreConfirmDialog = true },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
             ) {
-                Row(
-                    modifier = Modifier.padding(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Lucide.Info,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = "恢复数据库将覆盖当前所有数据，请谨慎操作",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer
-                    )
-                }
-            }
-
-            // 操作按钮
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onBackup,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Lucide.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("备份")
-                }
-
-                Button(
-                    onClick = { showRestoreConfirmDialog = true },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Icon(Lucide.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("恢复")
-                }
+                Icon(Lucide.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("恢复")
             }
         }
     }
@@ -1410,116 +1369,108 @@ private fun CloudBackupSection(
     isLoadingList: Boolean,
     modifier: Modifier = Modifier
 ) {
-    ElevatedCard(
-        modifier = modifier.fillMaxWidth()
+    AppSectionCard(
+        modifier = modifier,
+        title = "云备份",
+        description = "将本地备份同步到 Cloudflare R2，并查看云端历史归档。"
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // 标题和图标
+            AppIconTile(icon = Lucide.CloudUpload)
+            AppPill(
+                text = if (isConfigured) "已连接" else "待配置",
+                containerColor = if (isConfigured) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.82f)
+                },
+                contentColor = if (isConfigured) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
+
+        Surface(
+            color = if (isConfigured) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.64f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f)
+            },
+            shape = MaterialTheme.shapes.large
+        ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Lucide.CloudUpload,
+                    imageVector = if (isConfigured) Lucide.CircleCheck else Lucide.CircleAlert,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
+                    tint = if (isConfigured) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.size(16.dp)
                 )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "云备份",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = "将备份文件同步到 Cloudflare R2 云存储",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = if (isConfigured) {
+                        "已连接存储桶 $bucketName"
+                    } else {
+                        "尚未配置 R2，请先完成云存储设置。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isConfigured) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
             }
+        }
 
-            // 配置状态
-            Surface(
-                color = if (isConfigured) {
-                    MaterialTheme.colorScheme.primaryContainer
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onUpload,
+                enabled = isConfigured && !isUploading,
+                modifier = Modifier.weight(1f)
+            ) {
+                if (isUploading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
                 } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
-                shape = MaterialTheme.shapes.small
-            ) {
-                Row(
-                    modifier = Modifier.padding(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = if (isConfigured) Lucide.CircleCheck else Lucide.CircleAlert,
-                        contentDescription = null,
-                        tint = if (isConfigured) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = if (isConfigured) {
-                            "已配置 ($bucketName)"
-                        } else {
-                            "未配置 - 请先在设置中配置 R2"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (isConfigured) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
+                    Icon(Lucide.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (isUploading) "上传中..." else "上传备份")
             }
 
-            // 操作按钮
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Button(
+                onClick = onShowList,
+                enabled = isConfigured && !isLoadingList,
+                modifier = Modifier.weight(1f)
             ) {
-                OutlinedButton(
-                    onClick = onUpload,
-                    enabled = isConfigured && !isUploading,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    if (isUploading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(Lucide.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (isUploading) "上传中..." else "上传备份")
+                if (isLoadingList) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Icon(Lucide.List, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
-
-                Button(
-                    onClick = onShowList,
-                    enabled = isConfigured && !isLoadingList,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    if (isLoadingList) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    } else {
-                        Icon(Lucide.List, contentDescription = null, modifier = Modifier.size(18.dp))
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (isLoadingList) "加载中..." else "云端列表")
-                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (isLoadingList) "加载中..." else "云端列表")
             }
         }
     }
@@ -1542,34 +1493,16 @@ fun CloudBackupListDialog(
         title = { Text("云端备份列表") },
         text = {
             if (backups.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Lucide.CloudOff,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "暂无云端备份",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                AppEmptyState(
+                    title = "暂无云端备份",
+                    description = "上传首个数据库备份后，这里会显示云端归档列表。",
+                    icon = Lucide.CloudOff
+                )
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(backups) { backup ->
+                    items(backups, key = { it.key }) { backup ->
                         CloudBackupItem(
                             backup = backup,
                             cloudBackupManager = cloudBackupManager,
@@ -1600,12 +1533,10 @@ private fun CloudBackupItem(
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
-    OutlinedCard(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    AppSectionSurface {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

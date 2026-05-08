@@ -24,6 +24,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.tchat.wanxiaot.settings.ProviderConfig
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import com.tchat.wanxiaot.util.QRCodeGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -159,9 +161,8 @@ fun QRCodeDialog(
             Spacer(modifier = Modifier.height(24.dp))
 
             // 二维码卡片
-            ElevatedCard(
+            AppSectionSurface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large
             ) {
                 Column(
                     modifier = Modifier
@@ -178,6 +179,12 @@ fun QRCodeDialog(
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
+
+                    AppPill(
+                        text = if (includeModels) "包含模型列表" else "仅配置",
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // API 端点
                     Text(

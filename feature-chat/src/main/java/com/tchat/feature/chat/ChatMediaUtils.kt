@@ -27,22 +27,6 @@ internal object ChatMediaUtils {
             else -> throw IllegalArgumentException("不支持的文件类型: ${inferredMimeType.ifBlank { "unknown" }}")
         }
 
-        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw IllegalArgumentException("无法读取文件内容")
-
-        when (kind) {
-            MediaKind.IMAGE -> {
-                if (bytes.size.toLong() > MAX_IMAGE_BYTES) {
-                    throw IllegalArgumentException("图片过大（>${MAX_IMAGE_BYTES / 1024 / 1024}MB），请压缩后再发送")
-                }
-            }
-            MediaKind.VIDEO -> {
-                if (bytes.size.toLong() > MAX_VIDEO_BYTES) {
-                    throw IllegalArgumentException("视频过大（>${MAX_VIDEO_BYTES / 1024 / 1024}MB），请裁剪后再发送")
-                }
-            }
-        }
-
         val outDir = File(context.filesDir, "chat_media/uploads").apply { mkdirs() }
         val ext = fileName.substringAfterLast('.', "").takeIf { it.isNotBlank() }
             ?: extensionFromMimeType(inferredMimeType)
@@ -50,21 +34,33 @@ internal object ChatMediaUtils {
         val safeBaseName = fileName.substringBeforeLast('.', fileName).takeIf { it.isNotBlank() } ?: "media"
         val outFileName = "${safeBaseName}_${UUID.randomUUID()}.$ext"
         val outFile = File(outDir, outFileName)
-
-        FileOutputStream(outFile).use { it.write(bytes) }
+        val maxBytes = when (kind) {
+            MediaKind.IMAGE -> MAX_IMAGE_BYTES
+            MediaKind.VIDEO -> MAX_VIDEO_BYTES
+        }
+        val sizeBytes = copyUriToFile(
+            resolver = resolver,
+            uri = uri,
+            outFile = outFile,
+            maxBytes = maxBytes,
+            tooLargeMessage = when (kind) {
+                MediaKind.IMAGE -> "图片过大（>${MAX_IMAGE_BYTES / 1024 / 1024}MB），请压缩后再发送"
+                MediaKind.VIDEO -> "视频过大（>${MAX_VIDEO_BYTES / 1024 / 1024}MB），请裁剪后再发送"
+            }
+        )
 
         when (kind) {
             MediaKind.IMAGE -> MessagePart.Image(
                 filePath = outFile.absolutePath,
                 mimeType = inferredMimeType.ifBlank { "image/png" },
                 fileName = fileName.ifBlank { outFile.name },
-                sizeBytes = bytes.size.toLong()
+                sizeBytes = sizeBytes
             )
             MediaKind.VIDEO -> MessagePart.Video(
                 filePath = outFile.absolutePath,
                 mimeType = inferredMimeType.ifBlank { "video/mp4" },
                 fileName = fileName.ifBlank { outFile.name },
-                sizeBytes = bytes.size.toLong()
+                sizeBytes = sizeBytes
             )
         }
     }
@@ -107,5 +103,39 @@ internal object ChatMediaUtils {
             else -> "bin"
         }
     }
-}
 
+    private fun copyUriToFile(
+        resolver: android.content.ContentResolver,
+        uri: Uri,
+        outFile: File,
+        maxBytes: Long,
+        tooLargeMessage: String
+    ): Long {
+        return try {
+            resolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(outFile).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var totalBytes = 0L
+
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) {
+                            break
+                        }
+                        totalBytes += read
+                        if (totalBytes > maxBytes) {
+                            throw IllegalArgumentException(tooLargeMessage)
+                        }
+                        output.write(buffer, 0, read)
+                    }
+
+                    output.flush()
+                    totalBytes
+                }
+            } ?: throw IllegalArgumentException("无法读取文件内容")
+        } catch (e: Exception) {
+            outFile.delete()
+            throw e
+        }
+    }
+}

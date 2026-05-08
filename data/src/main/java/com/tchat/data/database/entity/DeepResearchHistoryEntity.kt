@@ -1,13 +1,17 @@
 package com.tchat.data.database.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
  * 深度研究历史记录实体
  * learnings 存储为 JSON 字符串，在 Repository 层转换
  */
-@Entity(tableName = "deep_research_history")
+@Entity(
+    tableName = "deep_research_history",
+    indices = [Index(value = ["endTime"])]
+)
 data class DeepResearchHistoryEntity(
     @PrimaryKey
     val id: String,

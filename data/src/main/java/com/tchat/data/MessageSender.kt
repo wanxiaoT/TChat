@@ -12,7 +12,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 消息发送器（单例）
@@ -28,11 +30,15 @@ class MessageSender(
 ) {
     private var repository: ChatRepository? = null
 
-    // 当前聊天配置
-    private var currentConfig: ChatConfig? = null
+    // 会话配置（按 chatId 隔离，避免多聊天并发时串配置）
+    private val sessionConfigs = ConcurrentHashMap<String, ChatConfig?>()
+
+    // 兼容兜底配置，仅在没有 chatId 绑定配置时作为后备使用
+    @Volatile
+    private var defaultConfig: ChatConfig? = null
 
     // 每个聊天的发送任务
-    private val sendingJobs = mutableMapOf<String, Job>()
+    private val sendingJobs = ConcurrentHashMap<String, Job>()
 
     // 每个聊天的流式消息状态 (chatId -> 当前流式消息)
     private val _streamingMessages = MutableStateFlow<Map<String, Message>>(emptyMap())
@@ -66,7 +72,31 @@ class MessageSender(
      * 设置当前聊天配置（包含工具、系统提示等）
      */
     fun setConfig(config: ChatConfig?) {
-        this.currentConfig = config
+        defaultConfig = config
+    }
+
+    /**
+     * 为指定会话设置配置。
+     */
+    fun setConfig(chatId: String?, config: ChatConfig?) {
+        if (chatId.isNullOrBlank()) {
+            defaultConfig = config
+            return
+        }
+
+        if (config == null) {
+            sessionConfigs.remove(chatId)
+        } else {
+            sessionConfigs[chatId] = config
+        }
+    }
+
+    /**
+     * 清理会话配置。
+     */
+    fun clearConfig(chatId: String?) {
+        if (chatId.isNullOrBlank()) return
+        sessionConfigs.remove(chatId)
     }
 
     /**
@@ -101,7 +131,8 @@ class MessageSender(
         mediaParts: List<MessagePart> = emptyList()
     ) {
         val repo = repository ?: return
-        val chatConfig = config ?: currentConfig
+        val chatConfig = resolveConfig(chatId = chatId, explicitConfig = config)
+        bindConfig(chatId, chatConfig)
 
         // 取消同一个聊天的之前请求（避免重复发送）
         sendingJobs[chatId]?.cancel()
@@ -153,7 +184,7 @@ class MessageSender(
         onChatCreated: (String) -> Unit
     ) {
         val repo = repository ?: return
-        val chatConfig = config ?: currentConfig
+        val chatConfig = config ?: defaultConfig
 
         // 使用临时 ID 标识新聊天任务
         val tempId = "new_${System.currentTimeMillis()}"
@@ -174,6 +205,7 @@ class MessageSender(
                         // 第一次收到消息时，获取真实的 chatId
                         if (realChatId == null) {
                             realChatId = messageResult.chatId
+                            bindConfig(messageResult.chatId, chatConfig)
                             onChatCreated(messageResult.chatId)
 
                             // 将任务从临时 ID 移到真实 chatId
@@ -211,7 +243,8 @@ class MessageSender(
      */
     fun generateImage(chatId: String, prompt: String, config: ChatConfig? = null) {
         val repo = repository ?: return
-        val chatConfig = config ?: currentConfig
+        val chatConfig = resolveConfig(chatId = chatId, explicitConfig = config)
+        bindConfig(chatId, chatConfig)
 
         sendingJobs[chatId]?.cancel()
         sendingJobs[chatId] = scope.launch {
@@ -245,7 +278,7 @@ class MessageSender(
      */
     fun generateImageToNewChat(prompt: String, config: ChatConfig? = null, onChatCreated: (String) -> Unit) {
         val repo = repository ?: return
-        val chatConfig = config ?: currentConfig
+        val chatConfig = config ?: defaultConfig
 
         val tempId = "new_img_${System.currentTimeMillis()}"
         sendingJobs[tempId] = scope.launch {
@@ -259,6 +292,7 @@ class MessageSender(
 
                         if (realChatId == null) {
                             realChatId = messageResult.chatId
+                            bindConfig(messageResult.chatId, chatConfig)
                             onChatCreated(messageResult.chatId)
 
                             sendingJobs.remove(tempId)?.let {
@@ -314,7 +348,8 @@ class MessageSender(
         config: ChatConfig? = null
     ) {
         val repo = repository ?: return
-        val chatConfig = config ?: currentConfig
+        val chatConfig = resolveConfig(chatId = chatId, explicitConfig = config)
+        bindConfig(chatId, chatConfig)
 
         // 取消同一个聊天的之前请求
         sendingJobs[chatId]?.cancel()
@@ -361,15 +396,29 @@ class MessageSender(
     }
 
     private fun updateStreamingMessage(chatId: String, message: Message) {
-        val current = _streamingMessages.value.toMutableMap()
-        current[chatId] = message
-        _streamingMessages.value = current
+        _streamingMessages.update { current ->
+            current + (chatId to message)
+        }
     }
 
     private fun removeStreamingMessage(chatId: String) {
-        val current = _streamingMessages.value.toMutableMap()
-        current.remove(chatId)
-        _streamingMessages.value = current
+        _streamingMessages.update { current ->
+            current - chatId
+        }
+    }
+
+    private fun resolveConfig(chatId: String?, explicitConfig: ChatConfig?): ChatConfig? {
+        return explicitConfig
+            ?: chatId?.let(sessionConfigs::get)
+            ?: defaultConfig
+    }
+
+    private fun bindConfig(chatId: String, config: ChatConfig?) {
+        if (config == null) {
+            sessionConfigs.remove(chatId)
+        } else {
+            sessionConfigs[chatId] = config
+        }
     }
 
     companion object {

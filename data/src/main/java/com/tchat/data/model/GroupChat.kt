@@ -11,6 +11,7 @@ data class GroupChat(
     val name: String = "",
     val avatar: String? = null,  // 群聊头像
     val description: String? = null,
+    val activeChatId: String? = null,  // 当前绑定的实际会话ID
     val memberIds: List<String> = emptyList(),  // 助手ID列表
     val activationStrategy: GroupActivationStrategy = GroupActivationStrategy.MANUAL,
     val generationMode: GroupGenerationMode = GroupGenerationMode.APPEND,
@@ -87,6 +88,7 @@ data class GroupMemberConfig(
 data class GroupMessageMetadata(
     val groupId: String,
     val assistantId: String,
+    val assistantName: String? = null,
     val activationStrategy: GroupActivationStrategy,
     val generationId: String = UUID.randomUUID().toString()  // 用于重新生成
 )

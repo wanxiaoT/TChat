@@ -12,6 +12,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.util.Collections
 import java.util.concurrent.TimeUnit
 
 /**
@@ -38,7 +39,7 @@ class OpenAIProvider(
         .protocols(listOf(Protocol.HTTP_1_1))
         .build()
 
-    private var currentCall: Call? = null
+    private val activeCalls = Collections.synchronizedSet(mutableSetOf<Call>())
 
     override suspend fun streamChat(messages: List<ChatMessage>): Flow<StreamChunk> {
         return streamChatWithTools(messages, emptyList())
@@ -73,8 +74,9 @@ class OpenAIProvider(
         // 收集完整响应
         val responseContent = StringBuilder()
 
-        currentCall = client.newCall(request)
-        currentCall?.enqueue(object : Callback {
+        val call = client.newCall(request)
+        activeCalls += call
+        call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 val duration = System.currentTimeMillis() - startTime
                 NetworkLogger.logError(requestId, "网络连接失败: ${e.message}", duration)
@@ -155,6 +157,7 @@ class OpenAIProvider(
                         originalError = e
                     )))
                 } finally {
+                    activeCalls.remove(call)
                     response.close()
                     close()
                 }
@@ -162,7 +165,8 @@ class OpenAIProvider(
         })
 
         awaitClose {
-            currentCall?.cancel()
+            activeCalls.remove(call)
+            call.cancel()
         }
     }
 
@@ -187,47 +191,60 @@ class OpenAIProvider(
             .post(requestBodyJson.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                val errorBody = response.body?.string() ?: ""
-                throw handleErrorResponse(response.code, errorBody)
-            }
-
-            val responseBody = response.body?.string().orEmpty()
-            val json = JSONObject(responseBody)
-            val dataArray = json.optJSONArray("data") ?: JSONArray()
-
-            val images = mutableListOf<GeneratedImage>()
-            for (i in 0 until dataArray.length()) {
-                val item = dataArray.optJSONObject(i) ?: continue
-                val b64 = item.optString("b64_json").takeIf { it.isNotBlank() }
-                if (b64 != null) {
-                    images.add(GeneratedImage(base64Data = b64, mimeType = "image/png"))
-                    continue
+        val call = client.newCall(request)
+        activeCalls += call
+        try {
+            call.execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string() ?: ""
+                    throw handleErrorResponse(response.code, errorBody)
                 }
 
-                // 一些兼容服务可能返回 url，这里做一次兜底下载再转 base64
-                val url = item.optString("url").takeIf { it.isNotBlank() } ?: continue
-                val imageRequest = Request.Builder().url(url).build()
-                client.newCall(imageRequest).execute().use { imageResp ->
-                    if (!imageResp.isSuccessful) return@use
-                    val bytes = imageResp.body?.bytes() ?: return@use
-                    val mime = imageResp.header("Content-Type")?.takeIf { it.isNotBlank() } ?: "image/png"
-                    val encoded = java.util.Base64.getEncoder().encodeToString(bytes)
-                    images.add(GeneratedImage(base64Data = encoded, mimeType = mime))
+                val responseBody = response.body?.string().orEmpty()
+                val json = JSONObject(responseBody)
+                val dataArray = json.optJSONArray("data") ?: JSONArray()
+
+                val images = mutableListOf<GeneratedImage>()
+                for (i in 0 until dataArray.length()) {
+                    val item = dataArray.optJSONObject(i) ?: continue
+                    val b64 = item.optString("b64_json").takeIf { it.isNotBlank() }
+                    if (b64 != null) {
+                        images.add(GeneratedImage(base64Data = b64, mimeType = "image/png"))
+                        continue
+                    }
+
+                    // 一些兼容服务可能返回 url，这里做一次兜底下载再转 base64
+                    val url = item.optString("url").takeIf { it.isNotBlank() } ?: continue
+                    val imageRequest = Request.Builder().url(url).build()
+                    val imageCall = client.newCall(imageRequest)
+                    activeCalls += imageCall
+                    try {
+                        imageCall.execute().use { imageResp ->
+                            if (!imageResp.isSuccessful) return@use
+                            val bytes = imageResp.body?.bytes() ?: return@use
+                            val mime = imageResp.header("Content-Type")?.takeIf { it.isNotBlank() } ?: "image/png"
+                            val encoded = java.util.Base64.getEncoder().encodeToString(bytes)
+                            images.add(GeneratedImage(base64Data = encoded, mimeType = mime))
+                        }
+                    } finally {
+                        activeCalls.remove(imageCall)
+                    }
                 }
-            }
 
-            if (images.isEmpty()) {
-                throw AIProviderException.UnknownError("图片生成失败：响应不包含图片数据")
-            }
+                if (images.isEmpty()) {
+                    throw AIProviderException.UnknownError("图片生成失败：响应不包含图片数据")
+                }
 
-            ImageGenerationResult(images = images)
+                ImageGenerationResult(images = images)
+            }
+        } finally {
+            activeCalls.remove(call)
         }
     }
 
     override fun cancel() {
-        currentCall?.cancel()
+        activeCalls.toList().forEach { it.cancel() }
+        activeCalls.clear()
     }
 
     /**

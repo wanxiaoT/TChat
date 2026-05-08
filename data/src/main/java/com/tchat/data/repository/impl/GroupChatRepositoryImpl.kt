@@ -244,6 +244,10 @@ class GroupChatRepositoryImpl(
         groupChatDao.updateLastActiveTime(groupId)
     }
 
+    override suspend fun updateActiveChatId(groupId: String, activeChatId: String?) {
+        groupChatDao.updateActiveChatId(groupId, activeChatId)
+    }
+
     override suspend fun isMember(groupId: String, assistantId: String): Boolean {
         return groupChatDao.isMember(groupId, assistantId) > 0
     }
@@ -262,6 +266,7 @@ class GroupChatRepositoryImpl(
         name = name,
         avatar = avatar,
         description = description,
+        activeChatId = activeChatId,
         memberIds = memberIds,
         activationStrategy = GroupActivationStrategy.valueOf(activationStrategy),
         generationMode = GroupGenerationMode.valueOf(generationMode),
@@ -276,6 +281,7 @@ class GroupChatRepositoryImpl(
         name = name,
         avatar = avatar,
         description = description,
+        activeChatId = activeChatId,
         activationStrategy = activationStrategy.name,
         generationMode = generationMode.name,
         autoModeEnabled = autoModeEnabled,

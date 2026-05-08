@@ -24,8 +24,9 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
-import android.util.Base64
 import android.util.DisplayMetrics
+import android.util.Log
+import android.util.Base64
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -199,7 +200,7 @@ class JungleHelperService : Service() {
             startAutoResize()
             startOcrPolling()
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("JungleHelperService", "Failed to show floating window", e)
         }
     }
 
@@ -215,7 +216,7 @@ class JungleHelperService : Service() {
             isViewAdded = false
             windowParams = null
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("JungleHelperService", "Failed to hide floating window", e)
         }
     }
 

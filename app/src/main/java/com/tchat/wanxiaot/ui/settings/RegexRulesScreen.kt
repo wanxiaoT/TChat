@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Delete
@@ -18,9 +17,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tchat.wanxiaot.settings.PresetRegexRules
 import com.tchat.wanxiaot.settings.RegexRule
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.wanxiaot.ui.components.AppEmptyState
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionCard
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 
 /**
  * 正则表达式规则管理页面
@@ -32,7 +38,7 @@ fun RegexRulesScreen(
     onBack: () -> Unit,
     showTopBar: Boolean = true
 ) {
-    val settings by settingsManager.settings.collectAsState()
+    val settings by settingsManager.settings.collectAsStateWithLifecycle()
     val userRules = settings.regexRules
 
     var showEditDialog by remember { mutableStateOf<RegexRule?>(null) }
@@ -106,31 +112,22 @@ fun RegexRulesScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            if (showTopBar) {
-                TopAppBar(
-                    title = { Text("正则表达式规则") },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { showAddPresetDialog = true }) {
-                            Icon(Icons.Default.Add, contentDescription = "添加预设")
-                        }
-                    }
-                )
+    AppPageScaffold(
+        title = "正则表达式规则",
+        eyebrow = "Regex Rules",
+        subtitle = "清理流式输出内容的规则集",
+        showTopBar = showTopBar,
+        onBack = onBack,
+        actions = {
+            IconButton(onClick = { showAddPresetDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = "添加预设")
             }
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showEditDialog = RegexRule(id = "") },
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("新建规则") },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
+                text = { Text("新建规则") }
             )
         }
     ) { innerPadding ->
@@ -139,79 +136,42 @@ fun RegexRulesScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
-            // 说明卡片
             item {
-                ElevatedCard(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "关于正则规则",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "正则规则用于在流式输出时实时清理 AI 回复内容。规则按顺序执行，可在助手设置中选择启用哪些规则。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                AppHeroCard(
+                    eyebrow = "Output Cleanup",
+                    title = "用规则把回复噪声清掉，而不是事后手动修",
+                    description = "这些规则会按顺序执行，并且可以在不同助手中按需启用。",
+                    icon = Icons.Default.Check,
+                    trailing = {
+                        AppPill(text = "${userRules.count { it.isEnabled }} 条启用")
                     }
-                }
+                )
             }
 
-            // 我的规则
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp, bottom = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                AppSectionCard(
+                    title = "我的规则",
+                    description = "规则越精确，清理过程越可控。建议按单一职责拆分而不是写成巨型表达式。"
                 ) {
-                    Text(
-                        text = "我的规则",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "${userRules.size} 个",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        AppPill(text = "${userRules.size} 个")
+                    }
                 }
             }
 
             if (userRules.isEmpty()) {
                 item {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "暂无规则",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = "点击右上角添加预设规则，或点击下方按钮新建自定义规则",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    AppEmptyState(
+                        icon = Icons.Default.Check,
+                        title = "暂无规则",
+                        description = "先添加预设规则，或直接新建自定义规则，为后续助手选择做准备。"
+                    )
                 }
             } else {
                 items(userRules, key = { it.id }) { rule ->
@@ -244,9 +204,7 @@ private fun RegexRuleCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    OutlinedCard(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    AppSectionSurface {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)

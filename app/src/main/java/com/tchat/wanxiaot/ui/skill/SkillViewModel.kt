@@ -4,11 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tchat.data.model.Skill
 import com.tchat.data.repository.SkillRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 /**
  * Skills 列表 ViewModel
@@ -22,6 +23,9 @@ class SkillViewModel(
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _importResult = MutableStateFlow<String?>(null)
+    val importResult: StateFlow<String?> = _importResult.asStateFlow()
 
     init {
         loadSkills()
@@ -130,30 +134,43 @@ class SkillViewModel(
      * }
      * ```
      */
-    fun importSkill(content: String): String {
-        return try {
-            val trimmedContent = content.trim()
+    fun importSkill(content: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _importResult.value = null
 
-            val skill = if (trimmedContent.startsWith("{")) {
-                // JSON 格式
-                parseJsonSkill(trimmedContent)
-            } else if (trimmedContent.startsWith("---")) {
-                // SKILL.md 格式 (YAML frontmatter + markdown content)
-                parseMarkdownSkill(trimmedContent)
-            } else {
-                // 尝试作为纯文本内容导入
-                parsePlainTextSkill(trimmedContent)
+            _importResult.value = try {
+                val skill = withContext(Dispatchers.Default) {
+                    val trimmedContent = content.trim()
+
+                    if (trimmedContent.startsWith("{")) {
+                        parseJsonSkill(trimmedContent)
+                    } else if (trimmedContent.startsWith("---")) {
+                        parseMarkdownSkill(trimmedContent)
+                    } else {
+                        parsePlainTextSkill(trimmedContent)
+                    }
+                }
+
+                withContext(Dispatchers.IO) {
+                    repository.saveSkill(skill)
+                }
+
+                "成功导入 Skill: ${skill.displayName}"
+            } catch (e: Exception) {
+                "导入失败: ${e.message}"
             }
 
-            // 保存到数据库
-            runBlocking {
-                repository.saveSkill(skill)
-            }
-
-            "成功导入 Skill: ${skill.displayName}"
-        } catch (e: Exception) {
-            "导入失败: ${e.message}"
+            _isLoading.value = false
         }
+    }
+
+    fun reportImportFailure(message: String) {
+        _importResult.value = message
+    }
+
+    fun clearImportResult() {
+        _importResult.value = null
     }
 
     /**

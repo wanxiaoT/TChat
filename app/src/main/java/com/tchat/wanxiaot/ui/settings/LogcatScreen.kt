@@ -4,6 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -22,13 +24,13 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -47,12 +49,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +74,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tchat.wanxiaot.ui.components.AppEmptyState
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
@@ -85,6 +89,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
+
+private const val LOGCAT_SCREEN_TAG = "LogcatScreen"
 
 data class LogEntry(
     val level: String,
@@ -130,6 +136,19 @@ fun LogcatScreen(
         logFileExists = File(customSavePath).exists()
     }
 
+    fun appendLogEntries(entries: List<LogEntry>) {
+        if (entries.isEmpty()) return
+
+        val overflow = (logEntries.size + entries.size - 500).coerceAtLeast(0)
+        repeat(overflow.coerceAtMost(logEntries.size)) {
+            logEntries.removeAt(0)
+        }
+        logEntries.addAll(entries.takeLast(500))
+        while (logEntries.size > 500) {
+            logEntries.removeAt(0)
+        }
+    }
+
     // 删除日志文件
     fun deleteLogFile() {
         scope.launch {
@@ -140,7 +159,7 @@ fun LogcatScreen(
                         file.delete()
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.w(LOGCAT_SCREEN_TAG, "Failed to delete log file", e)
                 }
             }
             checkLogFileExists()
@@ -162,7 +181,7 @@ fun LogcatScreen(
                         file.createNewFile()
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.w(LOGCAT_SCREEN_TAG, "Failed to prepare log file", e)
                 }
             }
             isStreamSaving = true
@@ -198,6 +217,8 @@ fun LogcatScreen(
                     val reader = BufferedReader(InputStreamReader(process.inputStream))
 
                     val writer = OutputStreamWriter(FileOutputStream(customSavePath, true))
+                    val pendingEntries = mutableListOf<LogEntry>()
+                    var lastFlushAt = SystemClock.elapsedRealtime()
 
                     writer.use { w ->
                         while (isActive) {
@@ -205,23 +226,33 @@ fun LogcatScreen(
                             w.write(line + "\n")
                             w.flush()
 
-                            // 同时更新UI
                             val entry = parseLogLine(line)
                             if (entry != null) {
-                                withContext(Dispatchers.Main) {
-                                    logEntries.add(entry)
-                                    // 保持最近500条
-                                    if (logEntries.size > 500) {
-                                        logEntries.removeAt(0)
+                                pendingEntries.add(entry)
+                                val now = SystemClock.elapsedRealtime()
+                                if (pendingEntries.size >= 20 || now - lastFlushAt >= 100) {
+                                    val batch = pendingEntries.toList()
+                                    pendingEntries.clear()
+                                    withContext(Dispatchers.Main) {
+                                        appendLogEntries(batch)
                                     }
+                                    lastFlushAt = now
                                 }
+                            }
+                        }
+
+                        if (pendingEntries.isNotEmpty()) {
+                            val batch = pendingEntries.toList()
+                            pendingEntries.clear()
+                            withContext(Dispatchers.Main) {
+                                appendLogEntries(batch)
                             }
                         }
                     }
 
                     process.destroy()
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e(LOGCAT_SCREEN_TAG, "实时保存日志失败", e)
                     withContext(Dispatchers.Main) {
                         Toast.makeText(context, "实时保存出错: ${e.message}", Toast.LENGTH_SHORT).show()
                         isStreamSaving = false
@@ -246,7 +277,7 @@ fun LogcatScreen(
             val logs = withContext(Dispatchers.IO) {
                 readLogcat()
             }
-            logEntries.addAll(logs)
+            appendLogEntries(logs)
             isLoading = false
             // 滚动到底部
             if (logEntries.isNotEmpty()) {
@@ -262,7 +293,7 @@ fun LogcatScreen(
                 try {
                     Runtime.getRuntime().exec("logcat -c")
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.w(LOGCAT_SCREEN_TAG, "Failed to clear logcat", e)
                 }
             }
             logEntries.clear()
@@ -371,300 +402,112 @@ fun LogcatScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            if (showTopBar) {
-                TopAppBar(
-                    title = { Text("日志查看") },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回"
-                            )
+    AppPageScaffold(
+        title = "日志查看",
+        eyebrow = "Diagnostics",
+        subtitle = "读取、过滤、复制与实时保存 Logcat",
+        showTopBar = showTopBar,
+        onBack = if (showTopBar) onBack else null,
+        actions = {
+            LogcatToolbarActions(
+                selectedLevel = selectedLevel,
+                onLevelSelected = { selectedLevel = it },
+                showFilterMenu = showFilterMenu,
+                onShowFilterMenuChange = { showFilterMenu = it },
+                isStreamSaving = isStreamSaving,
+                onToggleSave = {
+                    if (isStreamSaving) stopStreamSave() else showSaveDialog = true
+                },
+                onRefresh = { loadLogs() },
+                onCopy = { copyLogs() },
+                onClear = { clearLogs() },
+                onScrollBottom = {
+                    scope.launch {
+                        if (logEntries.isNotEmpty()) {
+                            listState.animateScrollToItem(logEntries.size - 1)
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    actions = {
-                    // 过滤按钮
-                    Box {
-                        IconButton(
-                            onClick = { showFilterMenu = true },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.FilterList,
-                                contentDescription = "过滤",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showFilterMenu,
-                            onDismissRequest = { showFilterMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("全部") },
-                                onClick = {
-                                    selectedLevel = null
-                                    showFilterMenu = false
-                                }
-                            )
-                            LogLevel.entries.forEach { level ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            text = level.name,
-                                            color = level.color
-                                        )
-                                    },
-                                    onClick = {
-                                        selectedLevel = level
-                                        showFilterMenu = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    // 实时保存按钮
-                    IconButton(
-                        onClick = {
-                            if (isStreamSaving) {
-                                stopStreamSave()
-                            } else {
-                                showSaveDialog = true
-                            }
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Save,
-                            contentDescription = if (isStreamSaving) "停止保存" else "开始保存",
-                            tint = if (isStreamSaving) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // 刷新按钮
-                    IconButton(
-                        onClick = { loadLogs() },
-                        enabled = !isStreamSaving,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "刷新",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // 复制按钮
-                    IconButton(
-                        onClick = { copyLogs() },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.ContentCopy,
-                            contentDescription = "复制",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // 清除按钮
-                    IconButton(
-                        onClick = { clearLogs() },
-                        enabled = !isStreamSaving,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "清除",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // 滚动到底部按钮
-                    IconButton(
-                        onClick = {
-                            scope.launch {
-                                if (logEntries.isNotEmpty()) {
-                                    listState.animateScrollToItem(logEntries.size - 1)
-                                }
-                            }
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.ArrowDownward,
-                            contentDescription = "滚动到底部",
-                            modifier = Modifier.size(20.dp)
-                        )
                     }
                 }
             )
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.surface
+        }
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 平板模式下显示工具栏
+            AppHeroCard(
+                title = "设备日志流",
+                description = "支持等级过滤、复制与实时落盘，适合快速定位运行期问题。",
+                eyebrow = "Logcat",
+                icon = Icons.Default.FilterList
+            ) {
+                AppPill(text = "${logEntries.size} 条")
+                if (isStreamSaving) {
+                    AppPill(text = "实时保存中")
+                }
+            }
+
             if (!showTopBar) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "日志查看",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    // 过滤按钮
-                    Box {
-                        IconButton(
-                            onClick = { showFilterMenu = true },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.FilterList,
-                                contentDescription = "过滤",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showFilterMenu,
-                            onDismissRequest = { showFilterMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("全部") },
-                                onClick = {
-                                    selectedLevel = null
-                                    showFilterMenu = false
-                                }
-                            )
-                            LogLevel.entries.forEach { level ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            text = level.name,
-                                            color = level.color
-                                        )
-                                    },
-                                    onClick = {
-                                        selectedLevel = level
-                                        showFilterMenu = false
+                AppSectionSurface {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "日志操作",
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.weight(1f)
+                        )
+                        LogcatToolbarActions(
+                            selectedLevel = selectedLevel,
+                            onLevelSelected = { selectedLevel = it },
+                            showFilterMenu = showFilterMenu,
+                            onShowFilterMenuChange = { showFilterMenu = it },
+                            isStreamSaving = isStreamSaving,
+                            onToggleSave = {
+                                if (isStreamSaving) stopStreamSave() else showSaveDialog = true
+                            },
+                            onRefresh = { loadLogs() },
+                            onCopy = { copyLogs() },
+                            onClear = { clearLogs() },
+                            onScrollBottom = {
+                                scope.launch {
+                                    if (logEntries.isNotEmpty()) {
+                                        listState.animateScrollToItem(logEntries.size - 1)
                                     }
-                                )
-                            }
-                        }
-                    }
-
-                    // 实时保存按钮
-                    IconButton(
-                        onClick = {
-                            if (isStreamSaving) {
-                                stopStreamSave()
-                            } else {
-                                showSaveDialog = true
-                            }
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Save,
-                            contentDescription = if (isStreamSaving) "停止保存" else "开始保存",
-                            tint = if (isStreamSaving) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // 刷新按钮
-                    IconButton(
-                        onClick = { loadLogs() },
-                        enabled = !isStreamSaving,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "刷新",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // 复制按钮
-                    IconButton(
-                        onClick = { copyLogs() },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.ContentCopy,
-                            contentDescription = "复制",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // 清除按钮
-                    IconButton(
-                        onClick = { clearLogs() },
-                        enabled = !isStreamSaving,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "清除",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // 滚动到底部按钮
-                    IconButton(
-                        onClick = {
-                            scope.launch {
-                                if (logEntries.isNotEmpty()) {
-                                    listState.animateScrollToItem(logEntries.size - 1)
                                 }
                             }
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.ArrowDownward,
-                            contentDescription = "滚动到底部",
-                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
-
-                HorizontalDivider()
             }
 
-            // 过滤器标签
             if (selectedLevel != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilterChip(
-                        selected = true,
-                        onClick = { selectedLevel = null },
-                        label = {
-                            Text(
-                                text = "过滤: ${selectedLevel?.name}",
-                                color = selectedLevel?.color ?: Color.Unspecified
-                            )
-                        }
-                    )
+                AppSectionSurface {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilterChip(
+                            selected = true,
+                            onClick = { selectedLevel = null },
+                            label = {
+                                Text(
+                                    text = "过滤: ${selectedLevel?.name}",
+                                    color = selectedLevel?.color ?: Color.Unspecified
+                                )
+                            }
+                        )
+                    }
                 }
             }
 
@@ -673,7 +516,20 @@ fun LogcatScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator()
+                    Box(modifier = Modifier.widthIn(max = 240.dp)) {
+                        AppSectionSurface {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp, vertical = 18.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                CircularProgressIndicator()
+                                Text("正在读取日志…")
+                            }
+                        }
+                    }
                 }
             } else {
                 val filteredLogs = if (selectedLevel != null) {
@@ -683,16 +539,12 @@ fun LogcatScreen(
                 }
 
                 if (filteredLogs.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "暂无日志",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    AppEmptyState(
+                        title = "暂无日志",
+                        description = "当前过滤条件下没有匹配内容，可以刷新或清空过滤器后重试。",
+                        icon = Icons.Default.FilterList,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 } else {
                     val density = LocalDensity.current
                     var containerHeight by remember { mutableStateOf(0) }
@@ -700,124 +552,223 @@ fun LogcatScreen(
                     val scrollbarHeightPx = with(density) { scrollbarHeight.toPx() }
                     val paddingPx = with(density) { 8.dp.toPx() }
 
-                    // 添加水平滚动状态，让日志内容区域可水平滚动
                     val horizontalScrollState = rememberScrollState()
 
-                    // 使用 Row 将日志内容和滚动条分开，滚动条固定在右侧
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .onSizeChanged { containerHeight = it.height }
+                    AppSectionSurface(
+                        modifier = Modifier.weight(1f)
                     ) {
-                        // 日志内容区域（可水平滚动）
-                        Box(
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .horizontalScroll(horizontalScrollState)
+                                .fillMaxSize()
+                                .padding(8.dp)
+                                .onSizeChanged { containerHeight = it.height }
                         ) {
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier.fillMaxHeight(),
-                                contentPadding = PaddingValues(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                items(filteredLogs) { entry ->
-                                    LogEntryItem(
-                                        entry = entry,
-                                        onLongClick = { copySingleLog(entry) }
-                                    )
-                                }
-                            }
-                        }
-
-                        // 快速滚动条（固定在右侧）
-                        if (filteredLogs.size > 20 && containerHeight > 0) {
-                            val trackHeight = containerHeight - paddingPx
-                            val maxOffset = (trackHeight - scrollbarHeightPx).coerceAtLeast(0f)
-                            val itemCount = filteredLogs.size
-
-                            // 使用 derivedStateOf 精确计算滚动进度
-                            val scrollProgress by remember {
-                                derivedStateOf {
-                                    if (itemCount <= 1) 0f
-                                    else {
-                                        val layoutInfo = listState.layoutInfo
-                                        val visibleItems = layoutInfo.visibleItemsInfo
-                                        
-                                        if (visibleItems.isEmpty()) 0f
-                                        else {
-                                            val firstIndex = listState.firstVisibleItemIndex
-                                            val firstOffset = listState.firstVisibleItemScrollOffset
-                                            val firstItemHeight = visibleItems.firstOrNull()?.size ?: 1
-                                            
-                                            // 计算精确进度
-                                            val indexProgress = firstIndex + (firstOffset.toFloat() / firstItemHeight.coerceAtLeast(1))
-                                            
-                                            // 计算可见的item数量
-                                            val visibleItemCount = visibleItems.size
-                                            // 总的可滚动范围 = 总item数 - 可见item数
-                                            val scrollableItems = (itemCount - visibleItemCount).coerceAtLeast(1)
-                                            
-                                            (indexProgress / scrollableItems).coerceIn(0f, 1f)
-                                        }
-                                    }
-                                }
-                            }
-                            val scrollbarOffset = (scrollProgress * maxOffset).toInt()
-
                             Box(
                                 modifier = Modifier
-                                    .padding(end = 2.dp, top = 4.dp, bottom = 4.dp)
-                                    .width(8.dp)
+                                    .weight(1f)
                                     .fillMaxHeight()
-                                    .pointerInput(itemCount, maxOffset) {
-                                        detectVerticalDragGestures { change, dragAmount ->
-                                            change.consume()
-                                            // 从 listState 实时获取当前位置
-                                            val currentIndex = listState.firstVisibleItemIndex
-                                            val currentItemOffset = listState.firstVisibleItemScrollOffset
-                                            val visibleItems = listState.layoutInfo.visibleItemsInfo
-                                            val firstItemHeight = visibleItems.firstOrNull()?.size ?: 1
-                                            val currentProgress = if (itemCount <= 1) 0f else {
-                                                (currentIndex + currentItemOffset.toFloat() / firstItemHeight.coerceAtLeast(1)) / (itemCount - 1)
-                                            }
-                                            val currentOffset = currentProgress * maxOffset
-                                            // 计算新位置
-                                            val newOffset = (currentOffset + dragAmount).coerceIn(0f, maxOffset)
-                                            // 计算目标索引
-                                            val progress = if (maxOffset > 0) newOffset / maxOffset else 0f
-                                            val targetIndex = (progress * (itemCount - 1)).toInt()
-                                                .coerceIn(0, itemCount - 1)
-                                            scope.launch {
-                                                listState.scrollToItem(targetIndex)
+                                    .horizontalScroll(horizontalScrollState)
+                            ) {
+                                LazyColumn(
+                                    state = listState,
+                                    modifier = Modifier.fillMaxHeight(),
+                                    contentPadding = PaddingValues(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    items(filteredLogs) { entry ->
+                                        LogEntryItem(
+                                            entry = entry,
+                                            onLongClick = { copySingleLog(entry) }
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (filteredLogs.size > 20 && containerHeight > 0) {
+                                val trackHeight = containerHeight - paddingPx
+                                val maxOffset = (trackHeight - scrollbarHeightPx).coerceAtLeast(0f)
+                                val itemCount = filteredLogs.size
+
+                                val scrollProgress by remember {
+                                    derivedStateOf {
+                                        if (itemCount <= 1) 0f
+                                        else {
+                                            val layoutInfo = listState.layoutInfo
+                                            val visibleItems = layoutInfo.visibleItemsInfo
+                                            if (visibleItems.isEmpty()) 0f
+                                            else {
+                                                val firstIndex = listState.firstVisibleItemIndex
+                                                val firstOffset = listState.firstVisibleItemScrollOffset
+                                                val firstItemHeight = visibleItems.firstOrNull()?.size ?: 1
+                                                val indexProgress = firstIndex + (firstOffset.toFloat() / firstItemHeight.coerceAtLeast(1))
+                                                val visibleItemCount = visibleItems.size
+                                                val scrollableItems = (itemCount - visibleItemCount).coerceAtLeast(1)
+                                                (indexProgress / scrollableItems).coerceIn(0f, 1f)
                                             }
                                         }
                                     }
-                            ) {
-                                // 滚动条轨道
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                )
+                                }
+                                val scrollbarOffset = (scrollProgress * maxOffset).toInt()
 
-                                // 滚动条滑块
                                 Box(
                                     modifier = Modifier
-                                        .offset { IntOffset(0, scrollbarOffset) }
+                                        .padding(end = 2.dp, top = 4.dp, bottom = 4.dp)
                                         .width(8.dp)
-                                        .size(8.dp, scrollbarHeight)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
-                                )
+                                        .fillMaxHeight()
+                                        .pointerInput(itemCount, maxOffset) {
+                                            detectVerticalDragGestures { change, dragAmount ->
+                                                change.consume()
+                                                val currentIndex = listState.firstVisibleItemIndex
+                                                val currentItemOffset = listState.firstVisibleItemScrollOffset
+                                                val visibleItems = listState.layoutInfo.visibleItemsInfo
+                                                val firstItemHeight = visibleItems.firstOrNull()?.size ?: 1
+                                                val currentProgress = if (itemCount <= 1) 0f else {
+                                                    (currentIndex + currentItemOffset.toFloat() / firstItemHeight.coerceAtLeast(1)) / (itemCount - 1)
+                                                }
+                                                val currentOffset = currentProgress * maxOffset
+                                                val newOffset = (currentOffset + dragAmount).coerceIn(0f, maxOffset)
+                                                val progress = if (maxOffset > 0) newOffset / maxOffset else 0f
+                                                val targetIndex = (progress * (itemCount - 1)).toInt()
+                                                    .coerceIn(0, itemCount - 1)
+                                                scope.launch {
+                                                    listState.scrollToItem(targetIndex)
+                                                }
+                                            }
+                                        }
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    )
+
+                                    Box(
+                                        modifier = Modifier
+                                            .offset { IntOffset(0, scrollbarOffset) }
+                                            .width(8.dp)
+                                            .size(8.dp, scrollbarHeight)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LogcatToolbarActions(
+    selectedLevel: LogLevel?,
+    onLevelSelected: (LogLevel?) -> Unit,
+    showFilterMenu: Boolean,
+    onShowFilterMenuChange: (Boolean) -> Unit,
+    isStreamSaving: Boolean,
+    onToggleSave: () -> Unit,
+    onRefresh: () -> Unit,
+    onCopy: () -> Unit,
+    onClear: () -> Unit,
+    onScrollBottom: () -> Unit
+) {
+    Box {
+        IconButton(
+            onClick = { onShowFilterMenuChange(true) },
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                Icons.Default.FilterList,
+                contentDescription = "过滤",
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        DropdownMenu(
+            expanded = showFilterMenu,
+            onDismissRequest = { onShowFilterMenuChange(false) }
+        ) {
+            DropdownMenuItem(
+                text = { Text("全部") },
+                onClick = {
+                    onLevelSelected(null)
+                    onShowFilterMenuChange(false)
+                }
+            )
+            LogLevel.entries.forEach { level ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = level.name,
+                            color = level.color
+                        )
+                    },
+                    onClick = {
+                        onLevelSelected(level)
+                        onShowFilterMenuChange(false)
+                    }
+                )
+            }
+        }
+    }
+
+    IconButton(
+        onClick = onToggleSave,
+        modifier = Modifier.size(36.dp)
+    ) {
+        Icon(
+            Icons.Default.Save,
+            contentDescription = if (isStreamSaving) "停止保存" else "开始保存",
+            tint = if (isStreamSaving) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+
+    IconButton(
+        onClick = onRefresh,
+        enabled = !isStreamSaving,
+        modifier = Modifier.size(36.dp)
+    ) {
+        Icon(
+            Icons.Default.Refresh,
+            contentDescription = "刷新",
+            modifier = Modifier.size(20.dp)
+        )
+    }
+
+    IconButton(
+        onClick = onCopy,
+        modifier = Modifier.size(36.dp)
+    ) {
+        Icon(
+            Icons.Default.ContentCopy,
+            contentDescription = "复制",
+            modifier = Modifier.size(20.dp)
+        )
+    }
+
+    IconButton(
+        onClick = onClear,
+        enabled = !isStreamSaving,
+        modifier = Modifier.size(36.dp)
+    ) {
+        Icon(
+            Icons.Default.Delete,
+            contentDescription = "清除",
+            modifier = Modifier.size(20.dp)
+        )
+    }
+
+    IconButton(
+        onClick = onScrollBottom,
+        modifier = Modifier.size(36.dp)
+    ) {
+        Icon(
+            Icons.Default.ArrowDownward,
+            contentDescription = "滚动到底部",
+            modifier = Modifier.size(20.dp)
+        )
     }
 }
 
@@ -884,13 +835,13 @@ private fun readLogcat(): List<LogEntry> {
                     logs.add(entry)
                 }
             }
-        }
-
-        process.waitFor()
-    } catch (e: Exception) {
-        e.printStackTrace()
-        logs.add(LogEntry("E", "Logcat", "Failed to read logcat: ${e.message}", e.toString()))
     }
+
+    process.waitFor()
+} catch (e: Exception) {
+    Log.e(LOGCAT_SCREEN_TAG, "Failed to read logcat", e)
+    logs.add(LogEntry("E", "Logcat", "Failed to read logcat: ${e.message}", e.toString()))
+}
     return logs
 }
 

@@ -1,5 +1,6 @@
 package com.tchat.data.deepresearch
 
+import android.util.Log
 import com.tchat.data.deepresearch.model.*
 import com.tchat.data.deepresearch.repository.DeepResearchHistory
 import com.tchat.data.deepresearch.repository.DeepResearchHistoryRepository
@@ -60,6 +61,7 @@ data class ResearchSession(
  * 管理研究任务，支持后台运行
  */
 object DeepResearchManager {
+    private const val TAG = "DeepResearchManager"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -311,7 +313,7 @@ object DeepResearchManager {
                 repo.saveHistory(history)
             } catch (e: Exception) {
                 // 保存失败不影响主流程
-                e.printStackTrace()
+                Log.w(TAG, "Failed to save deep research history", e)
             }
         }
     }

@@ -11,36 +11,29 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.BookOpen
@@ -55,13 +49,15 @@ import com.composables.icons.lucide.Lucide
 import com.tchat.data.database.entity.KnowledgeBaseEntity
 import com.tchat.wanxiaot.settings.AIProviderType
 import com.tchat.wanxiaot.settings.ProviderConfig
+import com.tchat.wanxiaot.ui.components.AppEmptyState
+import com.tchat.wanxiaot.ui.components.AppIconTile
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-/**
- * 知识库列表页面
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KnowledgeScreen(
@@ -71,8 +67,8 @@ fun KnowledgeScreen(
     showTopBar: Boolean = true
 ) {
     val context = LocalContext.current
-    val knowledgeBases by viewModel.knowledgeBases.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    val knowledgeBases by viewModel.knowledgeBases.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
 
     var showCreateSheet by remember { mutableStateOf(false) }
     var baseToEdit by remember { mutableStateOf<KnowledgeBaseEntity?>(null) }
@@ -80,39 +76,23 @@ fun KnowledgeScreen(
 
     val embeddingProviders = remember { viewModel.getEmbeddingProviders() }
 
-    Scaffold(
-        topBar = {
-            if (showTopBar) {
-                TopAppBar(
-                    title = { Text("知识库") },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回"
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-            }
-        },
+    AppPageScaffold(
+        title = "知识库",
+        showTopBar = showTopBar,
+        onBack = onBack,
         floatingActionButton = {
-            FloatingActionButton(
+            ExtendedFloatingActionButton(
                 onClick = {
                     if (embeddingProviders.isEmpty()) {
-                        Toast.makeText(context, "请先配置支持Embedding的服务商（OpenAI或Gemini）", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "请先配置支持 Embedding 的服务商", Toast.LENGTH_LONG).show()
                     } else {
                         showCreateSheet = true
                     }
-                }
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "添加知识库")
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.surface
+                },
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("新建知识库") }
+            )
+        }
     ) { innerPadding ->
         if (isLoading) {
             Box(
@@ -123,56 +103,44 @@ fun KnowledgeScreen(
             ) {
                 CircularProgressIndicator()
             }
-        } else if (knowledgeBases.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        Lucide.BookOpen,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
-                    Text(
-                        text = "暂无知识库",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "点击右下角按钮创建新知识库",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
-            }
         } else {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                items(knowledgeBases, key = { it.id }) { base ->
-                    KnowledgeBaseCard(
-                        base = base,
-                        onClick = { onBaseClick(base.id) },
-                        onEdit = { baseToEdit = base },
-                        onDelete = { baseToDelete = base }
-                    )
+                if (knowledgeBases.isEmpty()) {
+                    item {
+                        AppEmptyState(
+                            icon = Lucide.BookOpen,
+                            title = "还没有知识库",
+                            description = if (embeddingProviders.isEmpty()) {
+                                "先去服务商中配置支持 Embedding 的连接，然后再创建知识库。"
+                            } else {
+                                "把文档、网页和笔记沉淀到知识库，后续才能让助手基于内容检索回答。"
+                            }
+                        )
+                    }
+                } else {
+                    items(knowledgeBases, key = { it.id }) { base ->
+                        KnowledgeBaseCard(
+                            base = base,
+                            onClick = { onBaseClick(base.id) },
+                            onEdit = { baseToEdit = base },
+                            onDelete = { baseToDelete = base }
+                        )
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(84.dp))
+                    }
                 }
             }
         }
     }
 
-    // 创建知识库对话框
     if (showCreateSheet) {
         CreateKnowledgeBaseDialog(
             providers = embeddingProviders,
@@ -186,7 +154,6 @@ fun KnowledgeScreen(
         )
     }
 
-    // 编辑知识库对话框
     baseToEdit?.let { base ->
         EditKnowledgeBaseDialog(
             base = base,
@@ -200,12 +167,11 @@ fun KnowledgeScreen(
         )
     }
 
-    // 删除确认对话框
     baseToDelete?.let { base ->
         AlertDialog(
             onDismissRequest = { baseToDelete = null },
             title = { Text("删除知识库") },
-            text = { Text("确定要删除「${base.name}」吗？\n所有知识条目和向量数据将被永久删除。") },
+            text = { Text("确定要删除「${base.name}」吗？所有知识条目和向量数据将被永久删除。") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -226,9 +192,6 @@ fun KnowledgeScreen(
     }
 }
 
-/**
- * 知识库卡片
- */
 @Composable
 private fun KnowledgeBaseCard(
     base: KnowledgeBaseEntity,
@@ -238,99 +201,107 @@ private fun KnowledgeBaseCard(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+    AppSectionSurface {
+        Surface(
+            onClick = onClick,
+            color = androidx.compose.ui.graphics.Color.Transparent
         ) {
-            Icon(
-                Lucide.BookOpen,
-                contentDescription = null,
-                modifier = Modifier.size(40.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                AppIconTile(icon = Lucide.BookOpen)
 
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = base.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                val desc = base.description
-                if (!desc.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Text(
-                        text = desc,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = base.name,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = formatDateTime(base.updatedAt),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
-            }
 
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "更多")
-                }
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("编辑") },
-                        onClick = {
-                            showMenu = false
-                            onEdit()
-                        },
-                        leadingIcon = { Icon(Icons.Default.Edit, null) }
+                    Text(
+                        text = base.description ?: "使用 ${base.embeddingModelId} 进行向量化检索",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    DropdownMenuItem(
-                        text = { Text("删除") },
-                        onClick = {
-                            showMenu = false
-                            onDelete()
-                        },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Delete,
-                                null,
-                                tint = MaterialTheme.colorScheme.error
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AppPill(text = "Embedding")
+                        AppPill(
+                            text = formatModelLabel(base.embeddingModelId),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("编辑") },
+                                onClick = {
+                                    showMenu = false
+                                    onEdit()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Edit, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("删除") },
+                                onClick = {
+                                    showMenu = false
+                                    onDelete()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
                             )
                         }
+                    }
+
+                    Text(
+                        text = formatDateTime(base.updatedAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            }
 
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
 
-/**
- * 创建知识库对话框
- */
 @Composable
 private fun CreateKnowledgeBaseDialog(
     providers: List<ProviderConfig>,
@@ -349,21 +320,14 @@ private fun CreateKnowledgeBaseDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "创建知识库",
-                style = MaterialTheme.typography.headlineSmall
-            )
-        },
+        title = { Text("创建知识库") },
         text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("名称") },
-                    placeholder = { Text("请输入知识库名称") },
+                    placeholder = { Text("例如：产品文档库") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -372,41 +336,65 @@ private fun CreateKnowledgeBaseDialog(
                     value = description,
                     onValueChange = { description = it },
                     label = { Text("描述（可选）") },
-                    placeholder = { Text("请输入知识库描述") },
+                    placeholder = { Text("说明知识范围和用途") },
                     maxLines = 3,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // 服务商选择
                 Text(
                     text = "Embedding 服务商",
                     style = MaterialTheme.typography.labelLarge
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     providers.forEach { provider ->
                         val isSelected = selectedProvider?.id == provider.id
-                        Card(
+                        Surface(
                             onClick = {
                                 selectedProvider = provider
                                 embeddingModel = getDefaultModel(provider.providerType)
                             },
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isSelected)
-                                    MaterialTheme.colorScheme.primaryContainer
-                                else
-                                    MaterialTheme.colorScheme.surfaceContainerLow
-                            )
+                            shape = MaterialTheme.shapes.large,
+                            color = if (isSelected) {
+                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.78f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            }
                         ) {
-                            Text(
-                                text = provider.name.ifBlank { provider.providerType.displayName },
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                color = if (isSelected)
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                else
-                                    MaterialTheme.colorScheme.onSurface
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = provider.name.ifBlank { provider.providerType.displayName },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (isSelected) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        }
+                                    )
+                                    Text(
+                                        text = provider.providerType.displayName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isSelected) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.72f)
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
+                                }
+                                if (isSelected) {
+                                    AppPill(text = "当前")
+                                }
+                            }
                         }
                     }
                 }
@@ -440,9 +428,6 @@ private fun CreateKnowledgeBaseDialog(
     )
 }
 
-/**
- * 编辑知识库对话框
- */
 @Composable
 private fun EditKnowledgeBaseDialog(
     base: KnowledgeBaseEntity,
@@ -459,16 +444,9 @@ private fun EditKnowledgeBaseDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "编辑知识库",
-                style = MaterialTheme.typography.headlineSmall
-            )
-        },
+        title = { Text("编辑知识库") },
         text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -485,33 +463,57 @@ private fun EditKnowledgeBaseDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // 服务商选择
                 Text(
                     text = "Embedding 服务商",
                     style = MaterialTheme.typography.labelLarge
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     providers.forEach { provider ->
                         val isSelected = selectedProvider?.id == provider.id
-                        Card(
+                        Surface(
                             onClick = { selectedProvider = provider },
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isSelected)
-                                    MaterialTheme.colorScheme.primaryContainer
-                                else
-                                    MaterialTheme.colorScheme.surfaceContainerLow
-                            )
+                            shape = MaterialTheme.shapes.large,
+                            color = if (isSelected) {
+                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.78f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            }
                         ) {
-                            Text(
-                                text = provider.name.ifBlank { provider.providerType.displayName },
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                color = if (isSelected)
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                else
-                                    MaterialTheme.colorScheme.onSurface
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = provider.name.ifBlank { provider.providerType.displayName },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (isSelected) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        }
+                                    )
+                                    Text(
+                                        text = provider.providerType.displayName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isSelected) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.72f)
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
+                                }
+                                if (isSelected) {
+                                    AppPill(text = "当前")
+                                }
+                            }
                         }
                     }
                 }
@@ -552,9 +554,14 @@ private fun EditKnowledgeBaseDialog(
     )
 }
 
-/**
- * 格式化日期时间
- */
+private fun formatModelLabel(modelId: String): String {
+    return if (modelId.length <= 20) {
+        modelId
+    } else {
+        "${modelId.take(17)}..."
+    }
+}
+
 private fun formatDateTime(timestamp: Long): String {
     val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     val instant = Instant.ofEpochMilli(timestamp)

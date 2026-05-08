@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.Collections
 
 /**
  * Multi-key wrapper for [AIProvider].
@@ -42,9 +43,7 @@ class MultiKeyAIProvider(
 
     private val selector = ApiKeySelector()
     private val stateMutex = Mutex()
-
-    @Volatile
-    private var currentDelegate: AIProvider? = null
+    private val activeDelegates = Collections.synchronizedSet(mutableSetOf<AIProvider>())
 
     override suspend fun streamChat(messages: List<ChatMessage>): Flow<StreamChunk> {
         return streamChatWithTools(messages, emptyList())
@@ -60,7 +59,7 @@ class MultiKeyAIProvider(
         while (true) {
             attempt++
             val selection = stateMutex.withLock {
-                val provider = settingsManager.settings.value.providers.firstOrNull { it.id == providerId }
+                val provider = settingsManager.getProviderSnapshot(providerId)
                     ?: return@withLock SelectedKey.None("服务商配置不存在: $providerId")
                 selectKeyAndPersistIndex(provider, triedKeyIds)
             }
@@ -68,40 +67,48 @@ class MultiKeyAIProvider(
             when (selection) {
                 is SelectedKey.Single -> {
                     val delegate = createDelegate(selection.key)
-                    currentDelegate = delegate
-                    emitAllWithNoRetry(delegate, messages, tools)
+                    activeDelegates += delegate
+                    try {
+                        emitAllWithNoRetry(delegate, messages, tools)
+                    } finally {
+                        activeDelegates.remove(delegate)
+                    }
                     return@flow
                 }
                 is SelectedKey.Multi -> {
                     val delegate = createDelegate(selection.key)
-                    currentDelegate = delegate
+                    activeDelegates += delegate
 
                     var emittedAnyPayload = false
                     var shouldRetry = false
 
-                    delegate.streamChatWithTools(messages, tools).collect { chunk ->
-                        when (chunk) {
-                            is StreamChunk.Content,
-                            is StreamChunk.ToolCall -> {
-                                emittedAnyPayload = true
-                                emit(chunk)
-                            }
-                            is StreamChunk.Done -> {
-                                updateKeyAfterResult(selection.keyId, success = true, error = null)
-                                emit(chunk)
-                            }
-                            is StreamChunk.Error -> {
-                                updateKeyAfterResult(selection.keyId, success = false, error = chunk.error)
-
-                                shouldRetry = !emittedAnyPayload &&
-                                    isRetryableError(chunk.error) &&
-                                    attempt < maxRetryAttempts
-
-                                if (!shouldRetry) {
+                    try {
+                        delegate.streamChatWithTools(messages, tools).collect { chunk ->
+                            when (chunk) {
+                                is StreamChunk.Content,
+                                is StreamChunk.ToolCall -> {
+                                    emittedAnyPayload = true
                                     emit(chunk)
+                                }
+                                is StreamChunk.Done -> {
+                                    updateKeyAfterResult(selection.keyId, success = true, error = null)
+                                    emit(chunk)
+                                }
+                                is StreamChunk.Error -> {
+                                    updateKeyAfterResult(selection.keyId, success = false, error = chunk.error)
+
+                                    shouldRetry = !emittedAnyPayload &&
+                                        isRetryableError(chunk.error) &&
+                                        attempt < maxRetryAttempts
+
+                                    if (!shouldRetry) {
+                                        emit(chunk)
+                                    }
                                 }
                             }
                         }
+                    } finally {
+                        activeDelegates.remove(delegate)
                     }
 
                     if (!shouldRetry) {
@@ -120,7 +127,8 @@ class MultiKeyAIProvider(
     }
 
     override fun cancel() {
-        currentDelegate?.cancel()
+        activeDelegates.toList().forEach { it.cancel() }
+        activeDelegates.clear()
     }
 
     override suspend fun generateImage(
@@ -133,7 +141,7 @@ class MultiKeyAIProvider(
         while (true) {
             attempt++
             val selection = stateMutex.withLock {
-                val provider = settingsManager.settings.value.providers.firstOrNull { it.id == providerId }
+                val provider = settingsManager.getProviderSnapshot(providerId)
                     ?: return@withLock SelectedKey.None("服务商配置不存在: $providerId")
                 selectKeyAndPersistIndex(provider, triedKeyIds)
             }
@@ -141,12 +149,16 @@ class MultiKeyAIProvider(
             when (selection) {
                 is SelectedKey.Single -> {
                     val delegate = createDelegate(selection.key)
-                    currentDelegate = delegate
-                    return delegate.generateImage(prompt, options)
+                    activeDelegates += delegate
+                    return try {
+                        delegate.generateImage(prompt, options)
+                    } finally {
+                        activeDelegates.remove(delegate)
+                    }
                 }
                 is SelectedKey.Multi -> {
                     val delegate = createDelegate(selection.key)
-                    currentDelegate = delegate
+                    activeDelegates += delegate
                     try {
                         val result = delegate.generateImage(prompt, options)
                         updateKeyAfterResult(selection.keyId, success = true, error = null)
@@ -165,6 +177,8 @@ class MultiKeyAIProvider(
                             error = AIProviderException.UnknownError(e.message ?: "unknown error", e)
                         )
                         throw e
+                    } finally {
+                        activeDelegates.remove(delegate)
                     }
                 }
                 is SelectedKey.None -> {
@@ -223,6 +237,14 @@ class MultiKeyAIProvider(
             configuredKeys.map { it.toData() },
             provider.autoRecoveryMinutes
         )
+        val recoveredEntries = recoveredKeys.map { it.toApp() }
+        if (recoveredEntries != configuredKeys) {
+            settingsManager.updateProviderRuntime(
+                provider = provider.copy(apiKeys = recoveredEntries),
+                reflectInUi = true,
+                debounceMs = 0L
+            )
+        }
 
         // 获取可用的 Key（启用且状态为 ACTIVE，且不在排除列表中）
         val availableKeys = recoveredKeys.filter {
@@ -275,7 +297,7 @@ class MultiKeyAIProvider(
 
     private suspend fun updateKeyAfterResult(keyId: String, success: Boolean, error: AIProviderException?) {
         stateMutex.withLock {
-            val provider = settingsManager.settings.value.providers.firstOrNull { it.id == providerId } ?: return@withLock
+            val provider = settingsManager.getProviderSnapshot(providerId) ?: return@withLock
             val existing = provider.apiKeys.firstOrNull { it.id == keyId } ?: return@withLock
 
             val existingInfo = existing.toData()
@@ -293,7 +315,17 @@ class MultiKeyAIProvider(
 
             val updatedEntry = updatedInfo.toApp()
             val newKeys = provider.apiKeys.map { if (it.id == keyId) updatedEntry else it }
-            settingsManager.updateProvider(provider.copy(apiKeys = newKeys))
+            val shouldReflectInUi = !success ||
+                existing.status != updatedEntry.status ||
+                existing.isEnabled != updatedEntry.isEnabled ||
+                existing.failureCount != updatedEntry.failureCount ||
+                existing.lastError != updatedEntry.lastError
+
+            settingsManager.updateProviderRuntime(
+                provider = provider.copy(apiKeys = newKeys),
+                reflectInUi = shouldReflectInUi,
+                debounceMs = if (shouldReflectInUi) 0L else 1_500L
+            )
         }
     }
 

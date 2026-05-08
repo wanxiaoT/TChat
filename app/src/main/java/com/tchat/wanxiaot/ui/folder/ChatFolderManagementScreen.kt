@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,6 +17,12 @@ import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.*
 import com.tchat.data.model.ChatFolder
 import com.tchat.data.model.FolderTreeNode
+import com.tchat.wanxiaot.ui.components.AppEmptyState
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionCard
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 
 /**
  * 聊天文件夹管理页面
@@ -36,68 +41,58 @@ fun ChatFolderManagementScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var selectedParentId by remember { mutableStateOf<String?>(null) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("文件夹管理") },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        selectedParentId = null
-                        showCreateDialog = true
-                    }) {
-                        Icon(Lucide.FolderPlus, contentDescription = "创建文件夹")
-                    }
-                }
-            )
-        },
-        modifier = modifier
+    AppPageScaffold(
+        title = "文件夹管理",
+        eyebrow = "Organization",
+        subtitle = "整理聊天目录与层级结构",
+        onBack = onBackClick,
+        modifier = modifier,
+        actions = {
+            IconButton(onClick = {
+                selectedParentId = null
+                showCreateDialog = true
+            }) {
+                Icon(Lucide.FolderPlus, contentDescription = "创建文件夹")
+            }
+        }
     ) { paddingValues ->
-        if (folderTree.isEmpty()) {
-            // 空状态
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                AppHeroCard(
+                    title = "聊天目录",
+                    description = "创建、嵌套和维护聊天文件夹，保持对话内容有清晰归档。",
+                    eyebrow = "Folder Tree",
+                    icon = Lucide.FolderTree
                 ) {
-                    Icon(
-                        imageVector = Lucide.FolderOpen,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "还没有文件夹",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Button(onClick = {
-                        selectedParentId = null
-                        showCreateDialog = true
-                    }) {
-                        Icon(Lucide.Plus, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("创建第一个文件夹")
-                    }
+                    AppPill(text = "${folderTree.size} 个根目录")
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+
+            if (folderTree.isEmpty()) {
+                item {
+                    AppEmptyState(
+                        title = "还没有文件夹",
+                        description = "创建第一个文件夹后，可以继续建立子文件夹层级。",
+                        icon = Lucide.FolderOpen,
+                        action = {
+                            Button(onClick = {
+                                selectedParentId = null
+                                showCreateDialog = true
+                            }) {
+                                Icon(Lucide.Plus, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("创建第一个文件夹")
+                            }
+                        }
+                    )
+                }
+            } else {
                 items(folderTree) { node ->
                     FolderTreeItem(
                         node = node,
@@ -142,10 +137,8 @@ private fun FolderTreeItem(
 
     Column(modifier = modifier) {
         // 文件夹项
-        ElevatedCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = (level * 24).dp)
+        AppSectionSurface(
+            modifier = Modifier.padding(start = (level * 24).dp)
         ) {
             Row(
                 modifier = Modifier
@@ -357,11 +350,11 @@ fun SmartGroupingCard(
     onGroupTypeChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    ElevatedCard(modifier = modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+    AppSectionCard(
+        modifier = modifier,
+        title = "智能分组",
+        description = "自动按时间、模型或助手将聊天归档到文件夹。"
+    ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -413,5 +406,4 @@ fun SmartGroupingCard(
                 }
             }
         }
-    }
 }

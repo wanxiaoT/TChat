@@ -11,7 +11,10 @@ import androidx.room.PrimaryKey
  */
 @Entity(
     tableName = "chat_folders",
-    indices = [Index("parentId")]
+    indices = [
+        Index("parentId"),
+        Index(value = ["parentId", "sort_order", "name"])
+    ]
 )
 data class ChatFolderEntity(
     @PrimaryKey
@@ -34,7 +37,8 @@ data class ChatFolderEntity(
     primaryKeys = ["chatId", "folderId"],
     indices = [
         Index("chatId"),
-        Index("folderId")
+        Index("folderId"),
+        Index(value = ["folderId", "addedAt"])
     ],
     foreignKeys = [
         ForeignKey(

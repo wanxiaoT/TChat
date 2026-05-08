@@ -6,6 +6,13 @@ import android.content.ContextWrapper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalView
+import android.view.WindowManager
+
+@Suppress("DEPRECATION")
+internal val SoftInputAdjustResize: Int = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+
+@Suppress("DEPRECATION")
+internal val SoftInputAdjustNothing: Int = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
 
 @Composable
 internal fun SoftInputModeEffect(softInputMode: Int) {
@@ -17,7 +24,8 @@ internal fun SoftInputModeEffect(softInputMode: Int) {
         } else {
             val window = activity.window
             val originalMode = window.attributes.softInputMode
-            window.setSoftInputMode(softInputMode)
+            val preservedState = originalMode and WindowManager.LayoutParams.SOFT_INPUT_MASK_STATE
+            window.setSoftInputMode(preservedState or softInputMode)
             onDispose {
                 window.setSoftInputMode(originalMode)
             }
@@ -33,4 +41,3 @@ private fun Context.findActivity(): Activity? {
     }
     return current as? Activity
 }
-

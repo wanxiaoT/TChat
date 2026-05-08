@@ -20,6 +20,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.tchat.feature.chat.markdown.MarkdownText
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -50,13 +52,8 @@ fun UpdateDialog(
             dismissOnClickOutside = canDismiss
         )
     ) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .wrapContentHeight(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
+        AppSectionSurface(
+            modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
@@ -69,11 +66,14 @@ fun UpdateDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "发现新版本",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "发现新版本",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        AppPill(text = "版本 ${updateInfo.versionName}")
+                    }
 
                     if (canDismiss) {
                         IconButton(onClick = onDismiss) {
@@ -89,15 +89,6 @@ fun UpdateDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // 版本信息
-                Text(
-                    text = "版本 ${updateInfo.versionName}",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 文件大小
                 Text(
                     text = "大小: ${formatFileSize(updateInfo.fileSize)}",
                     style = MaterialTheme.typography.bodyMedium,
@@ -115,13 +106,10 @@ fun UpdateDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Card(
+                AppSectionSurface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 200.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                        .heightIn(max = 200.dp)
                 ) {
                     Box(
                         modifier = Modifier.fillMaxWidth()
@@ -341,13 +329,10 @@ fun UpdateDialog(
                 usePlatformDefaultWidth = false
             )
         ) {
-            Card(
+            AppSectionSurface(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+                    .padding(16.dp)
             ) {
                 Column(
                     modifier = Modifier

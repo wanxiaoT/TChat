@@ -11,13 +11,17 @@ import com.tchat.data.model.GroupGenerationMode
 /**
  * 群聊实体
  */
-@Entity(tableName = "group_chats")
+@Entity(
+    tableName = "group_chats",
+    indices = [Index(value = ["updatedAt"])]
+)
 data class GroupChatEntity(
     @PrimaryKey
     val id: String,
     val name: String,
     val avatar: String? = null,
     val description: String? = null,
+    val activeChatId: String? = null,
     val activationStrategy: String = GroupActivationStrategy.MANUAL.name,
     val generationMode: String = GroupGenerationMode.APPEND.name,
     @ColumnInfo(defaultValue = "0")

@@ -107,6 +107,11 @@ interface GroupChatRepository {
     suspend fun updateLastActiveTime(groupId: String)
 
     /**
+     * 更新群聊绑定的实际会话ID
+     */
+    suspend fun updateActiveChatId(groupId: String, activeChatId: String?)
+
+    /**
      * 检查助手是否是群聊成员
      */
     suspend fun isMember(groupId: String, assistantId: String): Boolean

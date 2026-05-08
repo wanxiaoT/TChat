@@ -8,14 +8,18 @@ import com.tchat.data.deepresearch.service.WebSearchProvider
 import com.tchat.data.model.ChatToolbarItem
 import com.tchat.data.model.ChatToolbarItemConfig
 import com.tchat.data.model.ChatToolbarSettings
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -25,48 +29,91 @@ class SettingsManager(context: Context) {
     private val database = AppDatabase.getInstance(context)
     private val settingsDao = database.appSettingsDao()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val settingsWriteMutex = Mutex()
 
     // 用于从 SharedPreferences 迁移数据
     private val prefs: SharedPreferences = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
     private val migrationKey = "settings_migrated_to_room"
 
-    private val _settings = MutableStateFlow(loadSettingsBlocking())
+    private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
+    private val initialized = CompletableDeferred<Unit>()
 
     // 原子轮询索引管理（解决多线程竞态问题）
     private val roundRobinIndices = ConcurrentHashMap<String, AtomicInteger>()
+    private val runtimeProviders = ConcurrentHashMap<String, ProviderConfig>()
+    private val providerPersistJobs = ConcurrentHashMap<String, Job>()
 
     init {
-        // 监听数据库变化
         scope.launch {
+            val initialSettings = runCatching { loadSettings() }.getOrDefault(AppSettings())
+            applyPersistedSettings(initialSettings)
+            initialized.complete(Unit)
+
             settingsDao.getSettingsFlow().collect { entity ->
-                if (entity != null) {
-                    _settings.value = entityToAppSettings(entity)
-                }
+                entity?.let { applyPersistedSettings(entityToAppSettings(it)) }
             }
         }
     }
 
     /**
-     * 阻塞式加载设置（用于初始化）
+     * 异步加载设置（用于初始化）
      */
-    private fun loadSettingsBlocking(): AppSettings {
-        return runBlocking(Dispatchers.IO) {
-            // 检查是否需要从 SharedPreferences 迁移
-            if (!prefs.getBoolean(migrationKey, false)) {
-                migrateFromSharedPreferences()
-            }
+    private suspend fun loadSettings(): AppSettings {
+        // 检查是否需要从 SharedPreferences 迁移
+        if (!prefs.getBoolean(migrationKey, false)) {
+            migrateFromSharedPreferences()
+        }
 
-            val entity = settingsDao.getSettings()
-            if (entity != null) {
-                entityToAppSettings(entity)
-            } else {
-                // 如果数据库中没有设置，创建默认设置
-                val defaultEntity = AppSettingsEntity()
-                settingsDao.insertOrReplace(defaultEntity)
-                AppSettings()
+        val entity = settingsDao.getSettings()
+        if (entity != null) {
+            return entityToAppSettings(entity)
+        }
+
+        // 如果数据库中没有设置，创建默认设置
+        val defaultEntity = AppSettingsEntity()
+        settingsWriteMutex.withLock {
+            settingsDao.insertOrReplace(defaultEntity)
+        }
+        return AppSettings()
+    }
+
+    private fun applyPersistedSettings(persistedSettings: AppSettings) {
+        synchronizeRuntimeProviders(persistedSettings.providers)
+        _settings.value = persistedSettings
+    }
+
+    private fun synchronizeRuntimeProviders(providers: List<ProviderConfig>) {
+        val validProviderIds = providers.mapTo(mutableSetOf()) { it.id }
+        val iterator = runtimeProviders.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            if (entry.key !in validProviderIds && providerPersistJobs[entry.key]?.isActive != true) {
+                iterator.remove()
+                roundRobinIndices.remove(entry.key)
             }
         }
+
+        providers.forEach { provider ->
+            if (providerPersistJobs[provider.id]?.isActive != true) {
+                runtimeProviders[provider.id] = provider
+            }
+            val atomicIndex = roundRobinIndices[provider.id]
+            if (atomicIndex == null) {
+                roundRobinIndices[provider.id] = AtomicInteger(provider.roundRobinIndex)
+            } else if (providerPersistJobs[provider.id]?.isActive != true) {
+                atomicIndex.set(provider.roundRobinIndex)
+            }
+        }
+    }
+
+    suspend fun awaitLoadedSettings(): AppSettings {
+        initialized.await()
+        return _settings.value
+    }
+
+    fun getProviderSnapshot(providerId: String): ProviderConfig? {
+        return runtimeProviders[providerId] ?: _settings.value.providers.find { it.id == providerId }
     }
 
     /**
@@ -98,7 +145,7 @@ class SettingsManager(context: Context) {
             // 标记迁移完成
             prefs.edit().putBoolean(migrationKey, true).apply()
         } catch (e: Exception) {
-            e.printStackTrace()
+            // Ignore malformed legacy settings and fall back to defaults.
         }
     }
 
@@ -234,7 +281,7 @@ class SettingsManager(context: Context) {
                 )
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            // Ignore malformed provider payloads and keep best-effort results.
         }
         return providers
     }
@@ -267,7 +314,7 @@ class SettingsManager(context: Context) {
                 )
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            // Ignore malformed API key payloads and keep best-effort results.
         }
         return keys
     }
@@ -293,7 +340,7 @@ class SettingsManager(context: Context) {
                 )
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            // Ignore malformed model parameter payloads and keep best-effort results.
         }
         return result
     }
@@ -390,7 +437,7 @@ class SettingsManager(context: Context) {
                 )
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            // Ignore malformed regex payloads and keep best-effort results.
         }
         return rules.sortedBy { it.order }
     }
@@ -525,9 +572,54 @@ class SettingsManager(context: Context) {
     }
 
     fun updateSettings(settings: AppSettings) {
+        synchronizeRuntimeProviders(settings.providers)
         _settings.value = settings
         scope.launch {
-            settingsDao.insertOrReplace(appSettingsToEntity(settings))
+            settingsWriteMutex.withLock {
+                settingsDao.insertOrReplace(appSettingsToEntity(settings))
+            }
+        }
+    }
+
+    fun updateProviderRuntime(
+        provider: ProviderConfig,
+        reflectInUi: Boolean = false,
+        debounceMs: Long = 0L
+    ) {
+        runtimeProviders[provider.id] = provider
+        roundRobinIndices[provider.id]?.set(provider.roundRobinIndex)
+
+        if (reflectInUi) {
+            val currentSettings = _settings.value
+            if (currentSettings.providers.any { it.id == provider.id }) {
+                _settings.value = currentSettings.copy(
+                    providers = currentSettings.providers.map {
+                        if (it.id == provider.id) provider else it
+                    }
+                )
+            }
+        }
+
+        providerPersistJobs[provider.id]?.cancel()
+        providerPersistJobs[provider.id] = scope.launch {
+            if (debounceMs > 0) {
+                delay(debounceMs)
+            }
+            persistProvider(provider.id)
+        }
+    }
+
+    private suspend fun persistProvider(providerId: String) {
+        val provider = runtimeProviders[providerId] ?: return
+        settingsWriteMutex.withLock {
+            val currentSettings = _settings.value
+            if (currentSettings.providers.none { it.id == providerId }) {
+                return
+            }
+            val providers = currentSettings.providers.map {
+                if (it.id == providerId) provider else it
+            }
+            settingsDao.updateProvidersJson(serializeProviders(providers))
         }
     }
 
@@ -744,7 +836,7 @@ class SettingsManager(context: Context) {
 
         val atomicIndex = roundRobinIndices.getOrPut(providerId) {
             // 从持久化设置中初始化
-            val provider = _settings.value.providers.find { it.id == providerId }
+            val provider = getProviderSnapshot(providerId)
             AtomicInteger(provider?.roundRobinIndex ?: 0)
         }
 
@@ -754,9 +846,12 @@ class SettingsManager(context: Context) {
             val actualIndex = current % availableKeyCount
             val next = (current + 1) % availableKeyCount
             if (atomicIndex.compareAndSet(current, next)) {
-                // 异步持久化（不阻塞当前操作）
-                scope.launch {
-                    persistRoundRobinIndex(providerId, next)
+                getProviderSnapshot(providerId)?.let { provider ->
+                    updateProviderRuntime(
+                        provider = provider.copy(roundRobinIndex = next),
+                        reflectInUi = false,
+                        debounceMs = 2_000L
+                    )
                 }
                 return actualIndex
             }
@@ -765,28 +860,16 @@ class SettingsManager(context: Context) {
     }
 
     /**
-     * 异步持久化轮询索引到数据库
-     */
-    private suspend fun persistRoundRobinIndex(providerId: String, newIndex: Int) {
-        val currentSettings = _settings.value
-        val provider = currentSettings.providers.find { it.id == providerId } ?: return
-        if (provider.roundRobinIndex != newIndex) {
-            val newProviders = currentSettings.providers.map {
-                if (it.id == providerId) it.copy(roundRobinIndex = newIndex) else it
-            }
-            val newSettings = currentSettings.copy(providers = newProviders)
-            _settings.value = newSettings
-            settingsDao.insertOrReplace(appSettingsToEntity(newSettings))
-        }
-    }
-
-    /**
      * 重置轮询索引（当 Key 列表变化时调用）
      */
     fun resetRoundRobinIndex(providerId: String) {
         roundRobinIndices[providerId]?.set(0)
-        scope.launch {
-            persistRoundRobinIndex(providerId, 0)
+        getProviderSnapshot(providerId)?.let { provider ->
+            updateProviderRuntime(
+                provider = provider.copy(roundRobinIndex = 0),
+                reflectInUi = false,
+                debounceMs = 500L
+            )
         }
     }
 

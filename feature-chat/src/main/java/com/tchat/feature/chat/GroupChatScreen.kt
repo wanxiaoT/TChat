@@ -9,7 +9,9 @@ import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Psychology
@@ -22,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.BrainCircuit
 import com.composables.icons.lucide.Lucide
@@ -34,6 +37,7 @@ import com.tchat.data.model.ChatToolbarSettings
 import com.tchat.data.model.MessagePart
 import com.tchat.data.tool.Tool
 import com.tchat.data.util.RegexRuleData
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -82,12 +86,12 @@ fun GroupChatScreen(
     selectAssistantHint: String = "选择助手",
     pleaseSelectAssistantFirst: String = "请先选择助手"
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val actualChatId by viewModel.actualChatId.collectAsState()
-    val errorMessage by viewModel.errorMessage.collectAsState()
-    val currentGroupChat by viewModel.currentGroupChat.collectAsState()
-    val groupMembers by viewModel.groupMembers.collectAsState()
-    val currentSpeakerId by viewModel.currentSpeakerId.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val actualChatId by viewModel.actualChatId.collectAsStateWithLifecycle()
+    val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
+    val currentGroupChat by viewModel.currentGroupChat.collectAsStateWithLifecycle()
+    val groupMembers by viewModel.groupMembers.collectAsStateWithLifecycle()
+    val currentSpeakerId by viewModel.currentSpeakerId.collectAsStateWithLifecycle()
 
     var inputText by remember { mutableStateOf("") }
     var draftMediaParts by remember { mutableStateOf<List<MessagePart>>(emptyList()) }
@@ -97,9 +101,11 @@ fun GroupChatScreen(
 
     // Snackbar 状态
     val snackbarHostState = remember { SnackbarHostState() }
+    val messageListState = rememberLazyListState()
 
     // Coroutine scope
     val scope = rememberCoroutineScope()
+    var initialScrollChatKey by remember { mutableStateOf<String?>(null) }
 
     // TTS 初始化
     var tts by remember { mutableStateOf<TextToSpeech?>(null) }
@@ -231,6 +237,7 @@ fun GroupChatScreen(
     LaunchedEffect(groupChatId, chatId, viewModel) {
         inputText = ""
         draftMediaParts = emptyList()
+        initialScrollChatKey = null
         viewModel.loadGroupChat(groupChatId, chatId)
     }
 
@@ -249,10 +256,12 @@ fun GroupChatScreen(
         )
     }
 
-    // 群聊页面使用 adjustNothing，避免键盘弹出时整体布局被系统 resize 影响
-    SoftInputModeEffect(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+    // 群聊页面使用 adjustResize，让系统统一处理 IME 顶起，避免 OEM 设备重复位移
+    SoftInputModeEffect(SoftInputAdjustResize)
 
     Box(modifier = modifier.fillMaxSize()) {
+        ChatBackdrop(modifier = Modifier.matchParentSize())
+
         var inputAreaHeightPx by remember { mutableIntStateOf(0) }
         val inputAreaHeight = with(LocalDensity.current) { inputAreaHeightPx.toDp() }
 
@@ -263,18 +272,52 @@ fun GroupChatScreen(
                 }
             }
             is ChatUiState.Success -> {
+                LaunchedEffect(actualChatId, chatId, state.messages.size, state.streamingMessage?.id) {
+                    val chatKey = actualChatId ?: chatId ?: return@LaunchedEffect
+                    if (initialScrollChatKey == chatKey) return@LaunchedEffect
+
+                    val targetIndex = state.messages.lastIndex + if (
+                        state.streamingMessage != null &&
+                        state.messages.none { it.id == state.streamingMessage.id }
+                    ) {
+                        1
+                    } else {
+                        0
+                    }
+
+                    if (targetIndex >= 0) {
+                        messageListState.scrollToItem(targetIndex)
+                        initialScrollChatKey = chatKey
+                    }
+                }
+
+                LaunchedEffect(actualChatId, chatId, state.hasMoreHistory, state.isLoadingHistory) {
+                    if (!state.hasMoreHistory) return@LaunchedEffect
+
+                    snapshotFlow { messageListState.firstVisibleItemIndex <= 2 }
+                        .distinctUntilChanged()
+                        .collect { isNearTop ->
+                            if (isNearTop && !state.isLoadingHistory) {
+                                viewModel.loadMoreHistory()
+                            }
+                        }
+                }
+
                 // 消息列表
                 MessageList(
                     messages = state.messages,
+                    streamingMessage = state.streamingMessage,
+                    listState = messageListState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
                         start = 16.dp,
-                        top = 16.dp,
+                        top = 24.dp,
                         end = 16.dp,
-                        bottom = 16.dp + inputAreaHeight
+                        bottom = 28.dp + inputAreaHeight
                     ),
                     providerIcon = providerIcon,
                     modelName = currentModel,
+                    isLoadingHistory = state.isLoadingHistory,
                     onRegenerate = { userMessageId, aiMessageId ->
                         onRegenerateMessage(userMessageId, aiMessageId)
                     },
@@ -288,10 +331,9 @@ fun GroupChatScreen(
                 )
 
                 // 输入区域（工具栏 + 助手选择器 + 输入框），固定在底部并跟随 IME 上移
-                Column(
+                ChatComposerDock(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .imePadding()
                         .onSizeChanged { inputAreaHeightPx = it.height }
                 ) {
                     // 深度研究进度提示
@@ -380,7 +422,11 @@ fun GroupChatScreen(
                                     scope.launch { snackbarHostState.showSnackbar(pleaseSelectAssistantFirst) }
                                     return@MessageInput
                                 }
-                                viewModel.generateImage(actualChatId ?: chatId, inputText)
+                                viewModel.generateImage(
+                                    chatId = actualChatId ?: chatId,
+                                    prompt = inputText,
+                                    selectedAssistantId = currentSpeakerId
+                                )
                                 inputText = ""
                                 draftMediaParts = emptyList()
                             }
@@ -402,7 +448,6 @@ fun GroupChatScreen(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .imePadding()
         )
     }
 }
@@ -422,13 +467,18 @@ private fun AssistantSelector(
     val currentAssistant = assistants.find { it.id == currentSpeakerId }
 
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 1.dp
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f),
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.68f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 2.dp)
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -441,8 +491,16 @@ private fun AssistantSelector(
             Box {
                 Surface(
                     onClick = { expanded = true },
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = MaterialTheme.shapes.small,
+                    color = if (currentAssistant != null) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.88f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f)
+                    },
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
+                    ),
+                    shape = MaterialTheme.shapes.medium,
                     tonalElevation = 0.dp
                 ) {
                     Row(
@@ -500,12 +558,16 @@ private fun GroupDeepResearchIndicator(
     text: String = "深度研究进行中..."
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.primaryContainer,
-        tonalElevation = 2.dp
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.78f),
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+        tonalElevation = 0.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 2.dp)
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)

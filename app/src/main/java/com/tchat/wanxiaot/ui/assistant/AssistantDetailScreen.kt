@@ -14,6 +14,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,21 +31,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryScrollableTabRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -51,10 +49,8 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +65,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.BookOpen
 import com.composables.icons.lucide.Lucide
 import com.tchat.data.database.entity.KnowledgeBaseEntity
@@ -78,6 +75,12 @@ import com.tchat.data.model.LocalToolOption.Companion.description
 import com.tchat.data.model.LocalToolOption.Companion.displayName
 import com.tchat.data.model.McpServer
 import com.tchat.wanxiaot.settings.RegexRule
+import com.tchat.wanxiaot.ui.components.AppEmptyState
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionCard
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -91,42 +94,28 @@ fun AssistantDetailScreen(
     onBack: () -> Unit,
     showTopBar: Boolean = true
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val assistant by viewModel.assistant.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val knowledgeBases by viewModel.knowledgeBases.collectAsState()
-    val mcpServers by viewModel.mcpServers.collectAsState()
+    val assistant by viewModel.assistant.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val knowledgeBases by viewModel.knowledgeBases.collectAsStateWithLifecycle()
+    val mcpServers by viewModel.mcpServers.collectAsStateWithLifecycle()
+    val regexRules by viewModel.regexRules.collectAsStateWithLifecycle()
 
     val tabs = listOf("基本设置", "提示词", "本地工具", "MCP工具", "知识库", "正则规则")
     val pagerState = rememberPagerState { tabs.size }
 
-    Scaffold(
-        topBar = {
-            if (showTopBar) {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = assistant?.name?.ifEmpty { "未命名助手" } ?: "加载中...",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回"
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
+    AppPageScaffold(
+        title = assistant?.name?.ifEmpty { "未命名助手" } ?: "助手详情",
+        eyebrow = "Assistant Profile",
+        subtitle = assistant?.let {
+            buildString {
+                append(if (it.systemPrompt.isBlank()) "未设置提示词" else "已配置提示词")
+                if (it.localTools.isNotEmpty()) append(" · ${it.localTools.size} 个本地工具")
+                if (it.mcpServerIds.isNotEmpty()) append(" · ${it.mcpServerIds.size} 个 MCP")
             }
-        },
-        containerColor = MaterialTheme.colorScheme.surface
+        } ?: "加载中...",
+        showTopBar = showTopBar,
+        onBack = onBack
     ) { innerPadding ->
         if (isLoading) {
             Box(
@@ -144,27 +133,56 @@ fun AssistantDetailScreen(
                     .padding(innerPadding),
                 contentAlignment = Alignment.Center
             ) {
-                Text("助手不存在")
+                AppEmptyState(
+                    icon = Lucide.Bot,
+                    title = "助手不存在",
+                    description = "这个助手可能已经被删除，返回列表重新选择即可。",
+                    modifier = Modifier.padding(16.dp)
+                )
             }
         } else {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                SecondaryScrollableTabRow(
-                    selectedTabIndex = pagerState.currentPage,
-                    modifier = Modifier.fillMaxWidth(),
-                    edgePadding = 16.dp,
-                ) {
-                    tabs.forEachIndexed { index, tab ->
-                        Tab(
-                            selected = index == pagerState.currentPage,
-                            onClick = {
-                                scope.launch { pagerState.animateScrollToPage(index) }
-                            },
-                            text = { Text(tab) }
-                        )
+                AppHeroCard(
+                    eyebrow = "Role Design",
+                    title = "把角色边界、工具链和知识检索拆清楚",
+                    description = "助手不是聊天皮肤，而是一份可复用的工作配置。越清晰，后续对话越稳定。",
+                    icon = Lucide.Bot,
+                    trailing = {
+                        if (assistant!!.knowledgeBaseId != null) {
+                            AppPill(text = "已绑定知识库")
+                        }
+                    }
+                )
+
+                AppSectionSurface {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        SecondaryScrollableTabRow(
+                            selectedTabIndex = pagerState.currentPage,
+                            modifier = Modifier.fillMaxWidth(),
+                            edgePadding = 14.dp,
+                            divider = {}
+                        ) {
+                            tabs.forEachIndexed { index, tab ->
+                                Tab(
+                                    selected = index == pagerState.currentPage,
+                                    onClick = {
+                                        scope.launch { pagerState.animateScrollToPage(index) }
+                                    },
+                                    text = { Text(tab) }
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -199,10 +217,113 @@ fun AssistantDetailScreen(
                         )
                         5 -> RegexRulesTab(
                             assistant = assistant!!,
-                            regexRules = viewModel.regexRules.collectAsState().value,
+                            regexRules = regexRules,
                             onUpdate = { viewModel.updateAssistant(it) }
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AssistantTabColumn(
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = 16.dp)
+            .verticalScroll(rememberScrollState())
+            .imePadding(),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        content = content
+    )
+}
+
+@Composable
+private fun AssistantSettingRow(
+    title: String,
+    description: String? = null,
+    trailing: @Composable () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            description?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        trailing()
+    }
+}
+
+@Composable
+private fun AssistantSelectableRow(
+    title: String,
+    description: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    AppSectionSurface {
+        androidx.compose.material3.Surface(
+            onClick = onClick,
+            color = if (selected) {
+                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f)
+            } else {
+                androidx.compose.ui.graphics.Color.Transparent
+            }
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(
+                    selected = selected,
+                    onClick = null
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.74f)
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
                 }
             }
         }
@@ -217,246 +338,169 @@ private fun BasicSettingsTab(
     assistant: Assistant,
     onUpdate: (Assistant) -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState())
-            .imePadding(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // 名称
-        Card {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "名称",
-                    style = MaterialTheme.typography.labelLarge
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = assistant.name,
-                    onValueChange = { onUpdate(assistant.copy(name = it)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("请输入助手名称") },
-                    singleLine = true
-                )
-            }
+    AssistantTabColumn {
+        AppSectionCard(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            title = "基础信息",
+            description = "明确这个助手的名称与输出边界，方便在列表中快速区分。"
+        ) {
+            OutlinedTextField(
+                value = assistant.name,
+                onValueChange = { onUpdate(assistant.copy(name = it)) },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("请输入助手名称") },
+                singleLine = true
+            )
         }
 
-        // 模型参数
-        Card {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "模型参数",
-                    style = MaterialTheme.typography.labelLarge
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 温度
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("温度")
-                    Switch(
-                        checked = assistant.temperature != null,
-                        onCheckedChange = { enabled ->
-                            onUpdate(assistant.copy(temperature = if (enabled) 1.0f else null))
-                        }
-                    )
-                }
-                if (assistant.temperature != null) {
-                    val temp = assistant.temperature!!
-                    Slider(
-                        value = temp,
-                        onValueChange = { onUpdate(assistant.copy(temperature = it)) },
-                        valueRange = 0f..2f,
-                        steps = 19,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        text = "当前值: ${String.format("%.1f", temp)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                // Top-p
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Top-p")
-                    Switch(
-                        checked = assistant.topP != null,
-                        onCheckedChange = { enabled ->
-                            onUpdate(assistant.copy(topP = if (enabled) 1.0f else null))
-                        }
-                    )
-                }
-                if (assistant.topP != null) {
-                    val topP = assistant.topP!!
-                    Slider(
-                        value = topP,
-                        onValueChange = { onUpdate(assistant.copy(topP = it)) },
-                        valueRange = 0f..1f,
-                        steps = 9,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        text = "当前值: ${String.format("%.1f", topP)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                // 上下文消息数量
-                Text("上下文消息数量")
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 不限制选项 - Material You 风格可点击行
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .selectable(
-                            selected = assistant.contextMessageSize <= 0,
-                            onClick = { onUpdate(assistant.copy(contextMessageSize = 0)) },
-                            role = Role.RadioButton
-                        )
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(
-                        selected = assistant.contextMessageSize <= 0,
-                        onClick = null // 由 Row 的 selectable 处理点击
-                    )
-                    Text(
-                        text = "不限制（默认）",
-                        modifier = Modifier.padding(start = 12.dp),
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-
-                // 限制选项 - Material You 风格可点击行
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .selectable(
-                            selected = assistant.contextMessageSize > 0,
-                            onClick = {
-                                if (assistant.contextMessageSize <= 0) {
-                                    onUpdate(assistant.copy(contextMessageSize = 64))
-                                }
-                            },
-                            role = Role.RadioButton
-                        )
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(
-                        selected = assistant.contextMessageSize > 0,
-                        onClick = null // 由 Row 的 selectable 处理点击
-                    )
-                    Text(
-                        text = "限制数量",
-                        modifier = Modifier.padding(start = 12.dp),
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-
-                // 限制数量时显示调节控件
-                if (assistant.contextMessageSize > 0) {
-                    Column(
-                        modifier = Modifier.padding(start = 40.dp, top = 8.dp)
-                    ) {
-                        // 滑块
-                        Slider(
-                            value = assistant.contextMessageSize.toFloat().coerceIn(1f, 200f),
-                            onValueChange = { onUpdate(assistant.copy(contextMessageSize = it.roundToInt())) },
-                            valueRange = 1f..200f,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        // 手动输入 - 下划线样式输入框
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "保留最近",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            TextField(
-                                value = assistant.contextMessageSize.toString(),
-                                onValueChange = { text ->
-                                    val value = text.toIntOrNull()?.coerceAtLeast(1) ?: 1
-                                    onUpdate(assistant.copy(contextMessageSize = value))
-                                },
-                                modifier = Modifier.width(80.dp),
-                                singleLine = true,
-                                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                    textAlign = TextAlign.Center
-                                ),
-                                colors = TextFieldDefaults.colors(
-                                    unfocusedContainerColor = Color.Transparent,
-                                    focusedContainerColor = Color.Transparent,
-                                    unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
-                                    focusedIndicatorColor = MaterialTheme.colorScheme.primary
-                                )
-                            )
-                            Text(
-                                text = "条消息",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
+        AppSectionCard(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            title = "模型参数",
+            description = "这些设置只影响当前助手，不会覆盖全局服务商默认值。"
+        ) {
+            AssistantSettingRow(
+                title = "温度",
+                description = "控制回复的发散程度。"
+            ) {
+                Switch(
+                    checked = assistant.temperature != null,
+                    onCheckedChange = { enabled ->
+                        onUpdate(assistant.copy(temperature = if (enabled) 1.0f else null))
                     }
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                // 流式输出
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("流式输出")
-                        Text(
-                            text = "实时显示AI回复内容",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = assistant.streamOutput,
-                        onCheckedChange = { onUpdate(assistant.copy(streamOutput = it)) }
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                // 最大Token
-                Text("最大输出Token")
-                OutlinedTextField(
-                    value = assistant.maxTokens?.toString() ?: "",
-                    onValueChange = { text ->
-                        val tokens = text.toIntOrNull()?.takeIf { it > 0 }
-                        onUpdate(assistant.copy(maxTokens = tokens))
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("不限制") },
-                    singleLine = true
                 )
             }
+            if (assistant.temperature != null) {
+                val temp = assistant.temperature!!
+                Slider(
+                    value = temp,
+                    onValueChange = { onUpdate(assistant.copy(temperature = it)) },
+                    valueRange = 0f..2f,
+                    steps = 19,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                AppPill(text = "当前值 ${String.format("%.1f", temp)}")
+            }
+
+            HorizontalDivider()
+
+            AssistantSettingRow(
+                title = "Top-p",
+                description = "用于约束采样范围。"
+            ) {
+                Switch(
+                    checked = assistant.topP != null,
+                    onCheckedChange = { enabled ->
+                        onUpdate(assistant.copy(topP = if (enabled) 1.0f else null))
+                    }
+                )
+            }
+            if (assistant.topP != null) {
+                val topP = assistant.topP!!
+                Slider(
+                    value = topP,
+                    onValueChange = { onUpdate(assistant.copy(topP = it)) },
+                    valueRange = 0f..1f,
+                    steps = 9,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                AppPill(text = "当前值 ${String.format("%.1f", topP)}")
+            }
+
+            HorizontalDivider()
+
+            Text(
+                text = "上下文消息数量",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            AssistantSelectableRow(
+                title = "不限制",
+                description = "默认保留全部上下文。",
+                selected = assistant.contextMessageSize <= 0,
+                onClick = { onUpdate(assistant.copy(contextMessageSize = 0)) }
+            )
+
+            AssistantSelectableRow(
+                title = "限制数量",
+                description = "只保留最近若干条消息，降低上下文长度。",
+                selected = assistant.contextMessageSize > 0,
+                onClick = {
+                    if (assistant.contextMessageSize <= 0) {
+                        onUpdate(assistant.copy(contextMessageSize = 64))
+                    }
+                }
+            )
+
+            if (assistant.contextMessageSize > 0) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Slider(
+                        value = assistant.contextMessageSize.toFloat().coerceIn(1f, 200f),
+                        onValueChange = { onUpdate(assistant.copy(contextMessageSize = it.roundToInt())) },
+                        valueRange = 1f..200f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "保留最近",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        TextField(
+                            value = assistant.contextMessageSize.toString(),
+                            onValueChange = { text ->
+                                val value = text.toIntOrNull()?.coerceAtLeast(1) ?: 1
+                                onUpdate(assistant.copy(contextMessageSize = value))
+                            },
+                            modifier = Modifier.width(92.dp),
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                textAlign = TextAlign.Center
+                            ),
+                            colors = TextFieldDefaults.colors(
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                                focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                        Text(
+                            text = "条消息",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider()
+
+            AssistantSettingRow(
+                title = "流式输出",
+                description = "实时显示 AI 回复生成过程。"
+            ) {
+                Switch(
+                    checked = assistant.streamOutput,
+                    onCheckedChange = { onUpdate(assistant.copy(streamOutput = it)) }
+                )
+            }
+
+            HorizontalDivider()
+
+            OutlinedTextField(
+                value = assistant.maxTokens?.toString() ?: "",
+                onValueChange = { text ->
+                    val tokens = text.toIntOrNull()?.takeIf { it > 0 }
+                    onUpdate(assistant.copy(maxTokens = tokens))
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("最大输出 Token") },
+                placeholder = { Text("不限制") },
+                singleLine = true
+            )
         }
     }
 }
@@ -469,35 +513,20 @@ private fun PromptSettingsTab(
     assistant: Assistant,
     onUpdate: (Assistant) -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState())
-            .imePadding(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Card {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "系统提示词",
-                    style = MaterialTheme.typography.labelLarge
-                )
-                Text(
-                    text = "设置AI助手的角色和行为",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = assistant.systemPrompt,
-                    onValueChange = { onUpdate(assistant.copy(systemPrompt = it)) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp),
-                    placeholder = { Text("你是一个有帮助的AI助手...") }
-                )
-            }
+    AssistantTabColumn {
+        AppSectionCard(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            title = "系统提示词",
+            description = "把角色、语气、边界和输出格式写清楚，能显著降低后续跑偏。"
+        ) {
+            OutlinedTextField(
+                value = assistant.systemPrompt,
+                onValueChange = { onUpdate(assistant.copy(systemPrompt = it)) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(240.dp),
+                placeholder = { Text("你是一个有帮助的 AI 助手...") }
+            )
         }
     }
 }
@@ -541,124 +570,85 @@ private fun LocalToolsTab(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = "启用本地工具后，AI可以执行相应操作",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    AssistantTabColumn {
+        AppSectionCard(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            title = "本地工具",
+            description = "启用后，助手可以直接调用对应能力。涉及文件访问的工具需要额外授权。"
+        ) {
+            allTools.forEachIndexed { index, tool ->
+                val isEnabled = assistant.localTools.contains(tool)
+                val isFileSystem = tool is LocalToolOption.FileSystem
 
-        allTools.forEach { tool ->
-            val isEnabled = assistant.localTools.contains(tool)
-            val isFileSystem = tool is LocalToolOption.FileSystem
-
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
+                AssistantSettingRow(
+                    title = tool.displayName(),
+                    description = tool.description()
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = tool.displayName(),
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = tool.description(),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = isEnabled,
-                            onCheckedChange = { enabled ->
-                                val newTools = if (enabled) {
-                                    assistant.localTools + tool
-                                } else {
-                                    assistant.localTools - tool
-                                }
-                                onUpdate(assistant.copy(localTools = newTools))
-                                Toast.makeText(
-                                    context,
-                                    if (enabled) "已启用${tool.displayName()}" else "已禁用${tool.displayName()}",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            },
-                            enabled = !isFileSystem || hasStoragePermission
-                        )
-                    }
-                    
-                    // 文件系统工具的权限状态和授权按钮
-                    if (isFileSystem) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider()
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
+                    Switch(
+                        checked = isEnabled,
+                        onCheckedChange = { enabled ->
+                            val newTools = if (enabled) {
+                                assistant.localTools + tool
+                            } else {
+                                assistant.localTools - tool
+                            }
+                            onUpdate(assistant.copy(localTools = newTools))
+                            Toast.makeText(
+                                context,
+                                if (enabled) "已启用${tool.displayName()}" else "已禁用${tool.displayName()}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        enabled = !isFileSystem || hasStoragePermission
+                    )
+                }
+
+                if (isFileSystem) {
+                    AppSectionSurface {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // 权限状态
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Icon(
-                                    imageVector = if (hasStoragePermission) 
-                                        Icons.Default.Check 
-                                    else 
-                                        Icons.Default.Warning,
+                                    imageVector = if (hasStoragePermission) Icons.Default.Check else Icons.Default.Warning,
                                     contentDescription = null,
                                     modifier = Modifier.size(20.dp),
-                                    tint = if (hasStoragePermission)
+                                    tint = if (hasStoragePermission) {
                                         MaterialTheme.colorScheme.primary
-                                    else
+                                    } else {
                                         MaterialTheme.colorScheme.error
+                                    }
                                 )
                                 Column {
                                     Text(
-                                        text = if (hasStoragePermission) "已授权" else "需要授权",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = if (hasStoragePermission)
-                                            MaterialTheme.colorScheme.primary
-                                        else
-                                            MaterialTheme.colorScheme.error
+                                        text = if (hasStoragePermission) "文件访问权限已授权" else "文件访问权限未授权",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "文件访问权限",
+                                        text = "未授权时无法启用文件系统相关工具。",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
-                            
-                            // 授权按钮
+
                             if (!hasStoragePermission) {
                                 Button(
                                     onClick = {
                                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                            // Android 11+ 跳转到设置页面
                                             val intent = createManageStorageIntent(context)
                                             if (intent != null) {
                                                 settingsLauncher.launch(intent)
                                             }
                                         } else {
-                                            // Android 10 及以下使用权限请求
                                             val permissions = getRequiredPermissions()
                                             if (permissions.isNotEmpty()) {
                                                 permissionLauncher.launch(permissions)
@@ -672,16 +662,15 @@ private fun LocalToolsTab(
                         }
                     }
                 }
-            }
-        }
 
-        if (assistant.localTools.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "已启用 ${assistant.localTools.size} 个本地工具",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
+                if (index != allTools.lastIndex) {
+                    HorizontalDivider()
+                }
+            }
+
+            if (assistant.localTools.isNotEmpty()) {
+                AppPill(text = "已启用 ${assistant.localTools.size} 个本地工具")
+            }
         }
     }
 }
@@ -697,78 +686,27 @@ private fun McpToolsTab(
 ) {
     val context = LocalContext.current
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = "选择要启用的 MCP 服务器，AI 可以调用其提供的工具",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
+    AssistantTabColumn {
         if (mcpServers.isEmpty()) {
-            // 空状态
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                )
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "暂无 MCP 服务器",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "请先在设置中添加 MCP 服务器",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
-            }
+            AppEmptyState(
+                icon = Icons.Default.Warning,
+                title = "暂无 MCP 服务器",
+                description = "先在设置里添加 MCP 服务，再为当前助手选择需要开放的工具能力。",
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
         } else {
-            mcpServers.forEach { server ->
-                val isEnabled = assistant.mcpServerIds.contains(server.id)
+            AppSectionCard(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                title = "MCP 工具",
+                description = "只开启当前助手真正需要的 MCP 服务，避免工具噪声过高。"
+            ) {
+                mcpServers.forEachIndexed { index, server ->
+                    val isEnabled = assistant.mcpServerIds.contains(server.id)
 
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    AssistantSettingRow(
+                        title = server.name,
+                        description = server.description.ifBlank { "未填写服务描述" }
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = server.name,
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            if (server.description.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = server.description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
                         Switch(
                             checked = isEnabled,
                             onCheckedChange = { enabled ->
@@ -787,17 +725,16 @@ private fun McpToolsTab(
                             enabled = server.enabled
                         )
                     }
+
+                    if (index != mcpServers.lastIndex) {
+                        HorizontalDivider()
+                    }
+                }
+
+                if (assistant.mcpServerIds.isNotEmpty()) {
+                    AppPill(text = "已启用 ${assistant.mcpServerIds.size} 个 MCP 服务器")
                 }
             }
-        }
-
-        if (assistant.mcpServerIds.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "已启用 ${assistant.mcpServerIds.size} 个 MCP 服务器",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
         }
     }
 }
@@ -868,148 +805,83 @@ private fun KnowledgeBaseTab(
 ) {
     val context = LocalContext.current
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // 说明文字
-        Card {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Lucide.BookOpen,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Text(
-                        text = "知识库配置",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "为助手绑定知识库后，AI 可以在对话中自动检索相关内容。知识库使用自己配置的 Embedding 服务商，与对话模型提供商独立。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+    AssistantTabColumn {
+        AppSectionCard(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            title = "知识库配置",
+            description = "绑定后，助手会基于当前知识库检索内容。Embedding 服务与对话模型完全独立。"
+        ) {
+            if (knowledgeBases.isEmpty()) {
+                AppEmptyState(
+                    icon = Lucide.BookOpen,
+                    title = "暂无知识库",
+                    description = "先在设置中创建知识库，再把它绑定到这个助手上。"
                 )
-            }
-        }
-
-        // 知识库选择
-        Card {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "选择知识库",
-                    style = MaterialTheme.typography.labelLarge
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                if (knowledgeBases.isEmpty()) {
-                    // 没有知识库时的空状态
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Lucide.BookOpen,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Text(
-                            text = "暂无知识库",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "请先在设置中创建知识库",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
+            } else {
+                KnowledgeBaseOption(
+                    title = "不使用知识库",
+                    description = "仅使用模型自身能力回答",
+                    isSelected = assistant.knowledgeBaseId == null,
+                    onClick = {
+                        onUpdate(assistant.copy(knowledgeBaseId = null))
+                        Toast.makeText(context, "已取消知识库绑定", Toast.LENGTH_SHORT).show()
                     }
-                } else {
-                    // 不使用知识库选项
+                )
+
+                knowledgeBases.forEach { base ->
                     KnowledgeBaseOption(
-                        title = "不使用知识库",
-                        description = "仅使用模型自身能力回答",
-                        isSelected = assistant.knowledgeBaseId == null,
+                        title = base.name,
+                        description = base.description ?: "使用 ${base.embeddingModelId} 模型",
+                        isSelected = assistant.knowledgeBaseId == base.id,
                         onClick = {
-                            onUpdate(assistant.copy(knowledgeBaseId = null))
-                            Toast.makeText(context, "已取消知识库绑定", Toast.LENGTH_SHORT).show()
+                            onUpdate(assistant.copy(knowledgeBaseId = base.id))
+                            Toast.makeText(context, "已绑定「${base.name}」", Toast.LENGTH_SHORT).show()
                         }
                     )
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-                    // 知识库列表
-                    knowledgeBases.forEach { base ->
-                        KnowledgeBaseOption(
-                            title = base.name,
-                            description = base.description ?: "使用 ${base.embeddingModelId} 模型",
-                            isSelected = assistant.knowledgeBaseId == base.id,
-                            onClick = {
-                                onUpdate(assistant.copy(knowledgeBaseId = base.id))
-                                Toast.makeText(context, "已绑定「${base.name}」", Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                    }
                 }
             }
         }
 
-        // 当前绑定状态
         if (assistant.knowledgeBaseId != null) {
             val boundBase = knowledgeBases.find { it.id == assistant.knowledgeBaseId }
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                )
+            AppSectionCard(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                title = "当前绑定状态"
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Text(
-                            text = "已绑定知识库",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    if (boundBase != null) {
-                        Text(
-                            text = boundBase.name,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = "Embedding 模型: ${boundBase.embeddingModelId}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        Text(
-                            text = "知识库不存在（可能已被删除）",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "已绑定知识库",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                if (boundBase != null) {
+                    Text(
+                        text = boundBase.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Embedding 模型: ${boundBase.embeddingModelId}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        text = "知识库不存在（可能已被删除）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         }
@@ -1026,46 +898,12 @@ private fun KnowledgeBaseOption(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    Card(
-        onClick = onClick,
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-            else
-                MaterialTheme.colorScheme.surfaceContainerLow
-        ),
-        modifier = Modifier.padding(vertical = 4.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            RadioButton(
-                selected = isSelected,
-                onClick = onClick
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (isSelected)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
+    AssistantSelectableRow(
+        title = title,
+        description = description,
+        selected = isSelected,
+        onClick = onClick
+    )
 }
 
 /**
@@ -1079,87 +917,32 @@ private fun RegexRulesTab(
 ) {
     val context = LocalContext.current
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = "选择要启用的正则规则，用于在流式输出时实时清理 AI 回复内容",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
+    AssistantTabColumn {
         if (regexRules.isEmpty()) {
-            // 空状态
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                )
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "暂无正则规则",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "请先在设置中添加正则规则",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
-            }
+            AppEmptyState(
+                icon = Icons.Default.Warning,
+                title = "暂无正则规则",
+                description = "先在设置中添加规则，再为当前助手选择需要启用的清洗策略。",
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
         } else {
-            regexRules.forEach { rule ->
-                val isEnabled = assistant.enabledRegexRuleIds.contains(rule.id)
+            AppSectionCard(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                title = "正则规则",
+                description = "用于在流式输出时实时清理回复内容，只保留当前助手真正需要的规则。"
+            ) {
+                regexRules.forEachIndexed { index, rule ->
+                    val isEnabled = assistant.enabledRegexRuleIds.contains(rule.id)
 
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = rule.name.ifEmpty { "未命名规则" },
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "模式: ${rule.pattern}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                    AssistantSettingRow(
+                        title = rule.name.ifEmpty { "未命名规则" },
+                        description = buildString {
+                            append("模式: ${rule.pattern}")
                             if (rule.description.isNotBlank()) {
-                                Text(
-                                    text = rule.description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                append(" · ${rule.description}")
                             }
                         }
+                    ) {
                         Switch(
                             checked = isEnabled,
                             onCheckedChange = { enabled ->
@@ -1177,17 +960,16 @@ private fun RegexRulesTab(
                             }
                         )
                     }
+
+                    if (index != regexRules.lastIndex) {
+                        HorizontalDivider()
+                    }
+                }
+
+                if (assistant.enabledRegexRuleIds.isNotEmpty()) {
+                    AppPill(text = "已启用 ${assistant.enabledRegexRuleIds.size} 个正则规则")
                 }
             }
-        }
-
-        if (assistant.enabledRegexRuleIds.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "已启用 ${assistant.enabledRegexRuleIds.size} 个正则规则",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
         }
     }
 }

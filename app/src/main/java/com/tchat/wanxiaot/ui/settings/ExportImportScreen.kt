@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,6 +16,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.composables.icons.lucide.*
 import com.tchat.wanxiaot.settings.ProviderConfig
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppIconTile
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionCard
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import com.tchat.wanxiaot.util.ExportDataType
 
 /**
@@ -28,26 +33,31 @@ fun ExportImportScreen(
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("导出/导入") },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                }
-            )
-        },
+    AppPageScaffold(
+        title = "导出/导入",
+        eyebrow = "Legacy Transfer",
+        subtitle = "旧版迁移入口也保持统一质感",
+        onBack = onBackClick,
         modifier = modifier
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            item {
+                AppHeroCard(
+                    title = "轻量迁移入口",
+                    description = "用于基础配置的导入导出，二维码与文件方式都可用。",
+                    eyebrow = "Fallback Flow",
+                    icon = Lucide.Archive
+                ) {
+                    AppPill(text = "Legacy")
+                }
+            }
+
             // 供应商配置
             item {
                 ExportImportSection(
@@ -106,94 +116,72 @@ private fun ExportImportSection(
     var showExportOptions by remember { mutableStateOf(false) }
     var showImportOptions by remember { mutableStateOf(false) }
 
-    ElevatedCard(
-        modifier = modifier.fillMaxWidth()
+    AppSectionCard(
+        modifier = modifier,
+        title = title,
+        description = description
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // 标题和图标
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium
+            AppIconTile(icon = icon)
+            AppPill(text = if (supportsQRCode) "文件 / 二维码" else "仅文件")
+        }
+
+        if (requiresEncryption) {
+            AppSectionSurface {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Lucide.ShieldAlert,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = description,
+                        text = "包含敏感信息，建议加密导出",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
+        }
 
-            if (requiresEncryption) {
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Row(
-                        modifier = Modifier.padding(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Lucide.ShieldAlert,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "包含敏感信息，建议加密导出",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
-                }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = { showExportOptions = true },
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Lucide.Download,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("导出")
             }
 
-            // 操作按钮
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Button(
+                onClick = { showImportOptions = true },
+                modifier = Modifier.weight(1f)
             ) {
-                // 导出按钮
-                OutlinedButton(
-                    onClick = { showExportOptions = true },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        imageVector = Lucide.Download,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("导出")
-                }
-
-                // 导入按钮
-                Button(
-                    onClick = { showImportOptions = true },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        imageVector = Lucide.Upload,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("导入")
-                }
+                Icon(
+                    imageVector = Lucide.Upload,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("导入")
             }
         }
     }

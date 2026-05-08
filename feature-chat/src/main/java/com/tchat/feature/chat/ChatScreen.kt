@@ -4,12 +4,15 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.speech.tts.TextToSpeech
-import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Psychology
@@ -21,7 +24,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.BrainCircuit
 import com.composables.icons.lucide.Lucide
@@ -33,9 +38,10 @@ import com.tchat.data.model.ChatToolbarItem
 import com.tchat.data.model.ChatToolbarSettings
 import com.tchat.data.model.MessagePart
 import com.tchat.data.tool.Tool
+import com.tchat.data.tts.TtsService
 import com.tchat.data.util.RegexRuleData
 import kotlinx.coroutines.launch
-import java.util.Locale
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,9 +84,9 @@ fun ChatScreen(
     deepResearchRunningText: String = "研究中",
     deepResearchInProgressText: String = "深度研究进行中..."
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val actualChatId by viewModel.actualChatId.collectAsState()
-    val errorMessage by viewModel.errorMessage.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val actualChatId by viewModel.actualChatId.collectAsStateWithLifecycle()
+    val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     var inputText by remember { mutableStateOf("") }
     var draftMediaParts by remember { mutableStateOf<List<MessagePart>>(emptyList()) }
 
@@ -89,26 +95,12 @@ fun ChatScreen(
 
     // Snackbar 状态
     val snackbarHostState = remember { SnackbarHostState() }
+    val messageListState = rememberLazyListState()
 
     // Coroutine scope
     val scope = rememberCoroutineScope()
-
-    // TTS 初始化
-    var tts by remember { mutableStateOf<TextToSpeech?>(null) }
-    var isTtsReady by remember { mutableStateOf(false) }
-
-    DisposableEffect(Unit) {
-        tts = TextToSpeech(context) { status ->
-            isTtsReady = status == TextToSpeech.SUCCESS
-            if (isTtsReady) {
-                tts?.language = Locale.getDefault()
-            }
-        }
-        onDispose {
-            tts?.stop()
-            tts?.shutdown()
-        }
-    }
+    var initialScrollChatKey by remember { mutableStateOf<String?>(null) }
+    val ttsService = remember(context) { TtsService.getInstance(context) }
 
     // 复制到剪贴板
     val onCopy: (String) -> Unit = { content ->
@@ -125,8 +117,8 @@ fun ChatScreen(
 
     // 朗读
     val onSpeak: (String) -> Unit = { content ->
-        if (isTtsReady) {
-            tts?.speak(content, TextToSpeech.QUEUE_FLUSH, null, null)
+        if (ttsService.isAvailable()) {
+            ttsService.speak(content)
         } else {
             scope.launch {
                 snackbarHostState.showSnackbar(
@@ -225,6 +217,7 @@ fun ChatScreen(
     LaunchedEffect(chatId, viewModel) {
         inputText = "" // 切换聊天时清空输入框，防止残留文本发送到错误聊天
         draftMediaParts = emptyList()
+        initialScrollChatKey = null
         viewModel.loadChat(chatId)
     }
 
@@ -243,12 +236,19 @@ fun ChatScreen(
         )
     }
 
-    // Chat 页面使用 adjustNothing，避免键盘弹出时整体布局被系统 resize 影响
-    SoftInputModeEffect(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+    // Chat 页面手动消费 IME inset，避免不同 OEM 对 resize 的行为不一致
+    SoftInputModeEffect(SoftInputAdjustNothing)
 
     Box(modifier = modifier.fillMaxSize()) {
-        var inputAreaHeightPx by remember { mutableIntStateOf(0) }
-        val inputAreaHeight = with(LocalDensity.current) { inputAreaHeightPx.toDp() }
+        ChatBackdrop(modifier = Modifier.matchParentSize())
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.ime.only(WindowInsetsSides.Bottom))
+        ) {
+
+            var inputAreaHeightPx by remember { mutableIntStateOf(0) }
+            val inputAreaHeight = with(LocalDensity.current) { inputAreaHeightPx.toDp() }
 
         when (val state = uiState) {
             is ChatUiState.Loading -> {
@@ -257,17 +257,51 @@ fun ChatScreen(
                 }
             }
             is ChatUiState.Success -> {
+                LaunchedEffect(actualChatId, chatId, state.messages.size, state.streamingMessage?.id) {
+                    val chatKey = actualChatId ?: chatId ?: return@LaunchedEffect
+                    if (initialScrollChatKey == chatKey) return@LaunchedEffect
+
+                    val targetIndex = state.messages.lastIndex + if (
+                        state.streamingMessage != null &&
+                        state.messages.none { it.id == state.streamingMessage.id }
+                    ) {
+                        1
+                    } else {
+                        0
+                    }
+
+                    if (targetIndex >= 0) {
+                        messageListState.scrollToItem(targetIndex)
+                        initialScrollChatKey = chatKey
+                    }
+                }
+
+                LaunchedEffect(actualChatId, chatId, state.hasMoreHistory, state.isLoadingHistory) {
+                    if (!state.hasMoreHistory) return@LaunchedEffect
+
+                    snapshotFlow { messageListState.firstVisibleItemIndex <= 2 }
+                        .distinctUntilChanged()
+                        .collect { isNearTop ->
+                            if (isNearTop && !state.isLoadingHistory) {
+                                viewModel.loadMoreHistory()
+                            }
+                        }
+                }
+
                 MessageList(
                     messages = state.messages,
+                    streamingMessage = state.streamingMessage,
+                    listState = messageListState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        start = 16.dp,
+                        start = 12.dp,
                         top = 16.dp,
-                        end = 16.dp,
-                        bottom = 16.dp + inputAreaHeight
+                        end = 12.dp,
+                        bottom = 18.dp + inputAreaHeight
                     ),
                     providerIcon = providerIcon,
                     modelName = currentModel,
+                    isLoadingHistory = state.isLoadingHistory,
                     onRegenerate = { userMessageId, aiMessageId ->
                         onRegenerateMessage(userMessageId, aiMessageId)
                     },
@@ -281,10 +315,9 @@ fun ChatScreen(
                 )
 
                 // 输入区域（工具栏 + 输入框），固定在底部并跟随 IME 上移
-                Column(
+                ChatComposerDock(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .imePadding()
                         .onSizeChanged { inputAreaHeightPx = it.height }
                 ) {
                     // 深度研究进度提示
@@ -362,13 +395,13 @@ fun ChatScreen(
             }
         }
 
-        // Snackbar 显示在底部
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .imePadding()
-        )
+            // Snackbar 显示在底部
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+            )
+        }
     }
 }
 
@@ -400,7 +433,8 @@ internal fun InputToolbar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 10.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -409,171 +443,183 @@ internal fun InputToolbar(
 
             when (config.item) {
                 ChatToolbarItem.MODEL -> {
-                        if (availableModels.isNotEmpty()) {
-                            Box {
-                                Surface(
-                                    onClick = { modelMenuExpanded = true },
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    shape = MaterialTheme.shapes.small,
-                                    tonalElevation = 0.dp
-                                ) {
-                                    Box(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = getModelLucideIcon(currentModel),
-                                            contentDescription = currentModel.takeIf { it.isNotBlank() },
-                                            modifier = Modifier.size(18.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
+                    if (availableModels.isNotEmpty()) {
+                        Box {
+                            ToolbarChip(
+                                onClick = { modelMenuExpanded = true },
+                                label = getModelDisplayName(currentModel.ifBlank { "选择模型" }),
+                                accentColor = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.widthIn(max = 172.dp)
+                            ) {
+                                Icon(
+                                    imageVector = getModelLucideIcon(currentModel),
+                                    contentDescription = currentModel.takeIf { it.isNotBlank() },
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
 
-                                DropdownMenu(
-                                    expanded = modelMenuExpanded,
-                                    onDismissRequest = { modelMenuExpanded = false }
-                                ) {
-                                    availableModels.forEach { model ->
-                                        DropdownMenuItem(
-                                            text = {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = getModelLucideIcon(model),
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(20.dp),
-                                                        tint = if (model == currentModel)
-                                                            MaterialTheme.colorScheme.primary
-                                                        else
-                                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                    Text(
-                                                        text = model,
-                                                        color = if (model == currentModel)
-                                                            MaterialTheme.colorScheme.primary
-                                                        else
-                                                            MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                }
-                                            },
-                                            onClick = {
-                                                onModelSelected(model)
-                                                modelMenuExpanded = false
+                            DropdownMenu(
+                                expanded = modelMenuExpanded,
+                                onDismissRequest = { modelMenuExpanded = false }
+                            ) {
+                                availableModels.forEach { model ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = getModelLucideIcon(model),
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(20.dp),
+                                                    tint = if (model == currentModel)
+                                                        MaterialTheme.colorScheme.primary
+                                                    else
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Text(
+                                                    text = model,
+                                                    color = if (model == currentModel)
+                                                        MaterialTheme.colorScheme.primary
+                                                    else
+                                                        MaterialTheme.colorScheme.onSurface
+                                                )
                                             }
-                                        )
-                                    }
+                                        },
+                                        onClick = {
+                                            onModelSelected(model)
+                                            modelMenuExpanded = false
+                                        }
+                                    )
                                 }
                             }
                         }
                     }
+                }
 
                 ChatToolbarItem.DEEP_RESEARCH -> {
-                        if (onDeepResearch != null) {
-                            Surface(
-                                onClick = { onDeepResearch() },
-                                color = if (isDeepResearching)
-                                    MaterialTheme.colorScheme.tertiaryContainer
-                                else
-                                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shape = MaterialTheme.shapes.small,
-                                tonalElevation = 0.dp
-                            ) {
-                                Box(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (isDeepResearching) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp),
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.onTertiaryContainer
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Default.Psychology,
-                                            contentDescription = deepResearchText,
-                                            modifier = Modifier.size(18.dp),
-                                            tint = MaterialTheme.colorScheme.tertiary
-                                        )
-                                    }
-                                }
+                    if (onDeepResearch != null) {
+                        ToolbarChip(
+                            onClick = { onDeepResearch() },
+                            label = if (isDeepResearching) deepResearchRunningText else deepResearchText,
+                            accentColor = MaterialTheme.colorScheme.tertiary,
+                            active = isDeepResearching
+                        ) {
+                            if (isDeepResearching) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Psychology,
+                                    contentDescription = deepResearchText,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.tertiary
+                                )
                             }
                         }
                     }
+                }
 
                 ChatToolbarItem.TOOLS -> {
-                        Surface(
-                            onClick = onToolsClick,
-                            color = if (enabledToolsCount > 0)
-                                MaterialTheme.colorScheme.primaryContainer
-                            else
-                                MaterialTheme.colorScheme.surfaceContainerHigh,
-                            shape = MaterialTheme.shapes.small,
-                            tonalElevation = 0.dp
-                        ) {
-                            Box(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                val badgeText = when {
-                                    enabledToolsCount <= 0 -> null
-                                    enabledToolsCount <= 9 -> enabledToolsCount.toString()
-                                    else -> "9+"
-                                }
-
-                                if (badgeText != null) {
-                                    BadgedBox(
-                                        badge = {
-                                            Badge {
-                                                Text(badgeText)
-                                            }
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = Lucide.Wrench,
-                                            contentDescription = toolsWithCountFormat.format(enabledToolsCount),
-                                            modifier = Modifier.size(18.dp),
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                    }
-                                } else {
-                                    Icon(
-                                        imageVector = Lucide.Wrench,
-                                        contentDescription = toolsText,
-                                        modifier = Modifier.size(18.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+                    ToolbarChip(
+                        onClick = onToolsClick,
+                        label = if (enabledToolsCount > 0) {
+                            "$toolsText · $enabledToolsCount"
+                        } else {
+                            toolsText
+                        },
+                        accentColor = MaterialTheme.colorScheme.primary,
+                        active = enabledToolsCount > 0
+                    ) {
+                        Icon(
+                            imageVector = Lucide.Wrench,
+                            contentDescription = if (enabledToolsCount > 0) {
+                                toolsWithCountFormat.format(enabledToolsCount)
+                            } else {
+                                toolsText
+                            },
+                            modifier = Modifier.size(16.dp),
+                            tint = if (enabledToolsCount > 0) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
                             }
-                        }
+                        )
                     }
+                }
 
                 ChatToolbarItem.JUNGLE_HELPER -> {
-                        if (onJungleHelperClick != null) {
-                            Surface(
-                                onClick = onJungleHelperClick,
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shape = MaterialTheme.shapes.small,
-                                tonalElevation = 0.dp
-                            ) {
-                                Box(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Lucide.Swords,
-                                        contentDescription = "打野助手",
-                                        modifier = Modifier.size(18.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+                    if (onJungleHelperClick != null) {
+                        ToolbarChip(
+                            onClick = onJungleHelperClick,
+                            label = "打野助手",
+                            accentColor = MaterialTheme.colorScheme.secondary
+                        ) {
+                            Icon(
+                                imageVector = Lucide.Swords,
+                                contentDescription = "打野助手",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.secondary
+                            )
                         }
                     }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun ToolbarChip(
+    onClick: () -> Unit,
+    label: String,
+    accentColor: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier,
+    active: Boolean = false,
+    leadingContent: @Composable RowScope.() -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = if (active) {
+            colorScheme.primaryContainer.copy(alpha = 0.34f)
+        } else {
+            colorScheme.surface.copy(alpha = 0.68f)
+        },
+        border = BorderStroke(
+            1.dp,
+            if (active) accentColor.copy(alpha = 0.24f) else colorScheme.outlineVariant.copy(alpha = 0.48f)
+        ),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            leadingContent()
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -605,8 +651,8 @@ internal fun getModelLucideIcon(model: String): ImageVector {
  */
 internal fun getModelDisplayName(model: String): String {
     return when {
-        model.length <= 20 -> model
-        else -> model.take(18) + "..."
+        model.length <= 16 -> model
+        else -> model.take(14) + "..."
     }
 }
 
@@ -618,15 +664,19 @@ private fun DeepResearchIndicator(
     text: String = "深度研究进行中..."
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.primaryContainer,
-        tonalElevation = 2.dp
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.64f),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+        tonalElevation = 0.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 2.dp)
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             CircularProgressIndicator(
                 modifier = Modifier.size(16.dp),

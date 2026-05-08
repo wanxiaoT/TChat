@@ -15,7 +15,7 @@ import org.json.JSONObject
 class KnowledgeSearchTool(
     private val knowledgeService: KnowledgeService,
     private val repository: KnowledgeRepository,
-    private val getEmbeddingProvider: (knowledgeBaseId: String) -> EmbeddingProvider?,
+    private val getEmbeddingProvider: suspend (knowledgeBaseId: String) -> EmbeddingProvider?,
     private val knowledgeBaseId: String
 ) {
     /**
@@ -43,42 +43,30 @@ class KnowledgeSearchTool(
             execute = { args ->
                 val query = args.optString("query", "")
                 val topK = args.optInt("top_k", 5)
-                
-                println("=== 知识库搜索工具执行 ===")
-                println("查询: $query")
-                println("知识库ID: $knowledgeBaseId")
-                
+
                 JSONObject().apply {
                     if (query.isBlank()) {
                         put("success", false)
                         put("error", "查询内容不能为空")
-                        println("错误: 查询内容为空")
                     } else {
                         try {
                             // 获取知识库配置的 Embedding Provider
-                            println("正在获取 Embedding Provider...")
                             val embeddingProvider = getEmbeddingProvider(knowledgeBaseId)
                             if (embeddingProvider == null) {
                                 put("success", false)
                                 put("error", "无法获取知识库的Embedding提供商，请检查知识库配置")
-                                println("错误: Embedding Provider 为 null")
                                 return@apply
                             }
-                            println("Embedding Provider 获取成功")
-                            
+
                             // 获取知识库信息
-                            println("正在获取知识库信息...")
                             val base = repository.getBaseById(knowledgeBaseId)
                             if (base == null) {
                                 put("success", false)
                                 put("error", "知识库不存在")
-                                println("错误: 知识库不存在")
                                 return@apply
                             }
-                            println("知识库: ${base.name}, 模型: ${base.embeddingModelId}")
-                            
+
                             // 执行搜索
-                            println("正在执行搜索...")
                             val results = knowledgeService.search(
                                 baseId = knowledgeBaseId,
                                 query = query,
@@ -86,8 +74,7 @@ class KnowledgeSearchTool(
                                 embeddingModel = base.embeddingModelId,
                                 topK = topK
                             )
-                            println("搜索完成，结果数量: ${results.size}")
-                            
+
                             if (results.isEmpty()) {
                                 put("success", true)
                                 put("message", "未找到相关内容")
@@ -105,12 +92,9 @@ class KnowledgeSearchTool(
                                 })
                                 put("count", results.size)
                             }
-                            println("=== 知识库搜索完成 ===")
                         } catch (e: Exception) {
                             put("success", false)
                             put("error", "搜索失败: ${e.message}")
-                            println("异常: ${e.message}")
-                            e.printStackTrace()
                         }
                     }
                 }
@@ -130,7 +114,7 @@ class KnowledgeSearchTool(
         fun create(
             knowledgeService: KnowledgeService,
             repository: KnowledgeRepository,
-            getEmbeddingProvider: (knowledgeBaseId: String) -> EmbeddingProvider?,
+            getEmbeddingProvider: suspend (knowledgeBaseId: String) -> EmbeddingProvider?,
             knowledgeBaseId: String
         ): Tool {
             return KnowledgeSearchTool(

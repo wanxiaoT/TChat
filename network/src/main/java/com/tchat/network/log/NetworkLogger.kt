@@ -1,5 +1,6 @@
 package com.tchat.network.log
 
+import com.tchat.network.BuildConfig
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.CopyOnWriteArrayList
@@ -47,11 +48,17 @@ enum class NetworkLogStatus {
  * 用于记录所有 AI API 的请求和响应信息
  */
 object NetworkLogger {
-    private val logs = CopyOnWriteArrayList<NetworkLogEntry>()
+    private const val INVALID_REQUEST_ID = -1L
     private const val MAX_LOGS = 100
+    private const val MAX_BODY_CHARS = 4096
 
-    // 日志变化监听器
-    private val listeners = mutableListOf<() -> Unit>()
+    private val logs = CopyOnWriteArrayList<NetworkLogEntry>()
+    private val listeners = CopyOnWriteArrayList<() -> Unit>()
+
+    @Volatile
+    private var enabledOverrideForTests: Boolean? = null
+
+    private fun isEnabled(): Boolean = enabledOverrideForTests ?: BuildConfig.DEBUG
 
     /**
      * 记录新的请求
@@ -63,12 +70,14 @@ object NetworkLogger {
         headers: Map<String, String>,
         body: String
     ): Long {
+        if (!isEnabled()) return INVALID_REQUEST_ID
+
         val entry = NetworkLogEntry(
             provider = provider,
             model = model,
             url = url,
             requestHeaders = headers,
-            requestBody = body
+            requestBody = truncateBody(body)
         )
         addLog(entry)
         return entry.id
@@ -84,12 +93,14 @@ object NetworkLogger {
         responseBody: String,
         durationMs: Long
     ) {
+        if (!isEnabled() || requestId == INVALID_REQUEST_ID) return
+
         val index = logs.indexOfFirst { it.id == requestId }
         if (index >= 0) {
             val updated = logs[index].copy(
                 responseCode = responseCode,
                 responseHeaders = responseHeaders,
-                responseBody = responseBody,
+                responseBody = truncateBody(responseBody),
                 durationMs = durationMs,
                 status = if (responseCode in 200..299) NetworkLogStatus.SUCCESS else NetworkLogStatus.ERROR
             )
@@ -106,6 +117,8 @@ object NetworkLogger {
         error: String,
         durationMs: Long
     ) {
+        if (!isEnabled() || requestId == INVALID_REQUEST_ID) return
+
         val index = logs.indexOfFirst { it.id == requestId }
         if (index >= 0) {
             val updated = logs[index].copy(
@@ -122,6 +135,7 @@ object NetworkLogger {
      * 获取所有日志（按时间倒序）
      */
     fun getLogs(): List<NetworkLogEntry> {
+        if (!isEnabled()) return emptyList()
         return logs.sortedByDescending { it.timestamp }
     }
 
@@ -131,6 +145,16 @@ object NetworkLogger {
     fun clear() {
         logs.clear()
         notifyListeners()
+    }
+
+    /**
+     * 测试时允许强制开启/关闭日志。
+     */
+    fun setEnabledForTests(enabled: Boolean?) {
+        enabledOverrideForTests = enabled
+        if (enabled != true) {
+            clear()
+        }
     }
 
     /**
@@ -158,5 +182,18 @@ object NetworkLogger {
 
     private fun notifyListeners() {
         listeners.forEach { it.invoke() }
+    }
+
+    private fun truncateBody(body: String): String {
+        val value = body
+        if (value.length <= MAX_BODY_CHARS) return value
+
+        val omitted = value.length - MAX_BODY_CHARS
+        return buildString(MAX_BODY_CHARS + 64) {
+            append(value.take(MAX_BODY_CHARS))
+            append("\n…[truncated ")
+            append(omitted)
+            append(" chars]")
+        }
     }
 }

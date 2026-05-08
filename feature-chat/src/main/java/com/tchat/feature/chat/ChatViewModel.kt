@@ -36,48 +36,53 @@ class ChatViewModel(
     private val _actualChatId = MutableStateFlow<String?>(null)
     val actualChatId: StateFlow<String?> = _actualChatId.asStateFlow()
 
-    // 数据库中的消息
-    private val _dbMessages = MutableStateFlow<List<Message>>(emptyList())
+    private val _historyMessages = MutableStateFlow<List<Message>>(emptyList())
+    private val _streamingMessage = MutableStateFlow<Message?>(null)
+    private val _isLoadingHistory = MutableStateFlow(false)
+    private val _hasMoreHistory = MutableStateFlow(false)
 
     // 当前聊天配置（包含工具、系统提示等）
     private val _chatConfig = MutableStateFlow<ChatConfig?>(null)
     val chatConfig: StateFlow<ChatConfig?> = _chatConfig.asStateFlow()
 
     private var currentChatId: String? = null
+    private var olderMessages: List<Message> = emptyList()
+    private var recentMessages: List<Message> = emptyList()
 
     // Flow订阅的Job
     private var chatLoadJob: Job? = null
     private var messagesLoadJob: Job? = null
     private var streamingObserveJob: Job? = null
-
-    // 缓存最后的流式消息（用于保留 toolResults）
-    private val lastStreamingMessages = mutableMapOf<String, Message>()
+    private var uiStateObserveJob: Job? = null
 
     init {
-        // 观察流式消息变化，合并到 UI 状态
+        uiStateObserveJob = viewModelScope.launch {
+            combine(
+                _historyMessages,
+                _streamingMessage,
+                _isLoadingHistory,
+                _hasMoreHistory
+            ) { messages, streamingMessage, isLoadingHistory, hasMoreHistory ->
+                ChatUiState.Success(
+                    messages = messages,
+                    streamingMessage = streamingMessage,
+                    isLoadingHistory = isLoadingHistory,
+                    hasMoreHistory = hasMoreHistory
+                )
+            }.collect { state ->
+                _uiState.value = state
+            }
+        }
+
+        // 观察流式消息变化，只更新尾消息状态
         streamingObserveJob = viewModelScope.launch {
             combine(
-                _dbMessages,
+                _actualChatId,
                 messageSender.streamingMessages
-            ) { dbMessages, streamingMap ->
-                val chatId = currentChatId ?: _actualChatId.value
-                val streamingMessage = chatId?.let { streamingMap[it] }
-
-                if (streamingMessage != null) {
-                    // 合并数据库消息和流式消息
-                    val merged = dbMessages.toMutableList()
-                    val existingIndex = merged.indexOfFirst { it.id == streamingMessage.id }
-                    if (existingIndex >= 0) {
-                        merged[existingIndex] = streamingMessage
-                    } else {
-                        merged.add(streamingMessage)
-                    }
-                    merged
-                } else {
-                    dbMessages
-                }
-            }.collect { messages ->
-                _uiState.value = ChatUiState.Success(messages)
+            ) { chatId, streamingMap ->
+                chatId?.let(streamingMap::get)
+            }.collect { message ->
+                _streamingMessage.value = message
             }
         }
 
@@ -101,7 +106,7 @@ class ChatViewModel(
      */
     fun setChatConfig(config: ChatConfig?) {
         _chatConfig.value = config
-        messageSender.setConfig(config)
+        messageSender.setConfig(currentChatId ?: _actualChatId.value, config)
     }
 
     /**
@@ -143,25 +148,11 @@ class ChatViewModel(
         if (chatId == null) {
             _actualChatId.value = null
             _currentChat.value = null
-            _dbMessages.value = emptyList()
+            resetMessageState()
             return
         }
 
-        _actualChatId.value = chatId
-
-        chatLoadJob = viewModelScope.launch {
-            // 加载聊天信息
-            repository.getChatById(chatId).collect { chat ->
-                _currentChat.value = chat
-            }
-        }
-
-        messagesLoadJob = viewModelScope.launch {
-            // 从数据库加载消息
-            repository.getMessagesByChatId(chatId).collect { messages ->
-                _dbMessages.value = messages
-            }
-        }
+        attachChat(chatId)
     }
 
     /**
@@ -174,16 +165,7 @@ class ChatViewModel(
             messageSender.sendMessageToNewChat(content, _chatConfig.value, mediaParts) { newChatId ->
                 // 聊天创建后，更新 ID
                 if (_actualChatId.value == null) {
-                    _actualChatId.value = newChatId
-                    currentChatId = newChatId
-
-                    // 开始监听新聊天的消息
-                    messagesLoadJob?.cancel()
-                    messagesLoadJob = viewModelScope.launch {
-                        repository.getMessagesByChatId(newChatId).collect { messages ->
-                            _dbMessages.value = messages
-                        }
-                    }
+                    attachChat(newChatId)
                 }
             }
         } else {
@@ -199,19 +181,38 @@ class ChatViewModel(
         if (chatId == null) {
             messageSender.generateImageToNewChat(prompt, _chatConfig.value) { newChatId ->
                 if (_actualChatId.value == null) {
-                    _actualChatId.value = newChatId
-                    currentChatId = newChatId
-
-                    messagesLoadJob?.cancel()
-                    messagesLoadJob = viewModelScope.launch {
-                        repository.getMessagesByChatId(newChatId).collect { messages ->
-                            _dbMessages.value = messages
-                        }
-                    }
+                    attachChat(newChatId)
                 }
             }
         } else {
             messageSender.generateImage(chatId, prompt, _chatConfig.value)
+        }
+    }
+
+    fun loadMoreHistory() {
+        val chatId = currentChatId ?: _actualChatId.value ?: return
+        if (_isLoadingHistory.value || !_hasMoreHistory.value) return
+
+        val beforeTimestamp = _historyMessages.value.firstOrNull()?.timestamp ?: return
+
+        viewModelScope.launch {
+            _isLoadingHistory.value = true
+            try {
+                val olderPage = repository.getMessagesBefore(chatId, beforeTimestamp, PAGE_SIZE)
+                if (currentChatId != chatId && _actualChatId.value != chatId) {
+                    return@launch
+                }
+
+                if (olderPage.isNotEmpty()) {
+                    olderMessages = olderPage + olderMessages
+                    publishHistoryMessages()
+                }
+                _hasMoreHistory.value = olderPage.size >= PAGE_SIZE
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "加载历史消息失败"
+            } finally {
+                _isLoadingHistory.value = false
+            }
         }
     }
 
@@ -268,6 +269,62 @@ class ChatViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        chatLoadJob?.cancel()
+        messagesLoadJob?.cancel()
         streamingObserveJob?.cancel()
+        uiStateObserveJob?.cancel()
+    }
+
+    private fun attachChat(chatId: String) {
+        currentChatId = chatId
+        _actualChatId.value = chatId
+        messageSender.setConfig(chatId, _chatConfig.value)
+        resetMessageState()
+
+        chatLoadJob?.cancel()
+        chatLoadJob = viewModelScope.launch {
+            repository.getChatById(chatId).collect { chat ->
+                _currentChat.value = chat
+            }
+        }
+
+        messagesLoadJob?.cancel()
+        messagesLoadJob = viewModelScope.launch {
+            repository.observeRecentMessages(chatId, PAGE_SIZE).collect { messages ->
+                if (currentChatId != chatId && _actualChatId.value != chatId) {
+                    return@collect
+                }
+
+                recentMessages = messages
+                if (olderMessages.isEmpty()) {
+                    _hasMoreHistory.value = messages.size >= PAGE_SIZE
+                }
+                publishHistoryMessages()
+            }
+        }
+    }
+
+    private fun publishHistoryMessages() {
+        _historyMessages.value = if (olderMessages.isEmpty()) {
+            recentMessages
+        } else {
+            buildList(olderMessages.size + recentMessages.size) {
+                addAll(olderMessages)
+                addAll(recentMessages)
+            }
+        }
+    }
+
+    private fun resetMessageState() {
+        olderMessages = emptyList()
+        recentMessages = emptyList()
+        _historyMessages.value = emptyList()
+        _streamingMessage.value = null
+        _isLoadingHistory.value = false
+        _hasMoreHistory.value = false
+    }
+
+    private companion object {
+        const val PAGE_SIZE = 100
     }
 }

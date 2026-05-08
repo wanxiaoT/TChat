@@ -1,9 +1,11 @@
 package com.tchat.wanxiaot.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -25,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.tchat.data.model.Chat
 import com.tchat.data.model.GroupChat
 import com.tchat.wanxiaot.settings.ProviderConfig
+import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Users
 import java.text.SimpleDateFormat
@@ -83,21 +86,23 @@ fun DrawerContent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(12.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 顶部搜索框 - Material You 风格
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 8.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = MaterialTheme.shapes.extraLarge,
-            tonalElevation = 0.dp
+                .padding(horizontal = 2.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(22.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                    .padding(start = 16.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -162,25 +167,17 @@ fun DrawerContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 聊天历史列表
         LazyColumn(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(vertical = 2.dp)
         ) {
-            // 群聊分组
             if (filteredGroupChats.isNotEmpty()) {
                 item {
-                    Text(
-                        text = "群聊",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                    )
+                    DrawerSectionLabel(text = "群聊")
                 }
 
-                items(filteredGroupChats) { groupChat ->
+                items(filteredGroupChats, key = { it.id }) { groupChat ->
                     GroupChatHistoryItem(
                         groupChat = groupChat,
                         isSelected = groupChat.id == currentGroupChatId,
@@ -189,28 +186,20 @@ fun DrawerContent(
                 }
 
                 item {
-                    Spacer(modifier = Modifier.height(8.dp))
                     HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp)
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f),
+                        modifier = Modifier.padding(horizontal = 12.dp)
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
 
-            // 单聊分组
             if (filteredChats.isNotEmpty()) {
                 item {
-                    Text(
-                        text = "单聊",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                    )
+                    DrawerSectionLabel(text = "单聊")
                 }
             }
 
-            items(filteredChats) { chat ->
+            items(filteredChats, key = { it.id }) { chat ->
                 ChatHistoryItem(
                     chat = chat,
                     isSelected = chat.id == currentChatId && currentGroupChatId == null,
@@ -220,27 +209,19 @@ fun DrawerContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 当前服务商 - 可点击的胶囊按钮
         Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .clickable { showProviderDialog = true },
-            color = MaterialTheme.colorScheme.primaryContainer,
-            shape = RoundedCornerShape(24.dp),
-            tonalElevation = 2.dp
+            onClick = { showProviderDialog = true },
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -248,12 +229,12 @@ fun DrawerContent(
                     Text(
                         text = "当前服务商",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         text = currentProviderName,
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -261,28 +242,69 @@ fun DrawerContent(
                 Icon(
                     Icons.Outlined.SwapHoriz,
                     contentDescription = "切换服务商",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 设置按钮 - 使用 NavigationDrawerItem 风格
-        NavigationDrawerItem(
-            icon = {
-                Icon(
-                    Icons.Outlined.Settings,
-                    contentDescription = null
-                )
-            },
-            label = { Text("设置") },
-            selected = false,
+        Surface(
             onClick = onSettingsClick,
-            modifier = Modifier.padding(horizontal = 4.dp)
-        )
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
+            tonalElevation = 0.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f),
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Outlined.Settings,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "设置",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "管理模型、显示、日志与扩展功能",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
+}
+
+@Composable
+private fun DrawerSectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+    )
 }
 
 /**
@@ -351,7 +373,7 @@ fun ProviderSelectionSheet(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(providers) { provider ->
+                    items(providers, key = { it.id }) { provider ->
                         ProviderSelectionItem(
                             provider = provider,
                             isSelected = provider.id == currentProviderId,
@@ -374,22 +396,29 @@ fun ProviderSelectionItem(
     onClick: () -> Unit
 ) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick),
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
         color = if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.24f)
         } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
+            MaterialTheme.colorScheme.surface
         },
         shape = MaterialTheme.shapes.medium,
-        tonalElevation = if (isSelected) 2.dp else 0.dp
+        border = BorderStroke(
+            1.dp,
+            if (isSelected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+            } else {
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)
+            }
+        ),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -398,7 +427,7 @@ fun ProviderSelectionItem(
                     text = provider.name.ifEmpty { provider.providerType.displayName },
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (isSelected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
+                        MaterialTheme.colorScheme.onSurface
                     } else {
                         MaterialTheme.colorScheme.onSurface
                     },
@@ -409,7 +438,7 @@ fun ProviderSelectionItem(
                     text = provider.selectedModel.ifEmpty { "未选择模型" },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isSelected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        MaterialTheme.colorScheme.onSurfaceVariant
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
@@ -421,7 +450,7 @@ fun ProviderSelectionItem(
                 Icon(
                     Icons.Outlined.Check,
                     contentDescription = "已选中",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -439,79 +468,24 @@ fun GroupChatHistoryItem(
 ) {
     val dateFormat = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
 
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp)
-            .clip(MaterialTheme.shapes.large)
-            .clickable(onClick = onClick),
-        color = if (isSelected) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
-        },
-        shape = MaterialTheme.shapes.large,
-        tonalElevation = if (isSelected) 2.dp else 0.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // 群聊图标容器
-            Surface(
-                shape = MaterialTheme.shapes.medium,
-                color = if (isSelected) {
-                    MaterialTheme.colorScheme.secondary
+    DrawerConversationCard(
+        title = groupChat.name.ifEmpty { "未命名群聊" },
+        subtitle = "${groupChat.memberIds.size} 位成员 • ${dateFormat.format(Date(groupChat.updatedAt))}",
+        isSelected = isSelected,
+        onClick = onClick,
+        leadingIcon = {
+            Icon(
+                imageVector = Lucide.Users,
+                contentDescription = null,
+                tint = if (isSelected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
                 } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh
+                    MaterialTheme.colorScheme.onSurfaceVariant
                 },
-                modifier = Modifier.size(40.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                    Icon(
-                        imageVector = Lucide.Users,
-                        contentDescription = null,
-                        tint = if (isSelected) {
-                            MaterialTheme.colorScheme.onSecondary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-
-            // 文字内容
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = groupChat.name.ifEmpty { "未命名群聊" },
-                    style = MaterialTheme.typography.titleSmall,
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "${groupChat.memberIds.size} 位成员 • ${dateFormat.format(Date(groupChat.updatedAt))}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+                modifier = Modifier.size(20.dp)
+            )
         }
-    }
+    )
 }
 
 @Composable
@@ -523,67 +497,125 @@ fun ChatHistoryItem(
 ) {
     val dateFormat = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
 
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp)
-            .clip(MaterialTheme.shapes.large)
-            .clickable(onClick = onClick),
-        color = if (isSelected) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
+    DrawerConversationCard(
+        title = chat.title,
+        subtitle = dateFormat.format(Date(chat.updatedAt)),
+        isSelected = isSelected,
+        onClick = onClick,
+        leadingIcon = {
+            Icon(
+                imageVector = Lucide.Bot,
+                contentDescription = null,
+                tint = if (isSelected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(20.dp)
+            )
         },
-        shape = MaterialTheme.shapes.large,
-        tonalElevation = if (isSelected) 2.dp else 0.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 文字内容
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = chat.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = dateFormat.format(Date(chat.updatedAt)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-            }
-
-            // 删除按钮
+        trailingContent = {
             IconButton(
                 onClick = onDelete,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(34.dp)
             ) {
                 Icon(
                     Icons.Default.Delete,
                     contentDescription = "删除",
                     modifier = Modifier.size(18.dp),
                     tint = if (isSelected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.72f)
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     }
                 )
             }
+        }
+    )
+}
+
+@Composable
+private fun DrawerConversationCard(
+    title: String,
+    subtitle: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    leadingIcon: @Composable () -> Unit,
+    trailingContent: @Composable (() -> Unit)? = null
+) {
+    val containerColor = if (isSelected) {
+        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.22f)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val borderColor = if (isSelected) {
+        MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f)
+    } else {
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)
+    }
+    val titleColor = if (isSelected) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val subtitleColor = if (isSelected) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        color = containerColor,
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, borderColor),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = if (isSelected) {
+                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.10f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f)
+                },
+                modifier = Modifier.size(38.dp)
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    leadingIcon()
+                }
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title.ifBlank { "未命名会话" },
+                    style = MaterialTheme.typography.titleSmall,
+                    color = titleColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = subtitleColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            trailingContent?.invoke()
         }
     }
 }

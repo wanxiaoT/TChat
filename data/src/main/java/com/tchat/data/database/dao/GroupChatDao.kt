@@ -72,6 +72,16 @@ interface GroupChatDao {
     @Query("UPDATE group_chats SET updatedAt = :updatedAt WHERE id = :groupId")
     suspend fun updateLastActiveTime(groupId: String, updatedAt: Long = System.currentTimeMillis())
 
+    /**
+     * 更新群聊绑定的实际会话ID
+     */
+    @Query("UPDATE group_chats SET activeChatId = :activeChatId, updatedAt = :updatedAt WHERE id = :groupId")
+    suspend fun updateActiveChatId(
+        groupId: String,
+        activeChatId: String?,
+        updatedAt: Long = System.currentTimeMillis()
+    )
+
     // ============= 群聊成员操作 =============
 
     /**

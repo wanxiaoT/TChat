@@ -16,6 +16,34 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE chatId = :chatId ORDER BY timestamp ASC")
     suspend fun getMessagesByChatIdOnce(chatId: String): List<MessageEntity>
 
+    @Query(
+        """
+        SELECT * FROM (
+            SELECT * FROM messages
+            WHERE chatId = :chatId
+            ORDER BY timestamp DESC
+            LIMIT :limit
+        ) ORDER BY timestamp ASC
+        """
+    )
+    fun observeRecentMessages(chatId: String, limit: Int): Flow<List<MessageEntity>>
+
+    @Query(
+        """
+        SELECT * FROM (
+            SELECT * FROM messages
+            WHERE chatId = :chatId AND timestamp < :beforeTimestamp
+            ORDER BY timestamp DESC
+            LIMIT :limit
+        ) ORDER BY timestamp ASC
+        """
+    )
+    suspend fun getMessagesBefore(
+        chatId: String,
+        beforeTimestamp: Long,
+        limit: Int
+    ): List<MessageEntity>
+
     @Query("SELECT * FROM messages WHERE id = :messageId")
     suspend fun getMessageById(messageId: String): MessageEntity?
 

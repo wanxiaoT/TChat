@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
@@ -29,31 +28,27 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -76,6 +71,12 @@ import com.tchat.data.database.entity.KnowledgeItemType
 import com.tchat.data.database.entity.ProcessingStatus
 import com.tchat.data.knowledge.FileLoader
 import com.tchat.data.service.KnowledgeService
+import com.tchat.wanxiaot.ui.components.AppEmptyState
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.AppSheetSurface
 import java.io.File
 
 /**
@@ -90,10 +91,10 @@ fun KnowledgeDetailScreen(
     showTopBar: Boolean = true
 ) {
     val context = LocalContext.current
-    val knowledgeBases by viewModel.knowledgeBases.collectAsState()
-    val items by viewModel.currentItems.collectAsState()
-    val isProcessing by viewModel.isProcessing.collectAsState()
-    val searchResults by viewModel.searchResults.collectAsState()
+    val knowledgeBases by viewModel.knowledgeBases.collectAsStateWithLifecycle()
+    val items by viewModel.currentItems.collectAsStateWithLifecycle()
+    val isProcessing by viewModel.isProcessing.collectAsStateWithLifecycle()
+    val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
 
     val base = remember(knowledgeBases, baseId) {
         knowledgeBases.find { it.id == baseId }
@@ -158,68 +159,42 @@ fun KnowledgeDetailScreen(
         items.count { it.getProcessingStatus() == ProcessingStatus.PENDING }
     }
 
-    Scaffold(
-        topBar = {
-            if (showTopBar) {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(
-                                text = base.name,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (items.isNotEmpty()) {
-                                Text(
-                                    text = "${items.size} 个条目",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回"
-                            )
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { showSearchSheet = true }) {
-                            Icon(Icons.Default.Search, contentDescription = "搜索")
-                        }
-                        if (pendingCount > 0) {
-                            TextButton(
-                                onClick = { viewModel.processAllPending(baseId) },
-                                enabled = !isProcessing
-                            ) {
-                                if (isProcessing) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(16.dp),
-                                        strokeWidth = 2.dp
-                                    )
-                                } else {
-                                    Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(16.dp))
-                                }
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("处理 ($pendingCount)")
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
+    AppPageScaffold(
+        title = base.name,
+        eyebrow = "Knowledge Base",
+        subtitle = "${items.size} 个条目",
+        showTopBar = showTopBar,
+        onBack = onBack,
+        actions = {
+            IconButton(onClick = { showSearchSheet = true }) {
+                Icon(Icons.Default.Search, contentDescription = "搜索")
+            }
+            if (pendingCount > 0) {
+                TextButton(
+                    onClick = { viewModel.processAllPending(baseId) },
+                    enabled = !isProcessing
+                ) {
+                    if (isProcessing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(16.dp))
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("处理 ($pendingCount)")
+                }
             }
         },
         floatingActionButton = {
             Box {
-                FloatingActionButton(
+                ExtendedFloatingActionButton(
                     onClick = { showAddMenu = true }
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "添加")
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("添加条目")
                 }
                 DropdownMenu(
                     expanded = showAddMenu,
@@ -251,54 +226,62 @@ fun KnowledgeDetailScreen(
                     )
                 }
             }
-        },
-        containerColor = MaterialTheme.colorScheme.surface
+        }
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            AppHeroCard(
+                eyebrow = "Retrieval Flow",
+                title = "把文件、笔记和网页整理成稳定检索层",
+                description = "条目越清晰，后续切分、向量化和检索命中就越稳定。",
+                icon = Lucide.FileText,
+                trailing = {
+                    if (pendingCount > 0) {
+                        AppPill(text = "待处理 $pendingCount")
+                    }
+                }
+            )
+
             if (isProcessing) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            SecondaryTabRow(selectedTabIndex = selectedTab) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = { Text(title) }
-                    )
+            AppSectionSurface {
+                SecondaryTabRow(
+                    selectedTabIndex = selectedTab,
+                    divider = {}
+                ) {
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index },
+                            text = { Text(title) }
+                        )
+                    }
                 }
             }
 
             if (filteredItems.isEmpty()) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
+                    modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Lucide.FileText,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "暂无条目",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    AppEmptyState(
+                        icon = Lucide.FileText,
+                        title = "暂无条目",
+                        description = "从文件、笔记或 URL 开始，把这个知识库逐步搭成可检索内容层。"
+                    )
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    contentPadding = PaddingValues(bottom = 84.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(filteredItems, key = { it.id }) { item ->
                         KnowledgeItemCard(
@@ -308,7 +291,7 @@ fun KnowledgeDetailScreen(
                                 when (item.getItemType()) {
                                     KnowledgeItemType.TEXT -> showEditNoteSheet = item
                                     KnowledgeItemType.URL -> showEditUrlSheet = item
-                                    KnowledgeItemType.FILE -> {} // 文件不可编辑
+                                    KnowledgeItemType.FILE -> {}
                                 }
                             },
                             onDelete = { itemToDelete = item },
@@ -423,16 +406,11 @@ private fun KnowledgeItemCard(
     val status = item.getProcessingStatus()
     val itemType = item.getItemType()
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        )
-    ) {
+    AppSectionSurface {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 15.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
@@ -442,19 +420,21 @@ private fun KnowledgeItemCard(
                     KnowledgeItemType.URL -> Lucide.Globe
                 },
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
             )
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.title,
                     style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -552,7 +532,8 @@ private fun StatusChip(status: ProcessingStatus) {
         selected = false,
         onClick = {},
         label = { Text(text, style = MaterialTheme.typography.labelSmall) },
-        leadingIcon = { Icon(icon, null, modifier = Modifier.size(14.dp), tint = color) }
+        leadingIcon = { Icon(icon, null, modifier = Modifier.size(14.dp), tint = color) },
+        enabled = false
     )
 }
 
@@ -570,14 +551,11 @@ private fun AddNoteSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = androidx.compose.ui.graphics.Color.Transparent
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        AppSheetSurface(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Text(
                 text = "添加笔记",
@@ -635,14 +613,11 @@ private fun EditNoteSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = androidx.compose.ui.graphics.Color.Transparent
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        AppSheetSurface(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Text(
                 text = "编辑笔记",
@@ -699,14 +674,11 @@ private fun AddUrlSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = androidx.compose.ui.graphics.Color.Transparent
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        AppSheetSurface(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Text(
                 text = "添加URL",
@@ -763,14 +735,11 @@ private fun EditUrlSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = androidx.compose.ui.graphics.Color.Transparent
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        AppSheetSurface(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Text(
                 text = "编辑URL",
@@ -826,14 +795,11 @@ private fun SearchSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = androidx.compose.ui.graphics.Color.Transparent
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        AppSheetSurface(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Text(
                 text = "搜索知识库",
@@ -868,11 +834,7 @@ private fun SearchSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(searchResults) { result ->
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                            )
-                        ) {
+                        AppSectionSurface {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),

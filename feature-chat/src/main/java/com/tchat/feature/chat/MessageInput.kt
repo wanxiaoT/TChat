@@ -1,16 +1,19 @@
 package com.tchat.feature.chat
-
-import android.graphics.BitmapFactory
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -19,13 +22,18 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.tchat.data.model.MessagePart
 
@@ -45,17 +53,26 @@ fun MessageInput(
     generateImageContentDescription: String = "生成图片",
     attachContentDescription: String = "添加图片/视频"
 ) {
+    val thumbSizePx = with(LocalDensity.current) { 72.dp.roundToPx() }
+    var isInputFocused by remember { mutableStateOf(false) }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         val sendEnabled = text.isNotBlank() || mediaParts.isNotEmpty()
+        val utilityButtonColors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f),
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         if (mediaParts.isNotEmpty()) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -64,9 +81,7 @@ fun MessageInput(
                         is MessagePart.Image -> {
                             MediaThumb(
                                 label = part.fileName ?: "图片",
-                                bitmap = remember(part.filePath) {
-                                    runCatching { BitmapFactory.decodeFile(part.filePath) }.getOrNull()
-                                },
+                                bitmap = rememberScaledBitmap(part.filePath, thumbSizePx),
                                 onRemove = if (onRemoveMedia != null) {
                                     { onRemoveMedia(part) }
                                 } else {
@@ -99,8 +114,9 @@ fun MessageInput(
             if (onPickMedia != null) {
                 FilledTonalIconButton(
                     onClick = onPickMedia,
-                    modifier = Modifier.size(42.dp),
-                    shape = CircleShape
+                    modifier = Modifier.size(38.dp),
+                    shape = CircleShape,
+                    colors = utilityButtonColors
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.AddPhotoAlternate,
@@ -113,8 +129,9 @@ fun MessageInput(
                 FilledTonalIconButton(
                     onClick = onGenerateImage,
                     enabled = text.isNotBlank() && mediaParts.isEmpty(),
-                    modifier = Modifier.size(42.dp),
-                    shape = CircleShape
+                    modifier = Modifier.size(38.dp),
+                    shape = CircleShape,
+                    colors = utilityButtonColors
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.AutoAwesome,
@@ -123,39 +140,28 @@ fun MessageInput(
                 }
             }
 
-            val inputShape = MaterialTheme.shapes.extraLarge
-            val inputInteractionSource = remember { MutableInteractionSource() }
-            val isInputFocused = inputInteractionSource.collectIsFocusedAsState().value
+            val inputShape = RoundedCornerShape(22.dp)
 
             val inputBorderWidth = animateDpAsState(
-                targetValue = if (isInputFocused) 1.5.dp else 1.dp,
+                targetValue = if (isInputFocused) 1.25.dp else 1.dp,
                 label = "messageInputBorderWidth"
             ).value
             val inputBorderColor = animateColorAsState(
                 targetValue = when {
-                    isInputFocused -> MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-                    sendEnabled -> MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
-                    else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                    isInputFocused -> MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
+                    sendEnabled -> MaterialTheme.colorScheme.outline.copy(alpha = 0.34f)
+                    else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)
                 },
                 label = "messageInputBorderColor"
             ).value
             val inputContainerColor = animateColorAsState(
                 targetValue = when {
-                    isInputFocused -> MaterialTheme.colorScheme.surface
-                    else -> MaterialTheme.colorScheme.surfaceContainerHighest
+                    isInputFocused -> MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
+                    else -> MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp).copy(alpha = 0.78f)
                 },
                 label = "messageInputContainerColor"
             ).value
-            val inputShadowElevation = animateDpAsState(
-                targetValue = when {
-                    isInputFocused -> 10.dp
-                    sendEnabled -> 6.dp
-                    else -> 2.dp
-                },
-                label = "messageInputShadowElevation"
-            ).value
 
-            // 输入框（高级感：柔和阴影 + 动态描边 + 平滑高度变化）
             Surface(
                 modifier = Modifier
                     .weight(1f)
@@ -168,53 +174,56 @@ fun MessageInput(
                 shape = inputShape,
                 color = inputContainerColor,
                 tonalElevation = 0.dp,
-                shadowElevation = inputShadowElevation,
+                shadowElevation = 0.dp,
                 border = BorderStroke(inputBorderWidth, inputBorderColor)
             ) {
-                TextField(
+                BasicTextField(
                     value = text,
                     onValueChange = onTextChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = {
-                        Text(
-                            text = inputHint,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
-                        )
-                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 42.dp, max = 128.dp)
+                        .onFocusChanged { isInputFocused = it.isFocused }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = MaterialTheme.colorScheme.onSurface
                     ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     minLines = 1,
                     maxLines = 4,
-                    interactionSource = inputInteractionSource,
-                    shape = inputShape,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent,
-                        cursorColor = MaterialTheme.colorScheme.primary
-                    )
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(
+                        onSend = {
+                            if (sendEnabled) onSend()
+                        }
+                    ),
+                    decorationBox = { innerTextField ->
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            if (text.isEmpty()) {
+                                Text(
+                                    text = inputHint,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
                 )
             }
 
-            // 发送按钮
-            val sendShadowElevation = animateDpAsState(
-                targetValue = if (sendEnabled) 10.dp else 0.dp,
-                label = "messageSendShadowElevation"
-            ).value
             FilledIconButton(
                 onClick = onSend,
                 enabled = sendEnabled,
-                modifier = Modifier.shadow(sendShadowElevation, CircleShape, clip = false),
+                modifier = Modifier.size(40.dp),
                 shape = CircleShape,
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    disabledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
                     disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             ) {
@@ -235,8 +244,12 @@ private fun MediaThumb(
 ) {
     Box(
         modifier = Modifier
-            .size(56.dp)
+            .size(52.dp)
             .clip(MaterialTheme.shapes.medium)
+            .border(
+                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+                MaterialTheme.shapes.medium
+            )
     ) {
         if (bitmap != null) {
             androidx.compose.foundation.Image(
@@ -279,8 +292,9 @@ private fun MediaChip(
     onRemove: (() -> Unit)?
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = MaterialTheme.shapes.medium
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+        shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),

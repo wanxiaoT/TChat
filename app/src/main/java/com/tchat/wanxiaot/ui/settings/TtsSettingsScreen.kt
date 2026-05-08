@@ -13,12 +13,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Play
 import com.composables.icons.lucide.Square
 import com.tchat.data.tts.TtsService
 import com.tchat.wanxiaot.settings.TtsSettings
+import com.tchat.wanxiaot.ui.components.AppHeroCard
+import com.tchat.wanxiaot.ui.components.AppPageScaffold
+import com.tchat.wanxiaot.ui.components.AppPill
+import com.tchat.wanxiaot.ui.components.AppSectionCard
+import com.tchat.wanxiaot.ui.components.AppSectionSurface
 
 /**
  * TTS 设置页面
@@ -38,9 +44,9 @@ fun TtsSettingsScreen(
         ttsService ?: TtsService.getInstance(context)
     }
 
-    val isSpeaking by actualTtsService.isSpeaking.collectAsState()
-    val initStatus by actualTtsService.initStatus.collectAsState()
-    val availableEngines by actualTtsService.availableEngines.collectAsState()
+    val isSpeaking by actualTtsService.isSpeaking.collectAsStateWithLifecycle()
+    val initStatus by actualTtsService.initStatus.collectAsStateWithLifecycle()
+    val availableEngines by actualTtsService.availableEngines.collectAsStateWithLifecycle()
 
     // 根据初始化状态判断是否可用
     val isAvailable = initStatus is TtsService.InitStatus.Ready
@@ -54,71 +60,83 @@ fun TtsSettingsScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            if (showTopBar) {
-                TopAppBar(
-                    title = { Text("语音朗读 (TTS)") },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Lucide.ArrowLeft,
-                                contentDescription = "返回"
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.surface
+    AppPageScaffold(
+        title = "语音朗读 (TTS)",
+        eyebrow = "Text To Speech",
+        subtitle = "引擎、语速、音调与测试播放",
+        showTopBar = showTopBar,
+        onBack = onBack
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            // 启用 TTS 开关
-            ListItem(
-                headlineContent = { Text("启用语音朗读") },
-                supportingContent = { Text("开启后可朗读 AI 回复内容") },
-                trailingContent = {
-                    Switch(
-                        checked = ttsSettings.enabled,
-                        onCheckedChange = { enabled ->
-                            onSettingsChange(ttsSettings.copy(enabled = enabled))
+            AppHeroCard(
+                eyebrow = "Voice Output",
+                title = "把朗读体验调到顺耳，而不是能出声就算完成",
+                description = "这里控制 TTS 引擎、播放参数和自动朗读逻辑，影响整段对话的听感。",
+                icon = Lucide.Play,
+                trailing = {
+                    AppPill(
+                        text = when {
+                            isInitializing -> "初始化中"
+                            !ttsSettings.enabled -> "已关闭"
+                            isSpeaking -> "播放中"
+                            else -> "待机"
                         }
                     )
                 }
             )
 
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            AppSectionCard(
+                modifier = Modifier.padding(top = 14.dp),
+                title = "基础开关"
+            ) {
+                // 启用 TTS 开关
+                ListItem(
+                    headlineContent = { Text("启用语音朗读") },
+                    supportingContent = { Text("开启后可朗读 AI 回复内容") },
+                    trailingContent = {
+                        Switch(
+                            checked = ttsSettings.enabled,
+                            onCheckedChange = { enabled ->
+                                onSettingsChange(ttsSettings.copy(enabled = enabled))
+                            }
+                        )
+                    }
+                )
 
-            // 自动朗读开关
-            ListItem(
-                headlineContent = { Text("自动朗读") },
-                supportingContent = { Text("AI 回复完成后自动开始朗读") },
-                trailingContent = {
-                    Switch(
-                        checked = ttsSettings.autoSpeak,
-                        enabled = ttsSettings.enabled,
-                        onCheckedChange = { autoSpeak ->
-                            onSettingsChange(ttsSettings.copy(autoSpeak = autoSpeak))
-                        }
-                    )
-                }
-            )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
 
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                // 自动朗读开关
+                ListItem(
+                    headlineContent = { Text("自动朗读") },
+                    supportingContent = { Text("AI 回复完成后自动开始朗读") },
+                    trailingContent = {
+                        Switch(
+                            checked = ttsSettings.autoSpeak,
+                            enabled = ttsSettings.enabled,
+                            onCheckedChange = { autoSpeak ->
+                                onSettingsChange(ttsSettings.copy(autoSpeak = autoSpeak))
+                            }
+                        )
+                    }
+                )
+            }
 
+            AppSectionCard(
+                modifier = Modifier.padding(top = 14.dp),
+                title = "引擎与声音参数",
+                description = "选择系统引擎，并调整语速和音调。"
+            ) {
             // TTS 引擎选择
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = "TTS 引擎",
@@ -135,14 +153,14 @@ fun TtsSettingsScreen(
                 if (availableEngines.isNotEmpty()) {
                     availableEngines.forEach { engine ->
                         val isSelected = ttsSettings.enginePackage == engine.packageName
-                        OutlinedCard(
-                            onClick = {
-                                onSettingsChange(ttsSettings.copy(enginePackage = engine.packageName))
-                            },
-                            enabled = ttsSettings.enabled,
+                        Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp),
+                                .padding(vertical = 4.dp)
+                                .clickable(enabled = ttsSettings.enabled) {
+                                    onSettingsChange(ttsSettings.copy(enginePackage = engine.packageName))
+                                },
+                            shape = MaterialTheme.shapes.large,
                             border = BorderStroke(
                                 width = if (isSelected) 2.dp else 1.dp,
                                 color = if (isSelected)
@@ -150,12 +168,11 @@ fun TtsSettingsScreen(
                                 else
                                     MaterialTheme.colorScheme.outlineVariant
                             ),
-                            colors = CardDefaults.outlinedCardColors(
-                                containerColor = if (isSelected)
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                else
-                                    MaterialTheme.colorScheme.surface
-                            )
+                            color = if (isSelected)
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                            else
+                                MaterialTheme.colorScheme.surface,
+                            tonalElevation = 0.dp
                         ) {
                             Row(
                                 modifier = Modifier
@@ -408,30 +425,20 @@ fun TtsSettingsScreen(
                     ) {
                         Text("打开系统 TTS 设置")
                     }
+                    }
                 }
             }
 
-            // TTS 引擎说明
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                )
+            AppSectionCard(
+                modifier = Modifier.padding(top = 14.dp, bottom = 16.dp),
+                title = "关于 TTS 引擎"
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    Text(
-                        text = "关于 TTS 引擎",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                AppSectionSurface {
                     Text(
                         text = "本功能使用系统内置的 TTS 引擎。如需更好的语音效果，可在系统设置中安装第三方 TTS 引擎（如 Google TTS、讯飞语音等）。",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(14.dp)
                     )
                 }
             }
