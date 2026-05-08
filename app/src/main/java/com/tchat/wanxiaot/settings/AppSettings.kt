@@ -3,6 +3,7 @@ package com.tchat.wanxiaot.settings
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.composables.icons.lucide.Bot
+import com.composables.icons.lucide.KeyRound
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Sparkles
 import com.tchat.data.deepresearch.service.WebSearchProvider
@@ -197,6 +198,7 @@ data class ProviderConfig(
     val selectedModel: String = "",
     val availableModels: List<String> = emptyList(),
     val modelCustomParams: Map<String, ModelCustomParams> = emptyMap(),  // 模型名 -> 自定义参数
+    val customHeaders: Map<String, String> = emptyMap(),
     // 多 Key 管理
     val apiKeys: List<ApiKeyEntry> = emptyList(),
     val multiKeyEnabled: Boolean = false,
@@ -337,6 +339,12 @@ enum class AIProviderType(
         "https://generativelanguage.googleapis.com/v1",
         listOf("gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash"),
         icon = { Lucide.Sparkles }
+    ),
+    NAAPI_TCHAT(
+        "NAAPI for TChat",
+        "https://t.naapi.cc/v1",
+        listOf("gpt-4o-mini", "gpt-4o", "deepseek-chat"),
+        icon = { Lucide.KeyRound }
     )
 }
 

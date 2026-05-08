@@ -16,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tchat.wanxiaot.settings.AIProviderType
@@ -30,6 +31,7 @@ import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionCard
 import com.tchat.wanxiaot.ui.components.QRCodeDialog
+import com.tchat.wanxiaot.util.NaapiTChatSupport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -57,6 +59,7 @@ fun ProviderEditScreen(
     var apiKey by remember { mutableStateOf(provider?.apiKey ?: "") }
     var endpoint by remember { mutableStateOf(provider?.endpoint ?: providerType.defaultEndpoint) }
     var savedModels by remember { mutableStateOf(provider?.availableModels ?: emptyList()) }
+    var customHeaders by remember { mutableStateOf(provider?.customHeaders ?: emptyMap()) }
     var selectedModel by remember {
         mutableStateOf(provider?.selectedModel ?: savedModels.firstOrNull() ?: "")
     }
@@ -82,6 +85,9 @@ fun ProviderEditScreen(
     var typeExpanded by remember { mutableStateOf(false) }
     var isFetchingModels by remember { mutableStateOf(false) }
     var fetchError by remember { mutableStateOf<String?>(null) }
+    var isActivatingNaapi by remember { mutableStateOf(false) }
+    var naapiActivationMessage by remember { mutableStateOf<String?>(null) }
+    var naapiActivationSuccess by remember { mutableStateOf<Boolean?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showQRDialog by remember { mutableStateOf(false) }
     var showModelParamsDialog by remember { mutableStateOf<String?>(null) }
@@ -89,8 +95,18 @@ fun ProviderEditScreen(
 
     val scope = rememberCoroutineScope()
     val httpClient = remember { OkHttpClient() }
+    val context = LocalContext.current
+    val isNaapiProvider = providerType == AIProviderType.NAAPI_TCHAT
 
     BackHandler { onBack() }
+
+    LaunchedEffect(providerType) {
+        if (providerType == AIProviderType.NAAPI_TCHAT &&
+            customHeaders[NaapiTChatSupport.DEVICE_HEADER].isNullOrBlank()
+        ) {
+            customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+        }
+    }
 
     // 删除确认对话框
     if (showDeleteDialog) {
@@ -545,6 +561,11 @@ fun ProviderEditScreen(
                         selectedModel = selectedModel,
                         availableModels = savedModels,
                         modelCustomParams = modelCustomParams,
+                        customHeaders = if (providerType == AIProviderType.NAAPI_TCHAT) {
+                            NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+                        } else {
+                            customHeaders - NaapiTChatSupport.DEVICE_HEADER
+                        },
                         apiKeys = apiKeys,
                         multiKeyEnabled = multiKeyEnabled,
                         keySelectionStrategy = keySelectionStrategy,
@@ -651,6 +672,13 @@ fun ProviderEditScreen(
                                         endpoint = type.defaultEndpoint
                                         savedModels = type.defaultModels
                                         selectedModel = type.defaultModels.firstOrNull() ?: ""
+                                        customHeaders = if (type == AIProviderType.NAAPI_TCHAT) {
+                                            NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+                                        } else {
+                                            customHeaders - NaapiTChatSupport.DEVICE_HEADER
+                                        }
+                                        naapiActivationMessage = null
+                                        naapiActivationSuccess = null
                                         typeExpanded = false
                                     }
                                 )
@@ -666,12 +694,20 @@ fun ProviderEditScreen(
             ) {
                     OutlinedTextField(
                         value = apiKey,
-                        onValueChange = { apiKey = it },
-                        label = { Text("API Key") },
-                        placeholder = { Text("sk-xxxxxxxxxxxxxxxxxxxxxxxx") },
+                        onValueChange = {
+                            apiKey = it
+                            naapiActivationMessage = null
+                            naapiActivationSuccess = null
+                        },
+                        label = { Text(if (isNaapiProvider) "兑换码" else "API Key") },
+                        placeholder = {
+                            Text(if (isNaapiProvider) "NAAPI-TCHAT-XXXX-XXXX-XXXX" else "sk-xxxxxxxxxxxxxxxxxxxxxxxx")
+                        },
                         supportingText = {
                             Text(
-                                if (multiKeyEnabled && apiKeys.isNotEmpty()) {
+                                if (isNaapiProvider) {
+                                    "填入购买后获得的兑换码，App 会自动携带本机设备标识"
+                                } else if (multiKeyEnabled && apiKeys.isNotEmpty()) {
                                     "已启用多 Key，聊天将使用下方 Key 列表（此处作为备用）"
                                 } else {
                                     "需要保密，请妥善保管"
@@ -681,6 +717,78 @@ fun ProviderEditScreen(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
+
+                    if (isNaapiProvider) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.56f),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "设备 ID：${NaapiTChatSupport.maskedDeviceId(context)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Text(
+                                    text = "激活后，聊天请求会带上 ${NaapiTChatSupport.DEVICE_HEADER}，服务端可识别当前设备并记录 NewAPI 明细。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    FilledTonalButton(
+                                        onClick = {
+                                            scope.launch {
+                                                isActivatingNaapi = true
+                                                naapiActivationMessage = null
+                                                naapiActivationSuccess = null
+                                                customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+                                                val result = NaapiTChatSupport.activateDevice(
+                                                    context = context,
+                                                    httpClient = httpClient,
+                                                    endpoint = endpoint,
+                                                    redeemCode = apiKey
+                                                )
+                                                naapiActivationSuccess = result.success
+                                                naapiActivationMessage = result.message
+                                                isActivatingNaapi = false
+                                            }
+                                        },
+                                        enabled = !isActivatingNaapi && apiKey.isNotBlank() && endpoint.isNotBlank()
+                                    ) {
+                                        if (isActivatingNaapi) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(16.dp),
+                                                strokeWidth = 2.dp
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                        }
+                                        Text("激活当前设备")
+                                    }
+
+                                    naapiActivationMessage?.let { message ->
+                                        Text(
+                                            text = message,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (naapiActivationSuccess == true) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.error
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     OutlinedTextField(
                         value = endpoint,
@@ -909,7 +1017,12 @@ fun ProviderEditScreen(
                                             httpClient = httpClient,
                                             endpoint = endpoint,
                                             apiKey = modelFetchKey,
-                                            providerType = providerType
+                                            providerType = providerType,
+                                            extraHeaders = if (providerType == AIProviderType.NAAPI_TCHAT) {
+                                                NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+                                            } else {
+                                                customHeaders
+                                            }
                                         )
                                         fetchedModels = models
                                         showModelPicker = true
@@ -1104,12 +1217,14 @@ private suspend fun fetchModelsFromApi(
     httpClient: OkHttpClient,
     endpoint: String,
     apiKey: String,
-    providerType: AIProviderType
+    providerType: AIProviderType,
+    extraHeaders: Map<String, String> = emptyMap()
 ): List<String> = withContext(Dispatchers.IO) {
     val normalizedEndpoint = endpoint.trim().trimEnd('/')
 
     val url = when (providerType) {
-        AIProviderType.OPENAI -> "$normalizedEndpoint/models"
+        AIProviderType.OPENAI,
+        AIProviderType.NAAPI_TCHAT -> "$normalizedEndpoint/models"
         AIProviderType.ANTHROPIC -> {
             // Anthropic models API 使用 /v1/models，并需要 x-api-key + anthropic-version
             val baseUrl = if (normalizedEndpoint.endsWith("/v1")) normalizedEndpoint else "$normalizedEndpoint/v1"
@@ -1121,9 +1236,17 @@ private suspend fun fetchModelsFromApi(
     val requestBuilder = Request.Builder().url(url)
 
     when (providerType) {
-        AIProviderType.OPENAI -> {
+        AIProviderType.OPENAI,
+        AIProviderType.NAAPI_TCHAT -> {
             if (apiKey.isNotBlank()) {
                 requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+            }
+            if (providerType == AIProviderType.NAAPI_TCHAT) {
+                extraHeaders.forEach { (name, value) ->
+                    if (name.isNotBlank() && value.isNotBlank()) {
+                        requestBuilder.addHeader(name, value)
+                    }
+                }
             }
         }
         AIProviderType.ANTHROPIC -> {

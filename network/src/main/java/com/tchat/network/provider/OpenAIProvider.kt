@@ -25,7 +25,8 @@ class OpenAIProvider(
     private val apiKey: String,
     baseUrl: String = "https://api.openai.com/v1",
     private val model: String = "gpt-3.5-turbo",
-    private val customParams: CustomParams? = null
+    private val customParams: CustomParams? = null,
+    private val extraHeaders: Map<String, String> = emptyMap()
 ) : AIProvider {
 
     // 规范化 baseUrl：移除末尾斜杠
@@ -60,7 +61,7 @@ class OpenAIProvider(
             headers = mapOf(
                 "Authorization" to "Bearer ${apiKey.take(8)}...",
                 "Content-Type" to "application/json"
-            ),
+            ) + extraHeaders.mapValues { (_, value) -> maskHeaderValue(value) },
             body = jsonBody
         )
 
@@ -189,6 +190,7 @@ class OpenAIProvider(
             .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
             .post(requestBodyJson.toString().toRequestBody("application/json".toMediaType()))
+            .applyExtraHeaders()
             .build()
 
         val call = client.newCall(request)
@@ -530,7 +532,35 @@ class OpenAIProvider(
             .addHeader("Content-Type", "application/json")
             .addHeader("Accept", "text/event-stream")
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
+            .applyExtraHeaders()
             .build()
+    }
+
+    private fun Request.Builder.applyExtraHeaders(): Request.Builder {
+        extraHeaders.forEach { (name, value) ->
+            val normalizedName = name.trim()
+            val normalizedValue = value.trim()
+            if (normalizedName.isBlank() || normalizedValue.isBlank()) {
+                return@forEach
+            }
+            if (normalizedName.equals("Authorization", ignoreCase = true) ||
+                normalizedName.equals("Content-Type", ignoreCase = true) ||
+                normalizedName.equals("Content-Length", ignoreCase = true)
+            ) {
+                return@forEach
+            }
+            addHeader(normalizedName, normalizedValue)
+        }
+        return this
+    }
+
+    private fun maskHeaderValue(value: String): String {
+        val trimmed = value.trim()
+        return when {
+            trimmed.isBlank() -> ""
+            trimmed.length <= 8 -> "****"
+            else -> "${trimmed.take(4)}****${trimmed.takeLast(4)}"
+        }
     }
 
     private fun handleErrorResponse(responseCode: Int, errorBody: String): AIProviderException {

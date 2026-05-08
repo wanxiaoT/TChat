@@ -663,7 +663,8 @@ class JungleHelperService : Service() {
             providerType = provider.providerType.name.lowercase(),
             apiKey = provider.apiKey,
             baseUrl = provider.endpoint,
-            model = ocrSettings.aiModel.ifEmpty { provider.selectedModel }
+            model = ocrSettings.aiModel.ifEmpty { provider.selectedModel },
+            extraHeaders = provider.customHeaders
         )
 
         return withContext(Dispatchers.IO) {

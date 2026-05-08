@@ -38,6 +38,7 @@ class MultiKeyAIProvider(
     private val baseUrl: String,
     private val model: String,
     private val customParams: CustomParams? = null,
+    private val extraHeaders: Map<String, String> = emptyMap(),
     private val maxRetryAttempts: Int = 3
 ) : AIProvider {
 
@@ -195,7 +196,8 @@ class MultiKeyAIProvider(
                 apiKey = apiKey,
                 baseUrl = baseUrl,
                 model = model,
-                customParams = customParams
+                customParams = customParams,
+                extraHeaders = extraHeaders
             )
         )
     }

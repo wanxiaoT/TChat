@@ -66,6 +66,7 @@ import com.tchat.wanxiaot.ui.deepresearch.DeepResearchScreen
 import com.tchat.wanxiaot.ui.deepresearch.DeepResearchViewModel
 import com.tchat.wanxiaot.ui.theme.TChatTheme
 import com.tchat.wanxiaot.util.MultiKeyAIProvider
+import com.tchat.wanxiaot.util.NaapiTChatSupport
 import com.tchat.wanxiaot.i18n.Language
 import com.tchat.wanxiaot.i18n.strings
 import com.tchat.wanxiaot.i18n.StringsZhCN
@@ -321,6 +322,7 @@ fun MainScreen(
     val providerTypeKey = currentProvider?.providerType
     val endpointKey = currentProvider?.endpoint
     val apiKeyKey = currentProvider?.apiKey
+    val customHeadersKey = currentProvider?.customHeaders
     val multiKeyEnabledKey = currentProvider?.multiKeyEnabled
     val apiKeysCountKey = currentProvider?.apiKeys?.size ?: 0
 
@@ -330,6 +332,7 @@ fun MainScreen(
         providerTypeKey,
         endpointKey,
         apiKeyKey,
+        customHeadersKey,
         multiKeyEnabledKey,
         apiKeysCountKey
     ) {
@@ -346,6 +349,12 @@ fun MainScreen(
                     AIProviderType.OPENAI -> AIProviderFactory.ProviderType.OPENAI
                     AIProviderType.ANTHROPIC -> AIProviderFactory.ProviderType.ANTHROPIC
                     AIProviderType.GEMINI -> AIProviderFactory.ProviderType.GEMINI
+                    AIProviderType.NAAPI_TCHAT -> AIProviderFactory.ProviderType.OPENAI
+                }
+                val extraHeaders = if (currentProvider.providerType == AIProviderType.NAAPI_TCHAT) {
+                    NaapiTChatSupport.withDeviceHeader(context, currentProvider.customHeaders)
+                } else {
+                    currentProvider.customHeaders
                 }
 
                 val aiProvider = if (currentProvider.multiKeyEnabled && currentProvider.apiKeys.isNotEmpty()) {
@@ -354,7 +363,8 @@ fun MainScreen(
                         providerId = currentProvider.id,
                         providerType = mappedType,
                         baseUrl = currentProvider.endpoint,
-                        model = selectedModel
+                        model = selectedModel,
+                        extraHeaders = extraHeaders
                     )
                 } else {
                     AIProviderFactory.create(
@@ -362,7 +372,8 @@ fun MainScreen(
                             type = mappedType,
                             apiKey = currentProvider.apiKey,
                             baseUrl = currentProvider.endpoint,
-                            model = selectedModel
+                            model = selectedModel,
+                            extraHeaders = extraHeaders
                         )
                     )
                 }
@@ -1157,6 +1168,7 @@ private fun getAIProviderForDeepResearch(
         baseUrl = providerConfig.endpoint.ifBlank { null },
         model = providerConfig.selectedModel.ifEmpty {
             providerConfig.availableModels.firstOrNull() ?: ""
-        }
+        },
+        extraHeaders = providerConfig.customHeaders
     )
 }

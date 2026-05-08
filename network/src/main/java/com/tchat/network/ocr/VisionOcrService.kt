@@ -14,7 +14,8 @@ class VisionOcrService(
     private val providerType: String,
     private val apiKey: String,
     private val baseUrl: String,
-    private val model: String
+    private val model: String,
+    private val extraHeaders: Map<String, String> = emptyMap()
 ) {
     /**
      * 识别图像中的文字
@@ -32,7 +33,8 @@ class VisionOcrService(
             providerType = providerType,
             apiKey = apiKey,
             baseUrl = baseUrl,
-            model = model
+            model = model,
+            extraHeaders = extraHeaders
         )
 
         val messages = listOf(

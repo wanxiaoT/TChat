@@ -37,6 +37,7 @@ object QRCodeGenerator {
             AIProviderType.OPENAI -> "o"
             AIProviderType.ANTHROPIC -> "a"
             AIProviderType.GEMINI -> "g"
+            AIProviderType.NAAPI_TCHAT -> "n"
         })
         json.put("e", provider.endpoint)
         json.put("k", provider.apiKey)
@@ -59,6 +60,7 @@ object QRCodeGenerator {
             "o" -> AIProviderType.OPENAI
             "a" -> AIProviderType.ANTHROPIC
             "g" -> AIProviderType.GEMINI
+            "n" -> AIProviderType.NAAPI_TCHAT
             else -> AIProviderType.OPENAI
         }
     }

@@ -239,7 +239,8 @@ class DeepResearchViewModel(
             providerType = providerConfig.providerType.name.lowercase(),
             apiKey = providerConfig.apiKey,
             baseUrl = providerConfig.endpoint.ifBlank { null },
-            model = providerConfig.selectedModel.ifEmpty { providerConfig.availableModels.firstOrNull() ?: "" }
+            model = providerConfig.selectedModel.ifEmpty { providerConfig.availableModels.firstOrNull() ?: "" },
+            extraHeaders = providerConfig.customHeaders
         )
     }
 }

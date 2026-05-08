@@ -1,0 +1,140 @@
+package com.tchat.wanxiaot.util
+
+import android.content.Context
+import android.os.Build
+import android.provider.Settings
+import com.tchat.wanxiaot.BuildConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import java.security.MessageDigest
+import java.util.UUID
+
+object NaapiTChatSupport {
+    const val DEVICE_HEADER = "X-TChat-Device-Id"
+    const val DEFAULT_ENDPOINT = "https://t.naapi.cc/v1"
+
+    private const val PREFS_NAME = "naapi_tchat"
+    private const val KEY_APP_DEVICE_ID = "app_device_id"
+
+    fun getOrCreateDeviceId(context: Context): String {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val existing = prefs.getString(KEY_APP_DEVICE_ID, null)
+        if (!existing.isNullOrBlank()) {
+            return existing
+        }
+        val created = UUID.randomUUID().toString()
+        prefs.edit().putString(KEY_APP_DEVICE_ID, created).apply()
+        return created
+    }
+
+    fun headers(context: Context): Map<String, String> {
+        return mapOf(DEVICE_HEADER to getOrCreateDeviceId(context))
+    }
+
+    fun withDeviceHeader(context: Context, headers: Map<String, String>): Map<String, String> {
+        return headers + this.headers(context)
+    }
+
+    fun maskedDeviceId(context: Context): String {
+        val value = getOrCreateDeviceId(context)
+        return if (value.length <= 12) "****" else "${value.take(8)}…${value.takeLast(4)}"
+    }
+
+    fun portalBaseFromEndpoint(endpoint: String): String {
+        val normalized = endpoint.trim().ifBlank { DEFAULT_ENDPOINT }.trimEnd('/')
+        return when {
+            normalized.endsWith("/v1") -> normalized.removeSuffix("/v1")
+            else -> normalized
+        }
+    }
+
+    suspend fun activateDevice(
+        context: Context,
+        httpClient: OkHttpClient,
+        endpoint: String,
+        redeemCode: String
+    ): NaapiActivationResult = withContext(Dispatchers.IO) {
+        val trimmedCode = redeemCode.trim()
+        if (trimmedCode.isBlank()) {
+            return@withContext NaapiActivationResult(false, "请先填写兑换码")
+        }
+
+        val portalBase = portalBaseFromEndpoint(endpoint)
+        val url = "$portalBase/api/tchat/activate"
+        val body = JSONObject().apply {
+            put("redeem_code", trimmedCode)
+            put("device", JSONObject().apply {
+                put("app_device_id", getOrCreateDeviceId(context))
+                put("android_id_hash", androidIdHash(context))
+                put("manufacturer", Build.MANUFACTURER.orEmpty())
+                put("brand", Build.BRAND.orEmpty())
+                put("model", Build.MODEL.orEmpty())
+                put("android_version", Build.VERSION.RELEASE.orEmpty())
+                put("sdk_int", Build.VERSION.SDK_INT)
+                put("app_version", BuildConfig.VERSION_NAME)
+            })
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Content-Type", "application/json")
+            .post(body.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        try {
+            httpClient.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    return@withContext NaapiActivationResult(
+                        success = false,
+                        message = extractMessage(responseBody).ifBlank {
+                            "设备激活失败：HTTP ${response.code}"
+                        }
+                    )
+                }
+
+                val json = runCatching { JSONObject(responseBody) }.getOrNull()
+                val success = json?.optBoolean("success", false) ?: false
+                val message = if (success) {
+                    "当前设备已激活"
+                } else {
+                    json?.optString("message").orEmpty().ifBlank { "设备激活失败" }
+                }
+                NaapiActivationResult(success = success, message = message)
+            }
+        } catch (e: Exception) {
+            NaapiActivationResult(success = false, message = "设备激活失败：${e.message ?: "网络异常"}")
+        }
+    }
+
+    private fun androidIdHash(context: Context): String {
+        val androidId = runCatching {
+            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+        }.getOrNull().orEmpty()
+        return if (androidId.isBlank()) "" else sha256Hex(androidId)
+    }
+
+    private fun sha256Hex(value: String): String {
+        val bytes = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun extractMessage(raw: String): String {
+        return runCatching {
+            val json = JSONObject(raw)
+            json.optString("message").ifBlank {
+                json.optJSONObject("error")?.optString("message").orEmpty()
+            }
+        }.getOrDefault(raw.take(200))
+    }
+}
+
+data class NaapiActivationResult(
+    val success: Boolean,
+    val message: String
+)

@@ -266,6 +266,7 @@ class SettingsManager(context: Context) {
                         selectedModel = obj.optString("selectedModel", ""),
                         availableModels = parseStringList(obj.optJSONArray("availableModels")),
                         modelCustomParams = parseModelCustomParams(obj.optJSONObject("modelCustomParams")),
+                        customHeaders = parseStringMap(obj.optJSONObject("customHeaders")),
                         // 多 Key 支持
                         apiKeys = parseApiKeys(obj.optJSONArray("apiKeys")),
                         multiKeyEnabled = obj.optBoolean("multiKeyEnabled", false),
@@ -354,6 +355,24 @@ class SettingsManager(context: Context) {
         return list.filter { it.isNotEmpty() }
     }
 
+    private fun parseStringMap(jsonObj: JSONObject?): Map<String, String> {
+        if (jsonObj == null) return emptyMap()
+        val result = linkedMapOf<String, String>()
+        try {
+            val keys = jsonObj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val value = jsonObj.optString(key, "")
+                if (key.isNotBlank() && value.isNotBlank()) {
+                    result[key] = value
+                }
+            }
+        } catch (e: Exception) {
+            // Ignore malformed custom header payloads.
+        }
+        return result
+    }
+
     private fun serializeProviders(providers: List<ProviderConfig>): String {
         val jsonArray = JSONArray()
         providers.forEach { provider ->
@@ -366,6 +385,7 @@ class SettingsManager(context: Context) {
             obj.put("selectedModel", provider.selectedModel)
             obj.put("availableModels", JSONArray(provider.availableModels))
             obj.put("modelCustomParams", serializeModelCustomParams(provider.modelCustomParams))
+            obj.put("customHeaders", serializeStringMap(provider.customHeaders))
             // 多 Key 管理字段
             obj.put("apiKeys", serializeApiKeys(provider.apiKeys))
             obj.put("multiKeyEnabled", provider.multiKeyEnabled)
@@ -416,6 +436,16 @@ class SettingsManager(context: Context) {
             result.put(modelName, paramsObj)
         }
         return result
+    }
+
+    private fun serializeStringMap(values: Map<String, String>): JSONObject {
+        val obj = JSONObject()
+        values.forEach { (key, value) ->
+            if (key.isNotBlank() && value.isNotBlank()) {
+                obj.put(key, value)
+            }
+        }
+        return obj
     }
 
     private fun parseRegexRules(json: String): List<RegexRule> {

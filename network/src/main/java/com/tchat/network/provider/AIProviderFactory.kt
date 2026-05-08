@@ -23,7 +23,8 @@ object AIProviderFactory {
         val apiKey: String,
         val baseUrl: String = "",
         val model: String = "",
-        val customParams: CustomParams? = null
+        val customParams: CustomParams? = null,
+        val extraHeaders: Map<String, String> = emptyMap()
     )
 
     /**
@@ -35,7 +36,8 @@ object AIProviderFactory {
                 apiKey = config.apiKey,
                 baseUrl = config.baseUrl.ifEmpty { "https://api.openai.com/v1" },
                 model = config.model.ifEmpty { "gpt-3.5-turbo" },
-                customParams = config.customParams
+                customParams = config.customParams,
+                extraHeaders = config.extraHeaders
             )
             ProviderType.ANTHROPIC -> createAnthropic(
                 apiKey = config.apiKey,
@@ -60,9 +62,10 @@ object AIProviderFactory {
         apiKey: String,
         baseUrl: String = "https://api.openai.com/v1",
         model: String = "gpt-3.5-turbo",
-        customParams: CustomParams? = null
+        customParams: CustomParams? = null,
+        extraHeaders: Map<String, String> = emptyMap()
     ): AIProvider {
-        return OpenAIProvider(apiKey, baseUrl, model, customParams)
+        return OpenAIProvider(apiKey, baseUrl, model, customParams, extraHeaders)
     }
 
     /**
@@ -104,10 +107,11 @@ object AIProviderFactory {
         apiKey: String,
         baseUrl: String? = null,
         model: String,
-        customParams: CustomParams? = null
+        customParams: CustomParams? = null,
+        extraHeaders: Map<String, String> = emptyMap()
     ): AIProvider {
         val type = when (providerType.lowercase()) {
-            "openai" -> ProviderType.OPENAI
+            "openai", "naapi", "naapi_tchat", "naapi-tchat" -> ProviderType.OPENAI
             "anthropic" -> ProviderType.ANTHROPIC
             "gemini" -> ProviderType.GEMINI
             else -> ProviderType.OPENAI  // 默认使用 OpenAI 格式
@@ -117,7 +121,8 @@ object AIProviderFactory {
             apiKey = apiKey,
             baseUrl = baseUrl ?: "",
             model = model,
-            customParams = customParams
+            customParams = customParams,
+            extraHeaders = extraHeaders
         ))
     }
 }
