@@ -401,6 +401,7 @@ fun MainScreen(
                         settingsManager = settingsManager,
                         providerId = currentProvider.id,
                         providerType = mappedType,
+                        providerDefinitionId = currentProvider.providerType.name.lowercase(),
                         baseUrl = endpoint,
                         model = selectedModel,
                         customParams = modelParams,
@@ -422,7 +423,8 @@ fun MainScreen(
                             chatPath = currentProvider.resolvedApiPath(),
                             imagesPath = currentProvider.resolvedImagesPath(),
                             authHeaderName = authHeaderName,
-                            authHeaderValue = currentProvider.authorizationHeaderValue()
+                            authHeaderValue = currentProvider.authorizationHeaderValue(),
+                            providerId = currentProvider.providerType.name.lowercase()
                         )
                     )
                 }

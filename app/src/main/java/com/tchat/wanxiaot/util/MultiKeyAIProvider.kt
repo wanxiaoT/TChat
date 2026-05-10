@@ -35,6 +35,7 @@ class MultiKeyAIProvider(
     private val settingsManager: SettingsManager,
     private val providerId: String,
     private val providerType: AIProviderFactory.ProviderType,
+    private val providerDefinitionId: String? = null,
     private val baseUrl: String,
     private val model: String,
     private val customParams: CustomParams? = null,
@@ -205,7 +206,8 @@ class MultiKeyAIProvider(
                 chatPath = chatPath,
                 imagesPath = imagesPath,
                 authHeaderName = authHeaderName,
-                authHeaderValue = authHeaderValueFactory(apiKey)
+                authHeaderValue = authHeaderValueFactory(apiKey),
+                providerId = providerDefinitionId
             )
         )
     }

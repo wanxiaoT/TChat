@@ -9,11 +9,11 @@ object AIProviderFactory {
     /**
      * Provider 类型枚举
      */
-    enum class ProviderType {
-        OPENAI,
-        OPENAI_RESPONSES,
-        ANTHROPIC,
-        GEMINI
+    enum class ProviderType(val registryId: String) {
+        OPENAI("openai"),
+        OPENAI_RESPONSES("openai-responses"),
+        ANTHROPIC("anthropic"),
+        GEMINI("gemini")
     }
 
     /**
@@ -29,49 +29,20 @@ object AIProviderFactory {
         val chatPath: String = "",
         val imagesPath: String = "",
         val authHeaderName: String = "Authorization",
-        val authHeaderValue: String? = null
+        val authHeaderValue: String? = null,
+        val providerId: String? = null
     )
 
     /**
      * 根据配置创建对应的 Provider
      */
     fun create(config: ProviderConfig): AIProvider {
-        return when (config.type) {
-            ProviderType.OPENAI -> createOpenAI(
-                apiKey = config.apiKey,
-                baseUrl = config.baseUrl.ifEmpty { "https://api.openai.com/v1" },
-                model = config.model.ifEmpty { "gpt-3.5-turbo" },
-                customParams = config.customParams,
-                extraHeaders = config.extraHeaders,
-                chatPath = config.chatPath.ifBlank { "/chat/completions" },
-                imagesPath = config.imagesPath.ifBlank { "/images/generations" },
-                authHeaderName = config.authHeaderName,
-                authHeaderValue = config.authHeaderValue
-            )
-            ProviderType.OPENAI_RESPONSES -> createOpenAIResponses(
-                apiKey = config.apiKey,
-                baseUrl = config.baseUrl.ifEmpty { "https://api.openai.com/v1" },
-                model = config.model.ifEmpty { "gpt-4.1-mini" },
-                customParams = config.customParams,
-                extraHeaders = config.extraHeaders,
-                responsesPath = config.chatPath.ifBlank { "/responses" },
-                authHeaderName = config.authHeaderName,
-                authHeaderValue = config.authHeaderValue
-            )
-            ProviderType.ANTHROPIC -> createAnthropic(
-                apiKey = config.apiKey,
-                // AnthropicProvider 内部会自动处理 /v1 路径
-                baseUrl = config.baseUrl.ifEmpty { "https://api.anthropic.com" },
-                model = config.model.ifEmpty { "claude-sonnet-4-20250514" },
-                customParams = config.customParams
-            )
-            ProviderType.GEMINI -> createGemini(
-                apiKey = config.apiKey,
-                baseUrl = config.baseUrl.ifEmpty { "https://generativelanguage.googleapis.com/v1" },
-                model = config.model.ifEmpty { "gemini-pro" },
-                customParams = config.customParams
-            )
-        }
+        val definition = config.providerId
+            ?.let { ProviderRegistry.get(it) }
+            ?: ProviderRegistry.get(config.type.registryId)
+            ?: error("未知 Provider 类型: ${config.type}")
+
+        return definition.create(config.toProviderCreateConfig())
     }
 
     /**
@@ -88,16 +59,47 @@ object AIProviderFactory {
         authHeaderName: String = "Authorization",
         authHeaderValue: String? = null
     ): AIProvider {
-        return OpenAIProvider(
-            apiKey = apiKey,
-            baseUrl = baseUrl,
-            model = model,
-            customParams = customParams,
-            extraHeaders = extraHeaders,
-            chatPath = chatPath,
-            imagesPath = imagesPath,
-            authHeaderName = authHeaderName,
-            authHeaderValue = authHeaderValue
+        return ProviderRegistry.get("openai")!!.create(
+            ProviderCreateConfig(
+                apiKey = apiKey,
+                baseUrl = baseUrl,
+                model = model,
+                customParams = customParams,
+                extraHeaders = extraHeaders,
+                chatPath = chatPath,
+                imagesPath = imagesPath,
+                authHeaderName = authHeaderName,
+                authHeaderValue = authHeaderValue
+            )
+        )
+    }
+
+    fun createOpenAICompatible(
+        providerId: String,
+        apiKey: String,
+        baseUrl: String = "",
+        model: String = "",
+        customParams: CustomParams? = null,
+        extraHeaders: Map<String, String> = emptyMap(),
+        chatPath: String = "",
+        imagesPath: String = "",
+        authHeaderName: String = "Authorization",
+        authHeaderValue: String? = null
+    ): AIProvider {
+        val definition = ProviderRegistry.get(providerId)
+            ?: ProviderRegistry.get("openai")!!
+        return definition.create(
+            ProviderCreateConfig(
+                apiKey = apiKey,
+                baseUrl = baseUrl,
+                model = model,
+                customParams = customParams,
+                extraHeaders = extraHeaders,
+                chatPath = chatPath,
+                imagesPath = imagesPath,
+                authHeaderName = authHeaderName,
+                authHeaderValue = authHeaderValue
+            )
         )
     }
 
@@ -111,15 +113,17 @@ object AIProviderFactory {
         authHeaderName: String = "Authorization",
         authHeaderValue: String? = null
     ): AIProvider {
-        return OpenAIResponsesProvider(
-            apiKey = apiKey,
-            baseUrl = baseUrl,
-            model = model,
-            customParams = customParams,
-            extraHeaders = extraHeaders,
-            responsesPath = responsesPath,
-            authHeaderName = authHeaderName,
-            authHeaderValue = authHeaderValue
+        return ProviderRegistry.get("openai-responses")!!.create(
+            ProviderCreateConfig(
+                apiKey = apiKey,
+                baseUrl = baseUrl,
+                model = model,
+                customParams = customParams,
+                extraHeaders = extraHeaders,
+                chatPath = responsesPath,
+                authHeaderName = authHeaderName,
+                authHeaderValue = authHeaderValue
+            )
         )
     }
 
@@ -138,7 +142,20 @@ object AIProviderFactory {
         maxTokens: Int = 8192,
         customParams: CustomParams? = null
     ): AIProvider {
-        return AnthropicProvider(apiKey, baseUrl, model, maxTokens, customParams = customParams)
+        val resolvedParams = if (customParams?.maxTokens != null) {
+            customParams
+        } else {
+            (customParams ?: CustomParams()).copy(maxTokens = maxTokens)
+        }
+
+        return ProviderRegistry.get("anthropic")!!.create(
+            ProviderCreateConfig(
+                apiKey = apiKey,
+                baseUrl = baseUrl,
+                model = model,
+                customParams = resolvedParams
+            )
+        )
     }
 
     /**
@@ -150,7 +167,14 @@ object AIProviderFactory {
         model: String = "gemini-pro",
         customParams: CustomParams? = null
     ): AIProvider {
-        return GeminiProvider(apiKey, baseUrl, model, customParams)
+        return ProviderRegistry.get("gemini")!!.create(
+            ProviderCreateConfig(
+                apiKey = apiKey,
+                baseUrl = baseUrl,
+                model = model,
+                customParams = customParams
+            )
+        )
     }
 
     /**
@@ -165,21 +189,31 @@ object AIProviderFactory {
         customParams: CustomParams? = null,
         extraHeaders: Map<String, String> = emptyMap()
     ): AIProvider {
-        val type = when (providerType.lowercase()) {
-            "openai", "naapi", "naapi_tchat", "naapi-tchat" -> ProviderType.OPENAI
-            "openai_responses", "openai-responses", "responses" -> ProviderType.OPENAI_RESPONSES
-            "anthropic" -> ProviderType.ANTHROPIC
-            "gemini" -> ProviderType.GEMINI
-            "deepseek", "openrouter", "ollama" -> ProviderType.OPENAI
-            else -> ProviderType.OPENAI  // 默认使用 OpenAI 格式
-        }
-        return create(ProviderConfig(
-            type = type,
+        val definition = ProviderRegistry.get(providerType)
+            ?: ProviderRegistry.get("openai")!! // 兼容旧行为：未知类型按 OpenAI 兼容格式处理
+
+        return definition.create(
+            ProviderCreateConfig(
+                apiKey = apiKey,
+                baseUrl = baseUrl.orEmpty(),
+                model = model,
+                customParams = customParams,
+                extraHeaders = extraHeaders
+            )
+        )
+    }
+
+    private fun ProviderConfig.toProviderCreateConfig(): ProviderCreateConfig {
+        return ProviderCreateConfig(
             apiKey = apiKey,
-            baseUrl = baseUrl ?: "",
+            baseUrl = baseUrl,
             model = model,
             customParams = customParams,
-            extraHeaders = extraHeaders
-        ))
+            extraHeaders = extraHeaders,
+            chatPath = chatPath,
+            imagesPath = imagesPath,
+            authHeaderName = authHeaderName,
+            authHeaderValue = authHeaderValue
+        )
     }
 }
