@@ -45,10 +45,8 @@ import com.tchat.wanxiaot.settings.DeepResearchSettings
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.ui.ProviderSelectionSheet
 import com.tchat.wanxiaot.ui.components.AppEmptyState
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppIconTile
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionCard
 import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import com.tchat.feature.chat.markdown.MarkdownText
@@ -110,19 +108,6 @@ fun DeepResearchScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            AppHeroCard(
-                title = "研究编排",
-                description = "输入问题后，系统会按搜索、归纳和报告生成三个阶段推进。",
-                eyebrow = "Pipeline",
-                icon = Lucide.BrainCircuit
-            ) {
-                if (currentProviderName.isNotBlank()) {
-                    AppPill(text = currentProviderName)
-                }
-                if (currentModel.isNotBlank()) {
-                    AppPill(text = getModelDisplayName(currentModel))
-                }
-            }
 
             InputSection(
                 query = query,

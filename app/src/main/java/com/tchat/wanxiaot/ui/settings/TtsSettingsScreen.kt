@@ -20,9 +20,7 @@ import com.composables.icons.lucide.Play
 import com.composables.icons.lucide.Square
 import com.tchat.data.tts.TtsService
 import com.tchat.wanxiaot.settings.TtsSettings
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionCard
 import com.tchat.wanxiaot.ui.components.AppSectionSurface
 
@@ -74,22 +72,6 @@ fun TtsSettingsScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            AppHeroCard(
-                eyebrow = "Voice Output",
-                title = "把朗读体验调到顺耳，而不是能出声就算完成",
-                description = "这里控制 TTS 引擎、播放参数和自动朗读逻辑，影响整段对话的听感。",
-                icon = Lucide.Play,
-                trailing = {
-                    AppPill(
-                        text = when {
-                            isInitializing -> "初始化中"
-                            !ttsSettings.enabled -> "已关闭"
-                            isSpeaking -> "播放中"
-                            else -> "待机"
-                        }
-                    )
-                }
-            )
 
             AppSectionCard(
                 modifier = Modifier.padding(top = 14.dp),

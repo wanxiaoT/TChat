@@ -18,9 +18,7 @@ import com.composables.icons.lucide.*
 import com.tchat.data.model.ChatFolder
 import com.tchat.data.model.FolderTreeNode
 import com.tchat.wanxiaot.ui.components.AppEmptyState
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionCard
 import com.tchat.wanxiaot.ui.components.AppSectionSurface
 
@@ -63,16 +61,6 @@ fun ChatFolderManagementScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item {
-                AppHeroCard(
-                    title = "聊天目录",
-                    description = "创建、嵌套和维护聊天文件夹，保持对话内容有清晰归档。",
-                    eyebrow = "Folder Tree",
-                    icon = Lucide.FolderTree
-                ) {
-                    AppPill(text = "${folderTree.size} 个根目录")
-                }
-            }
 
             if (folderTree.isEmpty()) {
                 item {

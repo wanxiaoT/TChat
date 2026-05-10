@@ -72,9 +72,7 @@ import com.tchat.data.database.entity.ProcessingStatus
 import com.tchat.data.knowledge.FileLoader
 import com.tchat.data.service.KnowledgeService
 import com.tchat.wanxiaot.ui.components.AppEmptyState
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import com.tchat.wanxiaot.ui.components.AppSheetSurface
 import java.io.File
@@ -235,17 +233,6 @@ fun KnowledgeDetailScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            AppHeroCard(
-                eyebrow = "Retrieval Flow",
-                title = "把文件、笔记和网页整理成稳定检索层",
-                description = "条目越清晰，后续切分、向量化和检索命中就越稳定。",
-                icon = Lucide.FileText,
-                trailing = {
-                    if (pendingCount > 0) {
-                        AppPill(text = "待处理 $pendingCount")
-                    }
-                }
-            )
 
             if (isProcessing) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())

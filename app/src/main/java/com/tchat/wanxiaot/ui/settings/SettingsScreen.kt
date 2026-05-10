@@ -25,6 +25,7 @@ import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.Cloud
 import com.composables.icons.lucide.CloudUpload
 import com.composables.icons.lucide.Info
+import com.composables.icons.lucide.KeyRound
 import com.composables.icons.lucide.Network
 import com.composables.icons.lucide.Regex
 import com.composables.icons.lucide.Search
@@ -143,6 +144,14 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         subtitle = strings.settingsProvidersDesc,
         icon = SettingsIcon.Lucide(Lucide.Server),
         targetPage = SettingsSubPage.PROVIDERS
+    ),
+    SettingsItemData(
+        id = "official_service",
+        group = strings.settingsGeneral,
+        title = "服务与套餐",
+        subtitle = "官方服务、余额、用量与设备",
+        icon = SettingsIcon.Lucide(Lucide.KeyRound),
+        targetPage = SettingsSubPage.OFFICIAL_SERVICE
     ),
     SettingsItemData(
         id = "knowledge",
@@ -268,6 +277,7 @@ private fun isSettingsItemSelected(itemId: String, currentSubPage: SettingsSubPa
         "display" -> currentSubPage is SettingsSubPage.DISPLAY
         "group_chat" -> currentSubPage is SettingsSubPage.GROUP_CHAT || currentSubPage is SettingsSubPage.CREATE_GROUP_CHAT || currentSubPage is SettingsSubPage.EDIT_GROUP_CHAT
         "providers" -> currentSubPage is SettingsSubPage.PROVIDERS
+        "official_service" -> currentSubPage is SettingsSubPage.OFFICIAL_SERVICE
         "knowledge" -> currentSubPage is SettingsSubPage.KNOWLEDGE || currentSubPage is SettingsSubPage.KNOWLEDGE_DETAIL
         "mcp" -> currentSubPage is SettingsSubPage.MCP
         "deep_research" -> currentSubPage is SettingsSubPage.DEEP_RESEARCH
@@ -292,6 +302,7 @@ private fun isSettingsItemSelected(itemId: String, currentSubPage: SettingsSubPa
 private sealed class SettingsSubPage {
     data object MAIN : SettingsSubPage()
     data object PROVIDERS : SettingsSubPage()
+    data object OFFICIAL_SERVICE : SettingsSubPage()
     data object ABOUT : SettingsSubPage()
     data object LOGCAT : SettingsSubPage()
     data object NETWORK_LOG : SettingsSubPage()
@@ -490,17 +501,10 @@ private fun TabletSettingsLayout(
                                 )
                             )
                         } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(
-                                    text = "Control Center",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = strings.settingsTitle,
-                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
-                                )
-                            }
+                            Text(
+                                text = strings.settingsTitle,
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
+                            )
                         }
                     },
                     navigationIcon = {
@@ -598,6 +602,13 @@ private fun TabletSettingsLayout(
                     }
                     is SettingsSubPage.PROVIDERS -> {
                         ProvidersScreen(
+                            settingsManager = settingsManager,
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            showTopBar = false
+                        )
+                    }
+                    is SettingsSubPage.OFFICIAL_SERVICE -> {
+                        OfficialServiceScreen(
                             settingsManager = settingsManager,
                             onBack = { onSubPageChange(SettingsSubPage.MAIN) },
                             showTopBar = false
@@ -937,6 +948,12 @@ private fun PhoneSettingsLayout(
                     onBack = { onSubPageChange(SettingsSubPage.MAIN) }
                 )
             }
+            is SettingsSubPage.OFFICIAL_SERVICE -> {
+                OfficialServiceScreen(
+                    settingsManager = settingsManager,
+                    onBack = { onSubPageChange(SettingsSubPage.MAIN) }
+                )
+            }
             is SettingsSubPage.ABOUT -> {
                 AboutScreen(onBack = { onSubPageChange(SettingsSubPage.MAIN) })
             }
@@ -1186,17 +1203,10 @@ private fun SettingsMainContent(
     ) {
         TopAppBar(
             title = {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = "Control Center",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = strings.settingsTitle,
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                }
+                Text(
+                    text = strings.settingsTitle,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
+                )
             },
             navigationIcon = {
                 IconButton(onClick = onBack) {
@@ -1218,8 +1228,6 @@ private fun SettingsMainContent(
                 .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            SettingsHeroCard()
-
             groupOrder.forEach { group ->
                 val items = groupedItems[group] ?: return@forEach
 
@@ -1366,40 +1374,6 @@ private fun SettingsSidebarSection(
             verticalArrangement = Arrangement.spacedBy(2.dp),
             content = content
         )
-    }
-}
-
-@Composable
-private fun SettingsHeroCard() {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                text = "Control Center",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = "统一管理模型、知识库、外观和工具能力",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "把高频配置集中到一处，减少默认组件堆叠带来的廉价感。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
     }
 }
 

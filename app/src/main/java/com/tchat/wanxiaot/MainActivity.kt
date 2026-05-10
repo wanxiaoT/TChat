@@ -55,8 +55,10 @@ import com.tchat.feature.chat.ChatViewModel
 import com.tchat.feature.chat.GroupChatScreen
 import com.tchat.feature.chat.GroupChatViewModel
 import com.tchat.network.provider.AIProviderFactory
+import com.tchat.network.provider.CustomParams
 import com.tchat.network.provider.EmbeddingProviderFactory
 import com.tchat.wanxiaot.settings.AIProviderType
+import com.tchat.wanxiaot.settings.ProviderAuthType
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.settings.TtsEngineType as AppTtsEngineType
 import com.tchat.data.util.RegexRuleData
@@ -321,8 +323,14 @@ fun MainScreen(
     val activeModel = settings.getActiveModel()
     val providerTypeKey = currentProvider?.providerType
     val endpointKey = currentProvider?.endpoint
+    val apiPathKey = currentProvider?.apiPath
+    val imagesPathKey = currentProvider?.imagesPath
     val apiKeyKey = currentProvider?.apiKey
+    val authTypeKey = currentProvider?.authType
+    val authHeaderNameKey = currentProvider?.authHeaderName
+    val authHeaderPrefixKey = currentProvider?.authHeaderPrefix
     val customHeadersKey = currentProvider?.customHeaders
+    val customParamsKey = currentProvider?.modelCustomParams?.get(activeModel)
     val multiKeyEnabledKey = currentProvider?.multiKeyEnabled
     val apiKeysCountKey = currentProvider?.apiKeys?.size ?: 0
 
@@ -331,14 +339,21 @@ fun MainScreen(
         activeModel,
         providerTypeKey,
         endpointKey,
+        apiPathKey,
+        imagesPathKey,
         apiKeyKey,
+        authTypeKey,
+        authHeaderNameKey,
+        authHeaderPrefixKey,
         customHeadersKey,
+        customParamsKey,
         multiKeyEnabledKey,
         apiKeysCountKey
     ) {
         try {
             val hasCredential = currentProvider != null && (
-                currentProvider.apiKey.isNotBlank() ||
+                !currentProvider.requiresApiKey() ||
+                    currentProvider.apiKey.isNotBlank() ||
                     (currentProvider.multiKeyEnabled && currentProvider.apiKeys.isNotEmpty())
                 )
 
@@ -347,14 +362,38 @@ fun MainScreen(
 
                 val mappedType = when (currentProvider.providerType) {
                     AIProviderType.OPENAI -> AIProviderFactory.ProviderType.OPENAI
+                    AIProviderType.OPENAI_RESPONSES -> AIProviderFactory.ProviderType.OPENAI_RESPONSES
                     AIProviderType.ANTHROPIC -> AIProviderFactory.ProviderType.ANTHROPIC
                     AIProviderType.GEMINI -> AIProviderFactory.ProviderType.GEMINI
+                    AIProviderType.DEEPSEEK,
+                    AIProviderType.OPENROUTER,
+                    AIProviderType.OLLAMA -> AIProviderFactory.ProviderType.OPENAI
                     AIProviderType.NAAPI_TCHAT -> AIProviderFactory.ProviderType.OPENAI
                 }
-                val extraHeaders = if (currentProvider.providerType == AIProviderType.NAAPI_TCHAT) {
+                val extraHeaders = if (
+                    currentProvider.providerType == AIProviderType.NAAPI_TCHAT &&
+                    currentProvider.authType != ProviderAuthType.GATEWAY_KEY
+                ) {
                     NaapiTChatSupport.withDeviceHeader(context, currentProvider.customHeaders)
                 } else {
                     currentProvider.customHeaders
+                }
+                val modelParams = currentProvider.modelCustomParams[selectedModel]?.let { params ->
+                    CustomParams(
+                        temperature = params.temperature,
+                        topP = params.topP,
+                        topK = params.topK,
+                        presencePenalty = params.presencePenalty,
+                        frequencyPenalty = params.frequencyPenalty,
+                        repetitionPenalty = params.repetitionPenalty,
+                        maxTokens = params.maxTokens,
+                        extraParams = params.extraParams
+                    )
+                }
+                val endpoint = currentProvider.resolvedEndpoint()
+                val authHeaderName = currentProvider.authHeaderName
+                val authHeaderValueFactory: (String) -> String? = { key ->
+                    currentProvider.authorizationHeaderValue(key)
                 }
 
                 val aiProvider = if (currentProvider.multiKeyEnabled && currentProvider.apiKeys.isNotEmpty()) {
@@ -362,18 +401,28 @@ fun MainScreen(
                         settingsManager = settingsManager,
                         providerId = currentProvider.id,
                         providerType = mappedType,
-                        baseUrl = currentProvider.endpoint,
+                        baseUrl = endpoint,
                         model = selectedModel,
-                        extraHeaders = extraHeaders
+                        customParams = modelParams,
+                        extraHeaders = extraHeaders,
+                        chatPath = currentProvider.resolvedApiPath(),
+                        imagesPath = currentProvider.resolvedImagesPath(),
+                        authHeaderName = authHeaderName,
+                        authHeaderValueFactory = authHeaderValueFactory
                     )
                 } else {
                     AIProviderFactory.create(
                         AIProviderFactory.ProviderConfig(
                             type = mappedType,
                             apiKey = currentProvider.apiKey,
-                            baseUrl = currentProvider.endpoint,
+                            baseUrl = endpoint,
                             model = selectedModel,
-                            extraHeaders = extraHeaders
+                            customParams = modelParams,
+                            extraHeaders = extraHeaders,
+                            chatPath = currentProvider.resolvedApiPath(),
+                            imagesPath = currentProvider.resolvedImagesPath(),
+                            authHeaderName = authHeaderName,
+                            authHeaderValue = currentProvider.authorizationHeaderValue()
                         )
                     )
                 }

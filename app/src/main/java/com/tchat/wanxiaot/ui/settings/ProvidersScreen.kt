@@ -29,11 +29,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.BrainCircuit
+import com.composables.icons.lucide.KeyRound
 import com.composables.icons.lucide.Lucide
 import com.tchat.wanxiaot.settings.ProviderConfig
+import com.tchat.wanxiaot.settings.AIProviderType
+import com.tchat.wanxiaot.settings.ProviderAuthType
+import com.tchat.wanxiaot.settings.ProviderBillingMode
+import com.tchat.wanxiaot.settings.ServiceMode
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.components.AppEmptyState
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppIconTile
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
@@ -112,6 +116,7 @@ fun ProvidersScreen(
                     settings = settings,
                     onBack = onBack,
                     onAddNew = { pageState = ProvidersPageState.Edit(null) },
+                    onAddOfficial = { pageState = ProvidersPageState.Edit(createOfficialProviderDraft()) },
                     onScan = { pageState = ProvidersPageState.Scan },
                     onEditProvider = { provider -> pageState = ProvidersPageState.Edit(provider) },
                     showTopBar = showTopBar
@@ -159,6 +164,7 @@ private fun ProvidersListContent(
     settings: com.tchat.wanxiaot.settings.AppSettings,
     onBack: () -> Unit,
     onAddNew: () -> Unit,
+    onAddOfficial: () -> Unit,
     onScan: () -> Unit,
     onEditProvider: (ProviderConfig) -> Unit,
     showTopBar: Boolean = true
@@ -243,16 +249,11 @@ private fun ProvidersListContent(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    AppHeroCard(
-                        eyebrow = "Connection Layer",
-                        title = "先把供应商连接整理清楚，再谈模型体验",
-                        description = "服务商层决定模型、端点、Key 和参数策略，是整个应用的基础设施。",
-                        icon = Lucide.BrainCircuit
-                    )
+                    OfficialServicePrompt(onClick = onAddOfficial)
                     AppEmptyState(
                         icon = Lucide.BrainCircuit,
                         title = "还没有添加服务商",
-                        description = "添加一个 AI 服务商，聊天、知识库和深度研究功能才会真正工作起来。"
+                description = "选择官方服务获取许可证，或添加自定义服务。"
                     )
                 }
             }
@@ -266,6 +267,11 @@ private fun ProvidersListContent(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    if (settings.providers.none { it.isOfficialService() }) {
+                        item {
+                            OfficialServicePrompt(onClick = onAddOfficial)
+                        }
+                    }
                     item {
                         Row(
                             modifier = Modifier
@@ -365,6 +371,11 @@ private fun ProvidersListContent(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    if (settings.providers.none { it.isOfficialService() }) {
+                        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(settings.providerGridColumnCount) }) {
+                            OfficialServicePrompt(onClick = onAddOfficial)
+                        }
+                    }
                     item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(settings.providerGridColumnCount) }) {
                         Row(
                             modifier = Modifier
@@ -516,7 +527,7 @@ private fun ProviderListItem(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = provider.providerType.displayName,
+                        text = "${provider.providerType.displayName} · ${provider.serviceMode.displayLabel()}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -540,6 +551,11 @@ private fun ProviderListItem(
                     }
                     AppPill(
                         text = "${provider.availableModels.size} 个模型",
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    AppPill(
+                        text = provider.billingMode.displayLabel(),
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -703,7 +719,7 @@ private fun ProviderCard(
             // 描述信息（如果有的话，显示提供商类型）
             if (provider.providerType.displayName.isNotEmpty()) {
                 Text(
-                    text = provider.providerType.displayName,
+                    text = "${provider.providerType.displayName} · ${provider.serviceMode.displayLabel()}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -740,5 +756,96 @@ private fun ProviderCard(
             }
         }
         }
+    }
+}
+
+@Composable
+private fun OfficialServicePrompt(
+    onClick: () -> Unit
+) {
+    AppSectionSurface {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "推荐：使用 TChat 官方服务",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "购买套餐后写入许可证，余额、设备与用量都可以在 App 内查看。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                AppIconTile(
+                    icon = Lucide.KeyRound,
+                    tint = MaterialTheme.colorScheme.primary,
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                )
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AppPill(text = "无需 API 配置")
+                AppPill(text = "License Code")
+                AppPill(text = "用量透明")
+            }
+
+            FilledTonalButton(
+                onClick = onClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("配置官方服务")
+            }
+        }
+    }
+}
+
+private fun createOfficialProviderDraft(): ProviderConfig {
+    return ProviderConfig(
+        name = "TChat 官方服务",
+        providerType = AIProviderType.NAAPI_TCHAT,
+        serviceMode = ServiceMode.OFFICIAL,
+        billingMode = ProviderBillingMode.NAAPI_LICENSE,
+        authType = ProviderAuthType.LICENSE_CODE,
+        endpoint = AIProviderType.NAAPI_TCHAT.defaultEndpoint,
+        apiPath = AIProviderType.NAAPI_TCHAT.defaultApiPath,
+        modelsPath = AIProviderType.NAAPI_TCHAT.defaultModelsPath,
+        imagesPath = AIProviderType.NAAPI_TCHAT.defaultImagesPath,
+        modelCatalogPath = "/api/tchat/model-catalog",
+        selectedModel = "",
+        availableModels = emptyList()
+    )
+}
+
+private fun ServiceMode.displayLabel(): String {
+    return when (this) {
+        ServiceMode.OFFICIAL -> "官方服务"
+        ServiceMode.CUSTOM -> "自定义"
+        ServiceMode.LOCAL -> "本地"
+    }
+}
+
+private fun ProviderBillingMode.displayLabel(): String {
+    return when (this) {
+        ProviderBillingMode.OFFICIAL_TCHAT -> "官方套餐"
+        ProviderBillingMode.NAAPI_LICENSE -> "许可证"
+        ProviderBillingMode.USER_API_KEY -> "自有 Key"
+        ProviderBillingMode.LOCAL -> "本地"
+        ProviderBillingMode.TEAM -> "团队"
     }
 }

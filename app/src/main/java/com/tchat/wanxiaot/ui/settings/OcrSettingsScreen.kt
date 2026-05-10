@@ -40,9 +40,7 @@ import com.tchat.wanxiaot.settings.OcrModel
 import com.tchat.wanxiaot.settings.OcrSettings
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionCard
 import com.tchat.wanxiaot.ui.components.AppSectionSurface
 
@@ -79,17 +77,6 @@ fun OcrSettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            AppHeroCard(
-                eyebrow = "Screen Parsing",
-                title = "把截图识别链路配置得更稳一些",
-                description = "OCR 会直接影响密钥、URL 与界面文本提取质量，模型选择不能随便凑合。",
-                icon = Lucide.Pencil,
-                trailing = {
-                    AppPill(text = selectedModel.displayName)
-                }
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
 
             AppSectionCard(
                 title = "识别模型",

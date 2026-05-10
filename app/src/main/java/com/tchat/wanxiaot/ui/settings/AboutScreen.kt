@@ -128,10 +128,7 @@ fun AboutScreen(
                 }
             }
 
-            AppSectionCard(
-                title = "项目入口",
-                description = "这里集中放更新检查和仓库主页，保留现有功能但统一成新的页面样式。"
-            ) {
+            AppSectionCard(title = "项目入口") {
                 AboutActionRow(
                     title = "检查更新",
                     subtitle = checkUpdateError ?: "当前版本: ${BuildConfig.VERSION_NAME}",
@@ -212,10 +209,7 @@ fun AboutScreen(
                 )
             }
 
-            AppSectionCard(
-                title = "开发者",
-                description = "项目署名与来源信息。"
-            ) {
+            AppSectionCard(title = "开发者") {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,

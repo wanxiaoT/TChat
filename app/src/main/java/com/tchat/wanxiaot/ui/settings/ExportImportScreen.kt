@@ -16,7 +16,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.composables.icons.lucide.*
 import com.tchat.wanxiaot.settings.ProviderConfig
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppIconTile
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
@@ -47,16 +46,6 @@ fun ExportImportScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            item {
-                AppHeroCard(
-                    title = "轻量迁移入口",
-                    description = "用于基础配置的导入导出，二维码与文件方式都可用。",
-                    eyebrow = "Fallback Flow",
-                    icon = Lucide.Archive
-                ) {
-                    AppPill(text = "Legacy")
-                }
-            }
 
             // 供应商配置
             item {

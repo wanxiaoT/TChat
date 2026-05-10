@@ -10,9 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tchat.data.model.Skill
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionCard
 import com.tchat.wanxiaot.ui.components.AppSectionSurface
 
@@ -135,14 +133,6 @@ fun SkillDetailScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            AppHeroCard(
-                title = displayName.ifBlank { "未命名 Skill" },
-                description = if (description.isBlank()) "补充技能说明、触发规则和注入内容。" else description,
-                eyebrow = if (isBuiltIn) "Built-in Skill" else "Custom Skill"
-            ) {
-                AppPill(text = if (enabled) "已启用" else "已停用")
-                AppPill(text = "优先级 ${priority.toIntOrNull() ?: 0}")
-            }
 
             AppSectionCard(
                 title = "基本信息",

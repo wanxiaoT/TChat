@@ -75,9 +75,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tchat.wanxiaot.ui.components.AppEmptyState
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -438,17 +436,6 @@ fun LogcatScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            AppHeroCard(
-                title = "设备日志流",
-                description = "支持等级过滤、复制与实时落盘，适合快速定位运行期问题。",
-                eyebrow = "Logcat",
-                icon = Icons.Default.FilterList
-            ) {
-                AppPill(text = "${logEntries.size} 条")
-                if (isStreamSaving) {
-                    AppPill(text = "实时保存中")
-                }
-            }
 
             if (!showTopBar) {
                 AppSectionSurface {

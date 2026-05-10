@@ -22,9 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tchat.wanxiaot.i18n.Language
 import com.tchat.wanxiaot.i18n.strings
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionSurface
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,17 +45,6 @@ fun LanguageScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            item {
-                AppHeroCard(
-                    eyebrow = "Localization",
-                    title = "选择最顺手的界面语言",
-                    description = "系统语言模式会自动跟随设备语言，手动选择则固定显示对应翻译。",
-                    icon = Icons.Default.Language,
-                    trailing = {
-                        AppPill(text = currentLanguage.nativeName)
-                    }
-                )
-            }
 
             items(Language.entries) { language ->
                 LanguageItem(

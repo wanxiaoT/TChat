@@ -46,7 +46,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tchat.data.model.Assistant
 import com.tchat.wanxiaot.ui.components.AppEmptyState
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppIconTile
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
@@ -99,23 +98,6 @@ fun AssistantScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                item {
-                    AppHeroCard(
-                        eyebrow = "Workspace",
-                        title = if (assistants.isEmpty()) "为不同场景准备专属助手" else "把常用角色整理成清晰的助手库",
-                        description = if (assistants.isEmpty()) {
-                            "你可以为每个助手独立配置提示词、本地工具、MCP 和知识库。"
-                        } else {
-                            "当前共 ${assistants.size} 位助手，建议按任务拆分而不是把所有能力塞进一个角色。"
-                        },
-                        icon = Icons.Default.Person,
-                        trailing = {
-                            if (assistants.isNotEmpty()) {
-                                AppPill(text = "${assistants.size} 项")
-                            }
-                        }
-                    )
-                }
 
                 if (assistants.isEmpty()) {
                     item {

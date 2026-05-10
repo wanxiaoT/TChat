@@ -26,11 +26,17 @@ class OpenAIProvider(
     baseUrl: String = "https://api.openai.com/v1",
     private val model: String = "gpt-3.5-turbo",
     private val customParams: CustomParams? = null,
-    private val extraHeaders: Map<String, String> = emptyMap()
+    private val extraHeaders: Map<String, String> = emptyMap(),
+    chatPath: String = "/chat/completions",
+    imagesPath: String = "/images/generations",
+    private val authHeaderName: String = "Authorization",
+    private val authHeaderValue: String? = null
 ) : AIProvider {
 
     // 规范化 baseUrl：移除末尾斜杠
     private val normalizedBaseUrl = baseUrl.trimEnd('/')
+    private val normalizedChatPath = normalizePath(chatPath, "/chat/completions")
+    private val normalizedImagesPath = normalizePath(imagesPath, "/images/generations")
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -57,11 +63,8 @@ class OpenAIProvider(
         val requestId = NetworkLogger.logRequest(
             provider = "OpenAI",
             model = model,
-            url = "$normalizedBaseUrl/chat/completions",
-            headers = mapOf(
-                "Authorization" to "Bearer ${apiKey.take(8)}...",
-                "Content-Type" to "application/json"
-            ) + extraHeaders.mapValues { (_, value) -> maskHeaderValue(value) },
+            url = "$normalizedBaseUrl$normalizedChatPath",
+            headers = buildLogHeaders(),
             body = jsonBody
         )
 
@@ -186,10 +189,10 @@ class OpenAIProvider(
         }
 
         val request = Request.Builder()
-            .url("$normalizedBaseUrl/images/generations")
-            .addHeader("Authorization", "Bearer $apiKey")
+            .url("$normalizedBaseUrl$normalizedImagesPath")
             .addHeader("Content-Type", "application/json")
             .post(requestBodyJson.toString().toRequestBody("application/json".toMediaType()))
+            .applyAuthHeader()
             .applyExtraHeaders()
             .build()
 
@@ -527,13 +530,22 @@ class OpenAIProvider(
 
     private fun buildRequest(jsonBody: String): Request {
         return Request.Builder()
-            .url("$normalizedBaseUrl/chat/completions")
-            .addHeader("Authorization", "Bearer $apiKey")
+            .url("$normalizedBaseUrl$normalizedChatPath")
             .addHeader("Content-Type", "application/json")
             .addHeader("Accept", "text/event-stream")
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
+            .applyAuthHeader()
             .applyExtraHeaders()
             .build()
+    }
+
+    private fun Request.Builder.applyAuthHeader(): Request.Builder {
+        val value = effectiveAuthHeaderValue()
+        val name = authHeaderName.trim()
+        if (!value.isNullOrBlank() && name.isNotBlank()) {
+            addHeader(name, value)
+        }
+        return this
     }
 
     private fun Request.Builder.applyExtraHeaders(): Request.Builder {
@@ -543,7 +555,8 @@ class OpenAIProvider(
             if (normalizedName.isBlank() || normalizedValue.isBlank()) {
                 return@forEach
             }
-            if (normalizedName.equals("Authorization", ignoreCase = true) ||
+            if (normalizedName.equals(authHeaderName, ignoreCase = true) ||
+                normalizedName.equals("Authorization", ignoreCase = true) ||
                 normalizedName.equals("Content-Type", ignoreCase = true) ||
                 normalizedName.equals("Content-Length", ignoreCase = true)
             ) {
@@ -552,6 +565,37 @@ class OpenAIProvider(
             addHeader(normalizedName, normalizedValue)
         }
         return this
+    }
+
+    private fun effectiveAuthHeaderValue(): String? {
+        return authHeaderValue ?: apiKey.takeIf { it.isNotBlank() }?.let { "Bearer $it" }
+    }
+
+    private fun buildLogHeaders(): Map<String, String> {
+        val headers = linkedMapOf("Content-Type" to "application/json")
+        val name = authHeaderName.trim()
+        val value = effectiveAuthHeaderValue()
+        if (name.isNotBlank() && !value.isNullOrBlank()) {
+            headers[name] = maskHeaderValue(value)
+        }
+        extraHeaders.forEach { (key, headerValue) ->
+            if (key.isNotBlank() && headerValue.isNotBlank()) {
+                headers[key] = maskHeaderValue(headerValue)
+            }
+        }
+        return headers
+    }
+
+    private fun normalizePath(path: String, fallback: String): String {
+        val value = path.trim().ifBlank { fallback }.trim()
+        return when {
+            value.startsWith("http://") || value.startsWith("https://") -> {
+                // 目前 Provider 以 baseUrl + path 为模型，完整 URL 由调用方放入 baseUrl 更清晰。
+                java.net.URI(value).rawPath?.takeIf { it.isNotBlank() } ?: fallback
+            }
+            value.startsWith("/") -> value
+            else -> "/$value"
+        }
     }
 
     private fun maskHeaderValue(value: String): String {

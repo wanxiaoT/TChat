@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tchat.data.model.Skill
 import com.tchat.wanxiaot.ui.components.AppEmptyState
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionSurface
@@ -104,15 +103,6 @@ fun SkillScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item {
-                AppHeroCard(
-                    title = "技能库",
-                    description = "在这里管理系统能力扩展，包括导入、复制、启用和创建自定义 Skills。",
-                    eyebrow = "Skill System"
-                ) {
-                    AppPill(text = "${skills.size} 个技能")
-                }
-            }
 
             if (skills.isEmpty()) {
                 item {

@@ -35,7 +35,6 @@ import com.tchat.data.model.ChatToolbarItemConfig
 import com.tchat.data.model.ChatToolbarSettings
 import com.tchat.wanxiaot.i18n.strings
 import com.tchat.wanxiaot.settings.SettingsManager
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionCard
@@ -69,17 +68,6 @@ fun DisplaySettingsScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            item {
-                AppHeroCard(
-                    eyebrow = "Toolbar Layout",
-                    title = "把对话工具栏整理成更顺手的工作顺序",
-                    description = "你可以决定哪些入口显示，以及它们在聊天页中的排列位置。",
-                    icon = Icons.Default.Psychology,
-                    trailing = {
-                        AppPill(text = "${toolbarSettings.items.count { it.visible }} 项显示中")
-                    }
-                )
-            }
 
             item {
                 AppSectionCard(

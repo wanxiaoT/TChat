@@ -53,6 +53,19 @@ object NaapiTChatSupport {
         }
     }
 
+    fun buildDeviceInfoJson(context: Context): JSONObject {
+        return JSONObject().apply {
+            put("app_device_id", getOrCreateDeviceId(context))
+            put("android_id_hash", androidIdHash(context))
+            put("manufacturer", Build.MANUFACTURER.orEmpty())
+            put("brand", Build.BRAND.orEmpty())
+            put("model", Build.MODEL.orEmpty())
+            put("android_version", Build.VERSION.RELEASE.orEmpty())
+            put("sdk_int", Build.VERSION.SDK_INT)
+            put("app_version", BuildConfig.VERSION_NAME)
+        }
+    }
+
     suspend fun activateDevice(
         context: Context,
         httpClient: OkHttpClient,
@@ -68,16 +81,7 @@ object NaapiTChatSupport {
         val url = "$portalBase/api/tchat/activate"
         val body = JSONObject().apply {
             put("redeem_code", trimmedCode)
-            put("device", JSONObject().apply {
-                put("app_device_id", getOrCreateDeviceId(context))
-                put("android_id_hash", androidIdHash(context))
-                put("manufacturer", Build.MANUFACTURER.orEmpty())
-                put("brand", Build.BRAND.orEmpty())
-                put("model", Build.MODEL.orEmpty())
-                put("android_version", Build.VERSION.RELEASE.orEmpty())
-                put("sdk_int", Build.VERSION.SDK_INT)
-                put("app_version", BuildConfig.VERSION_NAME)
-            })
+            put("device", buildDeviceInfoJson(context))
         }
 
         val request = Request.Builder()
@@ -100,12 +104,20 @@ object NaapiTChatSupport {
 
                 val json = runCatching { JSONObject(responseBody) }.getOrNull()
                 val success = json?.optBoolean("success", false) ?: false
+                val data = json?.optJSONObject("data") ?: json
                 val message = if (success) {
                     "当前设备已激活"
                 } else {
                     json?.optString("message").orEmpty().ifBlank { "设备激活失败" }
                 }
-                NaapiActivationResult(success = success, message = message)
+                NaapiActivationResult(
+                    success = success,
+                    message = message,
+                    gatewayKey = data?.optString("gateway_key")?.takeIf { it.isNotBlank() }
+                        ?: data?.optString("gatewayKey")?.takeIf { it.isNotBlank() },
+                    gatewayBaseUrl = data?.optString("gateway_base_url")?.takeIf { it.isNotBlank() }
+                        ?: data?.optString("gatewayBaseUrl")?.takeIf { it.isNotBlank() }
+                )
             }
         } catch (e: Exception) {
             NaapiActivationResult(success = false, message = "设备激活失败：${e.message ?: "网络异常"}")
@@ -136,5 +148,7 @@ object NaapiTChatSupport {
 
 data class NaapiActivationResult(
     val success: Boolean,
-    val message: String
+    val message: String,
+    val gatewayKey: String? = null,
+    val gatewayBaseUrl: String? = null
 )

@@ -59,9 +59,7 @@ import com.tchat.network.log.NetworkLogEntry
 import com.tchat.network.log.NetworkLogStatus
 import com.tchat.network.log.NetworkLogger
 import com.tchat.wanxiaot.ui.components.AppEmptyState
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import org.json.JSONObject
 
@@ -118,27 +116,11 @@ fun NetworkLogScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            item {
-                AppHeroCard(
-                    title = "调试留痕",
-                    description = if (logs.isEmpty()) {
-                        "当前还没有请求记录，发起一次对话后这里会出现完整的请求与响应。"
-                    } else {
-                        "保留最近 ${logs.size} 条请求记录，适合快速定位模型响应、超时和报错。"
-                    },
-                    eyebrow = "Network Trace"
-                ) {
-                    if (logs.isNotEmpty()) {
-                        AppPill(text = "${logs.size} 条")
-                    }
-                }
-            }
 
             if (logs.isEmpty()) {
                 item {
                     AppEmptyState(
                         title = "暂无网络日志",
-                        description = "发送消息后，这里会显示接口请求、响应与报错信息。",
                         icon = Icons.Default.Refresh
                     )
                 }

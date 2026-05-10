@@ -4,8 +4,83 @@ import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.ApiKeyEntry
 import com.tchat.wanxiaot.settings.ApiKeyStatus
 import com.tchat.wanxiaot.settings.KeySelectionStrategy
+import com.tchat.wanxiaot.settings.ModelCapabilityConfig
+import com.tchat.wanxiaot.settings.ProviderAuthType
+import com.tchat.wanxiaot.settings.ProviderBillingMode
+import com.tchat.wanxiaot.settings.ServiceMode
 import org.json.JSONArray
 import org.json.JSONObject
+
+private fun modelCapabilitiesToJson(capabilities: Map<String, ModelCapabilityConfig>): JSONObject {
+    val json = JSONObject()
+    capabilities.forEach { (modelName, capability) ->
+        val item = JSONObject()
+        item.put("displayName", capability.displayName)
+        item.put("vendor", capability.vendor)
+        item.put("category", capability.category)
+        item.put("supportsVision", capability.supportsVision)
+        item.put("supportsTools", capability.supportsTools)
+        item.put("supportsResponses", capability.supportsResponses)
+        item.put("supportsImageGeneration", capability.supportsImageGeneration)
+        item.put("supportsEmbedding", capability.supportsEmbedding)
+        item.put("speed", capability.speed)
+        item.put("quality", capability.quality)
+        item.put("costLevel", capability.costLevel)
+        item.put("recommended", capability.recommended)
+        json.put(modelName, item)
+    }
+    return json
+}
+
+private fun jsonToModelCapabilities(json: JSONObject?): Map<String, ModelCapabilityConfig> {
+    if (json == null) return emptyMap()
+    val result = linkedMapOf<String, ModelCapabilityConfig>()
+    val keys = json.keys()
+    while (keys.hasNext()) {
+        val modelName = keys.next()
+        val item = json.optJSONObject(modelName) ?: continue
+        result[modelName] = ModelCapabilityConfig(
+            modelName = modelName,
+            displayName = item.optString("displayName", ""),
+            vendor = item.optString("vendor", ""),
+            category = item.optString("category", ""),
+            supportsVision = item.optBoolean("supportsVision", false),
+            supportsTools = item.optBoolean("supportsTools", false),
+            supportsResponses = item.optBoolean("supportsResponses", false),
+            supportsImageGeneration = item.optBoolean("supportsImageGeneration", false),
+            supportsEmbedding = item.optBoolean("supportsEmbedding", false),
+            speed = item.optString("speed", ""),
+            quality = item.optString("quality", ""),
+            costLevel = item.optString("costLevel", ""),
+            recommended = item.optBoolean("recommended", false)
+        )
+    }
+    return result
+}
+
+private fun stringMapToJson(values: Map<String, String>): JSONObject {
+    val json = JSONObject()
+    values.forEach { (key, value) ->
+        if (key.isNotBlank() && value.isNotBlank()) {
+            json.put(key, value)
+        }
+    }
+    return json
+}
+
+private fun jsonToStringMap(json: JSONObject?): Map<String, String> {
+    if (json == null) return emptyMap()
+    val result = linkedMapOf<String, String>()
+    val keys = json.keys()
+    while (keys.hasNext()) {
+        val key = keys.next()
+        val value = json.optString(key, "")
+        if (key.isNotBlank() && value.isNotBlank()) {
+            result[key] = value
+        }
+    }
+    return result
+}
 
 /**
  * 导出数据类型
@@ -67,10 +142,23 @@ data class ProvidersExportData(
             providerJson.put("id", provider.id)
             providerJson.put("name", provider.name)
             providerJson.put("providerType", provider.providerType.name)
+            providerJson.put("serviceMode", provider.serviceMode.name)
+            providerJson.put("billingMode", provider.billingMode.name)
+            providerJson.put("authType", provider.authType.name)
             providerJson.put("apiKey", provider.apiKey)
             providerJson.put("endpoint", provider.endpoint)
+            providerJson.put("apiPath", provider.apiPath)
+            providerJson.put("modelsPath", provider.modelsPath)
+            providerJson.put("imagesPath", provider.imagesPath)
+            providerJson.put("embeddingsPath", provider.embeddingsPath)
+            providerJson.put("modelCatalogPath", provider.modelCatalogPath)
+            providerJson.put("authHeaderName", provider.authHeaderName)
+            providerJson.put("authHeaderPrefix", provider.authHeaderPrefix)
+            providerJson.put("useProxy", provider.useProxy)
             providerJson.put("selectedModel", provider.selectedModel)
             providerJson.put("availableModels", JSONArray(provider.availableModels))
+            providerJson.put("modelCapabilities", modelCapabilitiesToJson(provider.modelCapabilities))
+            providerJson.put("customHeaders", stringMapToJson(provider.customHeaders))
 
             // 序列化模型自定义参数
             val paramsJson = JSONObject()
@@ -215,11 +303,30 @@ data class ProvidersExportData(
                     id = providerJson.getString("id"),
                     name = providerJson.getString("name"),
                     providerType = providerType,
+                    serviceMode = runCatching {
+                        ServiceMode.valueOf(providerJson.optString("serviceMode", "CUSTOM"))
+                    }.getOrDefault(ServiceMode.CUSTOM),
+                    billingMode = runCatching {
+                        ProviderBillingMode.valueOf(providerJson.optString("billingMode", "USER_API_KEY"))
+                    }.getOrDefault(ProviderBillingMode.USER_API_KEY),
+                    authType = runCatching {
+                        ProviderAuthType.valueOf(providerJson.optString("authType", "BEARER"))
+                    }.getOrDefault(ProviderAuthType.BEARER),
                     apiKey = providerJson.getString("apiKey"),
                     endpoint = providerJson.getString("endpoint"),
+                    apiPath = providerJson.optString("apiPath", ""),
+                    modelsPath = providerJson.optString("modelsPath", ""),
+                    imagesPath = providerJson.optString("imagesPath", ""),
+                    embeddingsPath = providerJson.optString("embeddingsPath", ""),
+                    modelCatalogPath = providerJson.optString("modelCatalogPath", ""),
+                    authHeaderName = providerJson.optString("authHeaderName", "Authorization"),
+                    authHeaderPrefix = providerJson.optString("authHeaderPrefix", "Bearer "),
+                    useProxy = providerJson.optBoolean("useProxy", false),
                     selectedModel = providerJson.getString("selectedModel"),
                     availableModels = availableModels,
+                    modelCapabilities = jsonToModelCapabilities(providerJson.optJSONObject("modelCapabilities")),
                     modelCustomParams = modelCustomParams,
+                    customHeaders = jsonToStringMap(providerJson.optJSONObject("customHeaders")),
                     // 多 Key 管理
                     apiKeys = apiKeys,
                     multiKeyEnabled = multiKeyEnabled,
@@ -247,10 +354,23 @@ data class ApiConfigExportData(
         json.put("id", provider.id)
         json.put("name", provider.name)
         json.put("providerType", provider.providerType.name)
+        json.put("serviceMode", provider.serviceMode.name)
+        json.put("billingMode", provider.billingMode.name)
+        json.put("authType", provider.authType.name)
         json.put("apiKey", provider.apiKey)
         json.put("endpoint", provider.endpoint)
+        json.put("apiPath", provider.apiPath)
+        json.put("modelsPath", provider.modelsPath)
+        json.put("imagesPath", provider.imagesPath)
+        json.put("embeddingsPath", provider.embeddingsPath)
+        json.put("modelCatalogPath", provider.modelCatalogPath)
+        json.put("authHeaderName", provider.authHeaderName)
+        json.put("authHeaderPrefix", provider.authHeaderPrefix)
+        json.put("useProxy", provider.useProxy)
         json.put("selectedModel", provider.selectedModel)
         json.put("availableModels", JSONArray(provider.availableModels))
+        json.put("modelCapabilities", modelCapabilitiesToJson(provider.modelCapabilities))
+        json.put("customHeaders", stringMapToJson(provider.customHeaders))
 
         // 序列化模型自定义参数
         val paramsJson = JSONObject()
@@ -387,11 +507,30 @@ data class ApiConfigExportData(
                 id = json.getString("id"),
                 name = json.getString("name"),
                 providerType = providerType,
+                serviceMode = runCatching {
+                    ServiceMode.valueOf(json.optString("serviceMode", "CUSTOM"))
+                }.getOrDefault(ServiceMode.CUSTOM),
+                billingMode = runCatching {
+                    ProviderBillingMode.valueOf(json.optString("billingMode", "USER_API_KEY"))
+                }.getOrDefault(ProviderBillingMode.USER_API_KEY),
+                authType = runCatching {
+                    ProviderAuthType.valueOf(json.optString("authType", "BEARER"))
+                }.getOrDefault(ProviderAuthType.BEARER),
                 apiKey = json.getString("apiKey"),
                 endpoint = json.getString("endpoint"),
+                apiPath = json.optString("apiPath", ""),
+                modelsPath = json.optString("modelsPath", ""),
+                imagesPath = json.optString("imagesPath", ""),
+                embeddingsPath = json.optString("embeddingsPath", ""),
+                modelCatalogPath = json.optString("modelCatalogPath", ""),
+                authHeaderName = json.optString("authHeaderName", "Authorization"),
+                authHeaderPrefix = json.optString("authHeaderPrefix", "Bearer "),
+                useProxy = json.optBoolean("useProxy", false),
                 selectedModel = json.getString("selectedModel"),
                 availableModels = availableModels,
+                modelCapabilities = jsonToModelCapabilities(json.optJSONObject("modelCapabilities")),
                 modelCustomParams = modelCustomParams,
+                customHeaders = jsonToStringMap(json.optJSONObject("customHeaders")),
                 // 多 Key 管理
                 apiKeys = apiKeys,
                 multiKeyEnabled = multiKeyEnabled,

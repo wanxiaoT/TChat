@@ -261,10 +261,34 @@ class SettingsManager(context: Context) {
                         } catch (e: Exception) {
                             AIProviderType.OPENAI
                         },
+                        serviceMode = try {
+                            ServiceMode.valueOf(obj.optString("serviceMode", "CUSTOM"))
+                        } catch (e: Exception) {
+                            ServiceMode.CUSTOM
+                        },
+                        billingMode = try {
+                            ProviderBillingMode.valueOf(obj.optString("billingMode", "USER_API_KEY"))
+                        } catch (e: Exception) {
+                            ProviderBillingMode.USER_API_KEY
+                        },
+                        authType = try {
+                            ProviderAuthType.valueOf(obj.optString("authType", "BEARER"))
+                        } catch (e: Exception) {
+                            ProviderAuthType.BEARER
+                        },
                         apiKey = obj.optString("apiKey", ""),
                         endpoint = obj.optString("endpoint", ""),
+                        apiPath = obj.optString("apiPath", ""),
+                        modelsPath = obj.optString("modelsPath", ""),
+                        imagesPath = obj.optString("imagesPath", ""),
+                        embeddingsPath = obj.optString("embeddingsPath", ""),
+                        modelCatalogPath = obj.optString("modelCatalogPath", ""),
+                        authHeaderName = obj.optString("authHeaderName", "Authorization"),
+                        authHeaderPrefix = obj.optString("authHeaderPrefix", "Bearer "),
+                        useProxy = obj.optBoolean("useProxy", false),
                         selectedModel = obj.optString("selectedModel", ""),
                         availableModels = parseStringList(obj.optJSONArray("availableModels")),
+                        modelCapabilities = parseModelCapabilities(obj.optJSONObject("modelCapabilities")),
                         modelCustomParams = parseModelCustomParams(obj.optJSONObject("modelCustomParams")),
                         customHeaders = parseStringMap(obj.optJSONObject("customHeaders")),
                         // 多 Key 支持
@@ -373,6 +397,36 @@ class SettingsManager(context: Context) {
         return result
     }
 
+    private fun parseModelCapabilities(jsonObj: JSONObject?): Map<String, ModelCapabilityConfig> {
+        if (jsonObj == null) return emptyMap()
+        val result = linkedMapOf<String, ModelCapabilityConfig>()
+        try {
+            val keys = jsonObj.keys()
+            while (keys.hasNext()) {
+                val modelName = keys.next()
+                val capabilityObj = jsonObj.optJSONObject(modelName) ?: continue
+                result[modelName] = ModelCapabilityConfig(
+                    modelName = modelName,
+                    displayName = capabilityObj.optString("displayName", ""),
+                    vendor = capabilityObj.optString("vendor", ""),
+                    category = capabilityObj.optString("category", ""),
+                    supportsVision = capabilityObj.optBoolean("supportsVision", false),
+                    supportsTools = capabilityObj.optBoolean("supportsTools", false),
+                    supportsResponses = capabilityObj.optBoolean("supportsResponses", false),
+                    supportsImageGeneration = capabilityObj.optBoolean("supportsImageGeneration", false),
+                    supportsEmbedding = capabilityObj.optBoolean("supportsEmbedding", false),
+                    speed = capabilityObj.optString("speed", ""),
+                    quality = capabilityObj.optString("quality", ""),
+                    costLevel = capabilityObj.optString("costLevel", ""),
+                    recommended = capabilityObj.optBoolean("recommended", false)
+                )
+            }
+        } catch (e: Exception) {
+            // Ignore malformed model capability payloads.
+        }
+        return result
+    }
+
     private fun serializeProviders(providers: List<ProviderConfig>): String {
         val jsonArray = JSONArray()
         providers.forEach { provider ->
@@ -380,10 +434,22 @@ class SettingsManager(context: Context) {
             obj.put("id", provider.id)
             obj.put("name", provider.name)
             obj.put("providerType", provider.providerType.name)
+            obj.put("serviceMode", provider.serviceMode.name)
+            obj.put("billingMode", provider.billingMode.name)
+            obj.put("authType", provider.authType.name)
             obj.put("apiKey", provider.apiKey)
             obj.put("endpoint", provider.endpoint)
+            obj.put("apiPath", provider.apiPath)
+            obj.put("modelsPath", provider.modelsPath)
+            obj.put("imagesPath", provider.imagesPath)
+            obj.put("embeddingsPath", provider.embeddingsPath)
+            obj.put("modelCatalogPath", provider.modelCatalogPath)
+            obj.put("authHeaderName", provider.authHeaderName)
+            obj.put("authHeaderPrefix", provider.authHeaderPrefix)
+            obj.put("useProxy", provider.useProxy)
             obj.put("selectedModel", provider.selectedModel)
             obj.put("availableModels", JSONArray(provider.availableModels))
+            obj.put("modelCapabilities", serializeModelCapabilities(provider.modelCapabilities))
             obj.put("modelCustomParams", serializeModelCustomParams(provider.modelCustomParams))
             obj.put("customHeaders", serializeStringMap(provider.customHeaders))
             // 多 Key 管理字段
@@ -434,6 +500,27 @@ class SettingsManager(context: Context) {
                 paramsObj.put("extraParams", customParams.extraParams)
             }
             result.put(modelName, paramsObj)
+        }
+        return result
+    }
+
+    private fun serializeModelCapabilities(capabilities: Map<String, ModelCapabilityConfig>): JSONObject {
+        val result = JSONObject()
+        capabilities.forEach { (modelName, capability) ->
+            val obj = JSONObject()
+            obj.put("displayName", capability.displayName)
+            obj.put("vendor", capability.vendor)
+            obj.put("category", capability.category)
+            obj.put("supportsVision", capability.supportsVision)
+            obj.put("supportsTools", capability.supportsTools)
+            obj.put("supportsResponses", capability.supportsResponses)
+            obj.put("supportsImageGeneration", capability.supportsImageGeneration)
+            obj.put("supportsEmbedding", capability.supportsEmbedding)
+            obj.put("speed", capability.speed)
+            obj.put("quality", capability.quality)
+            obj.put("costLevel", capability.costLevel)
+            obj.put("recommended", capability.recommended)
+            result.put(modelName, obj)
         }
         return result
     }

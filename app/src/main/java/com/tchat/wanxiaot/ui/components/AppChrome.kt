@@ -106,50 +106,6 @@ fun AppPageBackground(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun AppHeroCard(
-    title: String,
-    description: String,
-    modifier: Modifier = Modifier,
-    eyebrow: String? = null,
-    icon: ImageVector? = null,
-    trailing: @Composable RowScope.() -> Unit = {}
-) {
-    AppSectionSurface(modifier = modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 15.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (icon != null) {
-                AppIconTile(icon = icon)
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                content = trailing
-            )
-        }
-    }
-}
-
-@Composable
 fun AppSectionCard(
     modifier: Modifier = Modifier,
     title: String? = null,
@@ -227,7 +183,7 @@ fun AppSheetSurface(
 @Composable
 fun AppEmptyState(
     title: String,
-    description: String,
+    description: String = "",
     modifier: Modifier = Modifier,
     icon: ImageVector,
     action: @Composable (() -> Unit)? = null
@@ -248,11 +204,13 @@ fun AppEmptyState(
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
                 color = MaterialTheme.colorScheme.onSurface
             )
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (description.isNotBlank()) {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             action?.let {
                 Spacer(modifier = Modifier.height(2.dp))
                 it()

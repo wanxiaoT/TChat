@@ -10,6 +10,7 @@ import com.tchat.data.repository.ChatConfig
 import com.tchat.data.repository.ChatRepository
 import com.tchat.data.tool.Tool
 import com.tchat.data.util.RegexRuleData
+import com.tchat.network.provider.AIProviderException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -93,7 +94,7 @@ class ChatViewModel(
                     val (chatId, throwable) = error
                     if (chatId == currentChatId || chatId == _actualChatId.value) {
                         // 显示错误信息给用户
-                        _errorMessage.value = throwable.message ?: "发送消息失败"
+                        _errorMessage.value = throwable.toUserFriendlyMessage()
                     }
                     messageSender.clearError()
                 }
@@ -326,5 +327,41 @@ class ChatViewModel(
 
     private companion object {
         const val PAGE_SIZE = 100
+    }
+}
+
+private fun Throwable.toUserFriendlyMessage(): String {
+    return when (this) {
+        is AIProviderException.AuthenticationError -> {
+            "API Key 或 Gateway Key 无效，请检查服务配置后再试。"
+        }
+        is AIProviderException.RateLimitError -> {
+            if (message?.contains("quota", ignoreCase = true) == true ||
+                message?.contains("余额", ignoreCase = true) == true
+            ) {
+                "套餐余额不足，请续费后继续使用。"
+            } else {
+                "请求过于频繁，请稍后再试，或更换可用 Key。"
+            }
+        }
+        is AIProviderException.InvalidRequestError -> {
+            val raw = message.orEmpty()
+            when {
+                raw.contains("model", ignoreCase = true) || raw.contains("模型") ->
+                    "当前模型暂不可用，请换一个模型或更新模型列表。"
+                raw.contains("endpoint", ignoreCase = true) || raw.contains("端点") ->
+                    "API 端点或路径不正确，请打开服务设置检查 Base URL 与 API Path。"
+                else -> "请求参数不被当前服务接受，请检查模型和服务配置。"
+            }
+        }
+        is AIProviderException.ServiceUnavailableError -> {
+            "模型服务暂时不可用，请稍后再试，或换一个服务商。"
+        }
+        is AIProviderException.NetworkError -> {
+            "网络连通失败，请检查网络、代理或稍后再试。"
+        }
+        else -> {
+            message?.takeIf { it.isNotBlank() } ?: "发送消息失败，请稍后再试。"
+        }
     }
 }

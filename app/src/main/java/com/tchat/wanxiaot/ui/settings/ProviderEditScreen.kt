@@ -1,5 +1,7 @@
 package com.tchat.wanxiaot.ui.settings
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -23,16 +25,23 @@ import com.tchat.wanxiaot.settings.AIProviderType
 import com.tchat.wanxiaot.settings.ApiKeyEntry
 import com.tchat.wanxiaot.settings.ApiKeyStatus
 import com.tchat.wanxiaot.settings.KeySelectionStrategy
+import com.tchat.wanxiaot.settings.ModelCapabilityConfig
 import com.tchat.wanxiaot.settings.ModelCustomParams
+import com.tchat.wanxiaot.settings.ProviderAuthType
+import com.tchat.wanxiaot.settings.ProviderBillingMode
 import com.tchat.wanxiaot.settings.ProviderConfig
+import com.tchat.wanxiaot.settings.ServiceMode
 import com.tchat.wanxiaot.settings.SettingsManager
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionCard
 import com.tchat.wanxiaot.ui.components.QRCodeDialog
+import com.tchat.wanxiaot.util.NaapiLicenseClient
+import com.tchat.wanxiaot.util.NaapiModelCatalogItem
+import com.tchat.wanxiaot.util.NaapiPlan
 import com.tchat.wanxiaot.util.NaapiTChatSupport
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -56,12 +65,43 @@ fun ProviderEditScreen(
 
     var name by remember { mutableStateOf(provider?.name ?: "") }
     var providerType by remember { mutableStateOf(provider?.providerType ?: AIProviderType.OPENAI) }
+    var serviceMode by remember { mutableStateOf(provider?.serviceMode ?: ServiceMode.CUSTOM) }
+    var billingMode by remember { mutableStateOf(provider?.billingMode ?: ProviderBillingMode.USER_API_KEY) }
+    var authType by remember { mutableStateOf(provider?.authType ?: ProviderAuthType.BEARER) }
     var apiKey by remember { mutableStateOf(provider?.apiKey ?: "") }
     var endpoint by remember { mutableStateOf(provider?.endpoint ?: providerType.defaultEndpoint) }
-    var savedModels by remember { mutableStateOf(provider?.availableModels ?: emptyList()) }
+    var apiPath by remember { mutableStateOf(provider?.apiPath ?: providerType.defaultApiPath) }
+    var modelsPath by remember { mutableStateOf(provider?.modelsPath ?: providerType.defaultModelsPath) }
+    var imagesPath by remember { mutableStateOf(provider?.imagesPath ?: providerType.defaultImagesPath) }
+    var embeddingsPath by remember { mutableStateOf(provider?.embeddingsPath ?: "/embeddings") }
+    var modelCatalogPath by remember {
+        mutableStateOf(provider?.modelCatalogPath ?: if (providerType == AIProviderType.NAAPI_TCHAT) "/api/tchat/model-catalog" else "")
+    }
+    var authHeaderName by remember { mutableStateOf(provider?.authHeaderName ?: "Authorization") }
+    var authHeaderPrefix by remember { mutableStateOf(provider?.authHeaderPrefix ?: "Bearer ") }
+    var useProxy by remember { mutableStateOf(provider?.useProxy ?: false) }
+    var savedModels by remember {
+        mutableStateOf(
+            if (provider?.providerType == AIProviderType.NAAPI_TCHAT) {
+                emptyList()
+            } else {
+                provider?.availableModels ?: emptyList()
+            }
+        )
+    }
+    var modelCapabilities by remember { mutableStateOf(provider?.modelCapabilities ?: emptyMap()) }
     var customHeaders by remember { mutableStateOf(provider?.customHeaders ?: emptyMap()) }
+    var headerName by remember { mutableStateOf("") }
+    var headerValue by remember { mutableStateOf("") }
+    var redeemCode by remember { mutableStateOf("") }
     var selectedModel by remember {
-        mutableStateOf(provider?.selectedModel ?: savedModels.firstOrNull() ?: "")
+        mutableStateOf(
+            if (provider?.providerType == AIProviderType.NAAPI_TCHAT) {
+                ""
+            } else {
+                provider?.selectedModel ?: savedModels.firstOrNull() ?: ""
+            }
+        )
     }
 
     // 多 Key 管理
@@ -88,23 +128,223 @@ fun ProviderEditScreen(
     var isActivatingNaapi by remember { mutableStateOf(false) }
     var naapiActivationMessage by remember { mutableStateOf<String?>(null) }
     var naapiActivationSuccess by remember { mutableStateOf<Boolean?>(null) }
+    var isLoadingNaapiPlans by remember { mutableStateOf(false) }
+    var isCreatingNaapiOrder by remember { mutableStateOf(false) }
+    var isPollingNaapiOrder by remember { mutableStateOf(false) }
+    var showNaapiPlanDialog by remember { mutableStateOf(false) }
+    var naapiPlans by remember { mutableStateOf<List<NaapiPlan>>(emptyList()) }
+    var naapiLicenseMessage by remember { mutableStateOf<String?>(null) }
+    var naapiLicenseSuccess by remember { mutableStateOf<Boolean?>(null) }
+    var naapiPendingOrderNo by remember { mutableStateOf<String?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showQRDialog by remember { mutableStateOf(false) }
     var showModelParamsDialog by remember { mutableStateOf<String?>(null) }
+    var showModelCapabilityDialog by remember { mutableStateOf<String?>(null) }
     var modelCustomParams by remember { mutableStateOf(provider?.modelCustomParams ?: emptyMap()) }
+    var isTestingConnection by remember { mutableStateOf(false) }
+    var connectionTestMessage by remember { mutableStateOf<String?>(null) }
+    var connectionTestSuccess by remember { mutableStateOf<Boolean?>(null) }
 
     val scope = rememberCoroutineScope()
     val httpClient = remember { OkHttpClient() }
+    val naapiLicenseClient = remember(httpClient) { NaapiLicenseClient(httpClient) }
     val context = LocalContext.current
     val isNaapiProvider = providerType == AIProviderType.NAAPI_TCHAT
+    val isNaapiLicenseBusy = isLoadingNaapiPlans || isCreatingNaapiOrder || isPollingNaapiOrder
+
+    fun applyNaapiModelCatalog(catalog: List<NaapiModelCatalogItem>) {
+        val models = catalog.map { it.id.trim() }.filter { it.isNotBlank() }.distinct()
+        val catalogCapabilities = catalog.associate { item ->
+            item.id to ModelCapabilityConfig(
+                modelName = item.id,
+                displayName = item.displayName,
+                vendor = item.vendor,
+                category = item.category,
+                supportsVision = item.supportsVision,
+                supportsTools = item.supportsTools,
+                supportsResponses = item.supportsResponses,
+                speed = item.speed,
+                quality = item.quality,
+                costLevel = item.costLevel,
+                recommended = item.recommended
+            )
+        }
+        savedModels = models
+        fetchedModels = models
+        modelCapabilities = modelCapabilities + catalogCapabilities
+        selectedModel = if (selectedModel in models) {
+            selectedModel
+        } else {
+            models.firstOrNull().orEmpty()
+        }
+    }
+
+    suspend fun refreshNaapiModels(showError: Boolean) {
+        isFetchingModels = true
+        if (showError) {
+            fetchError = null
+        }
+        try {
+            val catalog = naapiLicenseClient.fetchModelCatalog(
+                endpoint = endpoint.ifBlank { NaapiTChatSupport.DEFAULT_ENDPOINT },
+                gatewayKey = apiKey.trim().takeIf { it.isNotBlank() && authType != ProviderAuthType.NONE }
+            )
+            applyNaapiModelCatalog(catalog)
+            if (showError) {
+                fetchError = null
+            }
+        } catch (e: Exception) {
+            savedModels = emptyList()
+            selectedModel = ""
+            if (showError) {
+                fetchError = e.message ?: "模型目录读取失败"
+            }
+        } finally {
+            isFetchingModels = false
+        }
+    }
 
     BackHandler { onBack() }
 
     LaunchedEffect(providerType) {
         if (providerType == AIProviderType.NAAPI_TCHAT &&
+            authType != ProviderAuthType.GATEWAY_KEY &&
             customHeaders[NaapiTChatSupport.DEVICE_HEADER].isNullOrBlank()
         ) {
             customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+        }
+    }
+
+    LaunchedEffect(isNaapiProvider, endpoint, authType, if (authType == ProviderAuthType.GATEWAY_KEY) apiKey else "") {
+        if (isNaapiProvider) {
+            savedModels = emptyList()
+            selectedModel = ""
+            refreshNaapiModels(showError = false)
+        }
+    }
+
+    val loadNaapiPlans: () -> Unit = {
+        scope.launch {
+            isLoadingNaapiPlans = true
+            naapiLicenseMessage = null
+            naapiLicenseSuccess = null
+            try {
+                if (endpoint.isBlank()) {
+                    endpoint = NaapiTChatSupport.DEFAULT_ENDPOINT
+                }
+                naapiPlans = naapiLicenseClient.fetchPlans(endpoint)
+                showNaapiPlanDialog = true
+            } catch (e: Exception) {
+                naapiLicenseSuccess = false
+                naapiLicenseMessage = e.message ?: "套餐读取失败"
+            } finally {
+                isLoadingNaapiPlans = false
+            }
+        }
+    }
+
+    val startNaapiOrder: (NaapiPlan) -> Unit = { plan ->
+        scope.launch {
+            isCreatingNaapiOrder = true
+            isPollingNaapiOrder = false
+            naapiLicenseMessage = null
+            naapiLicenseSuccess = null
+            naapiPendingOrderNo = null
+            try {
+                if (endpoint.isBlank()) {
+                    endpoint = NaapiTChatSupport.DEFAULT_ENDPOINT
+                }
+                customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+
+                val order = naapiLicenseClient.createLicenseOrder(
+                    context = context,
+                    endpoint = endpoint,
+                    planId = plan.id
+                )
+                naapiPendingOrderNo = order.orderNo
+                showNaapiPlanDialog = false
+                isCreatingNaapiOrder = false
+
+                val openedPayPage = runCatching {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(order.payUrl))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                }.isSuccess
+
+                naapiLicenseMessage = if (openedPayPage) {
+                    "订单 ${order.orderNo} 已创建，请在支付页完成付款"
+                } else {
+                    "订单 ${order.orderNo} 已创建，但支付页未打开"
+                }
+
+                isPollingNaapiOrder = true
+                var paidOrder: com.tchat.wanxiaot.util.NaapiOrderStatus? = null
+                for (attempt in 1..60) {
+                    delay(2_000)
+                    val status = naapiLicenseClient.getOrder(endpoint, order.orderNo)
+                    val normalizedStatus = status.status.lowercase()
+                    if (normalizedStatus == "paid") {
+                        paidOrder = status
+                        break
+                    }
+                    if (normalizedStatus in setOf("failed", "cancelled", "canceled", "refunded")) {
+                        naapiLicenseSuccess = false
+                        naapiLicenseMessage = "订单 ${status.orderNo} 状态为 ${status.status}"
+                        return@launch
+                    }
+                    naapiLicenseMessage = "等待支付确认：${status.status}（$attempt/60）"
+                }
+
+                val confirmedOrder = paidOrder
+                if (confirmedOrder == null) {
+                    naapiLicenseSuccess = false
+                    naapiLicenseMessage = "支付确认超时，可稍后凭订单号 ${order.orderNo} 再查询"
+                    return@launch
+                }
+
+                val licenseCode = confirmedOrder.licenseCode?.trim().orEmpty()
+                val gatewayKey = confirmedOrder.gatewayKey?.trim().orEmpty()
+                val redeemCodeFromOrder = confirmedOrder.redeemCode?.trim().orEmpty()
+                if (licenseCode.isBlank() && gatewayKey.isBlank() && redeemCodeFromOrder.isBlank()) {
+                    naapiLicenseSuccess = false
+                    naapiLicenseMessage = "订单已支付，服务端暂未返回可用凭证"
+                    return@launch
+                }
+
+                endpoint = confirmedOrder.gatewayBaseUrl?.trim()?.takeIf { it.isNotBlank() }
+                    ?: NaapiTChatSupport.DEFAULT_ENDPOINT
+                if (licenseCode.isNotBlank()) {
+                    redeemCode = licenseCode
+                    apiKey = licenseCode
+                    authType = ProviderAuthType.LICENSE_CODE
+                    customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+                    naapiActivationMessage = "已写入许可证，当前设备可使用"
+                } else if (gatewayKey.isNotBlank()) {
+                    apiKey = gatewayKey
+                    authType = ProviderAuthType.GATEWAY_KEY
+                    customHeaders = customHeaders - NaapiTChatSupport.DEVICE_HEADER
+                    naapiActivationMessage = "已写入设备专属 Gateway Key"
+                } else {
+                    redeemCode = redeemCodeFromOrder
+                    apiKey = redeemCodeFromOrder
+                    authType = ProviderAuthType.BEARER
+                    customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+                    naapiActivationMessage = "已写入兑换码，可继续激活设备"
+                }
+                serviceMode = ServiceMode.OFFICIAL
+                billingMode = ProviderBillingMode.NAAPI_LICENSE
+                multiKeyEnabled = false
+                apiKeys = emptyList()
+                naapiActivationSuccess = true
+                naapiLicenseSuccess = true
+                naapiLicenseMessage = "许可证已写入本页配置，请保存后使用"
+            } catch (e: Exception) {
+                naapiLicenseSuccess = false
+                naapiLicenseMessage = e.message ?: "许可证流程失败"
+            } finally {
+                isCreatingNaapiOrder = false
+                isPollingNaapiOrder = false
+            }
         }
     }
 
@@ -148,6 +388,105 @@ fun ProviderEditScreen(
         QRCodeDialog(
             provider = provider,
             onDismiss = { showQRDialog = false }
+        )
+    }
+
+    if (showNaapiPlanDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isNaapiLicenseBusy) {
+                    showNaapiPlanDialog = false
+                }
+            },
+            title = { Text("选择 NAAPI 套餐") },
+            text = {
+                Column(
+                    modifier = Modifier.heightIn(max = 460.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "开源提示：NAAPI 是可选服务。本页面只在你点击购买或激活时，将设备摘要发送到当前端点；代码中没有内置密钥。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(naapiPlans.size) { index ->
+                            val plan = naapiPlans[index]
+                            Surface(
+                                onClick = {
+                                    if (!isNaapiLicenseBusy) {
+                                        startNaapiOrder(plan)
+                                    }
+                                },
+                                enabled = !isNaapiLicenseBusy,
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                shape = MaterialTheme.shapes.medium,
+                                tonalElevation = 1.dp
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Text(
+                                                text = plan.name,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            if (plan.subtitle.isNotBlank()) {
+                                                Text(
+                                                    text = plan.subtitle,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                        AppPill(text = formatNaapiPrice(plan.priceAmount, plan.currency))
+                                    }
+
+                                    Text(
+                                        text = formatNaapiPlanMeta(plan),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    if (plan.description.isNotBlank()) {
+                                        Text(
+                                            text = plan.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 3,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showNaapiPlanDialog = false },
+                    enabled = !isCreatingNaapiOrder && !isPollingNaapiOrder
+                ) {
+                    Text("关闭")
+                }
+            }
         )
     }
 
@@ -425,6 +764,23 @@ fun ProviderEditScreen(
         )
     }
 
+    showModelCapabilityDialog?.let { modelName ->
+        val currentCapability = modelCapabilities[modelName] ?: ModelCapabilityConfig(modelName = modelName)
+        ModelCapabilityDialog(
+            modelName = modelName,
+            capability = currentCapability,
+            onDismiss = { showModelCapabilityDialog = null },
+            onSave = { newCapability ->
+                modelCapabilities = modelCapabilities + (modelName to newCapability)
+                showModelCapabilityDialog = null
+            },
+            onClear = {
+                modelCapabilities = modelCapabilities - modelName
+                showModelCapabilityDialog = null
+            }
+        )
+    }
+
     // 模型选择器弹窗
     if (showModelPicker && fetchedModels.isNotEmpty()) {
         var selectedToAdd by remember { mutableStateOf(setOf<String>()) }
@@ -556,12 +912,24 @@ fun ProviderEditScreen(
                         id = provider?.id ?: UUID.randomUUID().toString(),
                         name = name.trim().ifEmpty { providerType.displayName },
                         providerType = providerType,
+                        serviceMode = serviceMode,
+                        billingMode = billingMode,
+                        authType = authType,
                         apiKey = apiKey.trim(),
                         endpoint = endpoint.trim(),
+                        apiPath = apiPath.trim(),
+                        modelsPath = modelsPath.trim(),
+                        imagesPath = imagesPath.trim(),
+                        embeddingsPath = embeddingsPath.trim(),
+                        modelCatalogPath = modelCatalogPath.trim(),
+                        authHeaderName = authHeaderName.trim().ifBlank { "Authorization" },
+                        authHeaderPrefix = authHeaderPrefix,
+                        useProxy = useProxy,
                         selectedModel = selectedModel,
                         availableModels = savedModels,
+                        modelCapabilities = modelCapabilities,
                         modelCustomParams = modelCustomParams,
-                        customHeaders = if (providerType == AIProviderType.NAAPI_TCHAT) {
+                        customHeaders = if (providerType == AIProviderType.NAAPI_TCHAT && authType != ProviderAuthType.GATEWAY_KEY) {
                             NaapiTChatSupport.withDeviceHeader(context, customHeaders)
                         } else {
                             customHeaders - NaapiTChatSupport.DEVICE_HEADER
@@ -593,17 +961,6 @@ fun ProviderEditScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            AppHeroCard(
-                eyebrow = "Connection Setup",
-                title = if (isNew) "先把服务商接入方式配置扎实" else "把连接参数、Key 策略和模型列表维护干净",
-                description = "这里决定了模型调用稳定性、可用模型范围和多 Key 容灾策略。",
-                icon = providerType.icon(),
-                trailing = {
-                    if (savedModels.isNotEmpty()) {
-                        AppPill(text = "${savedModels.size} 个模型")
-                    }
-                }
-            )
 
             // 基本信息卡片
             AppSectionCard(
@@ -670,21 +1027,130 @@ fun ProviderEditScreen(
                                     onClick = {
                                         providerType = type
                                         endpoint = type.defaultEndpoint
-                                        savedModels = type.defaultModels
-                                        selectedModel = type.defaultModels.firstOrNull() ?: ""
-                                        customHeaders = if (type == AIProviderType.NAAPI_TCHAT) {
+                                        apiPath = type.defaultApiPath
+                                        modelsPath = type.defaultModelsPath
+                                        imagesPath = type.defaultImagesPath
+                                        embeddingsPath = "/embeddings"
+                                        modelCatalogPath = if (type == AIProviderType.NAAPI_TCHAT) "/api/tchat/model-catalog" else ""
+                                        savedModels = if (type == AIProviderType.NAAPI_TCHAT) emptyList() else type.defaultModels
+                                        selectedModel = savedModels.firstOrNull() ?: ""
+                                        modelCapabilities = emptyMap()
+                                        when (type) {
+                                            AIProviderType.NAAPI_TCHAT -> {
+                                                serviceMode = ServiceMode.OFFICIAL
+                                                billingMode = ProviderBillingMode.NAAPI_LICENSE
+                                                authType = ProviderAuthType.LICENSE_CODE
+                                                authHeaderName = "Authorization"
+                                                authHeaderPrefix = "Bearer "
+                                            }
+                                            AIProviderType.OLLAMA -> {
+                                                serviceMode = ServiceMode.LOCAL
+                                                billingMode = ProviderBillingMode.LOCAL
+                                                authType = ProviderAuthType.NONE
+                                                authHeaderName = ""
+                                                authHeaderPrefix = ""
+                                                apiKey = apiKey.ifBlank { "ollama" }
+                                            }
+                                            else -> {
+                                                serviceMode = ServiceMode.CUSTOM
+                                                billingMode = ProviderBillingMode.USER_API_KEY
+                                                authType = ProviderAuthType.BEARER
+                                                authHeaderName = "Authorization"
+                                                authHeaderPrefix = "Bearer "
+                                            }
+                                        }
+                                        customHeaders = if (type == AIProviderType.NAAPI_TCHAT && authType != ProviderAuthType.GATEWAY_KEY) {
                                             NaapiTChatSupport.withDeviceHeader(context, customHeaders)
                                         } else {
                                             customHeaders - NaapiTChatSupport.DEVICE_HEADER
                                         }
                                         naapiActivationMessage = null
                                         naapiActivationSuccess = null
+                                        naapiLicenseMessage = null
+                                        naapiLicenseSuccess = null
+                                        naapiPendingOrderNo = null
                                         typeExpanded = false
                                     }
                                 )
                             }
                         }
                     }
+            }
+
+            AppSectionCard(
+                title = "服务模式",
+                description = "普通用户可使用官方服务，高级用户保留自定义与本地模型。"
+            ) {
+                Text(
+                    text = when (serviceMode) {
+                        ServiceMode.OFFICIAL -> "官方服务：使用 t.naapi.cc 套餐与许可证。"
+                        ServiceMode.CUSTOM -> "自定义服务：使用自己的 API Key、端点、路径和 Header。"
+                        ServiceMode.LOCAL -> "本地模型：面向 Ollama / LM Studio 等本机服务。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ServiceMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = serviceMode == mode,
+                            onClick = {
+                                serviceMode = mode
+                                when (mode) {
+                                    ServiceMode.OFFICIAL -> {
+                                        providerType = AIProviderType.NAAPI_TCHAT
+                                        billingMode = ProviderBillingMode.NAAPI_LICENSE
+                                        authType = ProviderAuthType.LICENSE_CODE
+                                        endpoint = AIProviderType.NAAPI_TCHAT.defaultEndpoint
+                                        apiPath = AIProviderType.NAAPI_TCHAT.defaultApiPath
+                                        modelsPath = AIProviderType.NAAPI_TCHAT.defaultModelsPath
+                                        imagesPath = AIProviderType.NAAPI_TCHAT.defaultImagesPath
+                                        modelCatalogPath = "/api/tchat/model-catalog"
+                                        savedModels = emptyList()
+                                        selectedModel = ""
+                                    }
+                                    ServiceMode.CUSTOM -> {
+                                        billingMode = ProviderBillingMode.USER_API_KEY
+                                        if (authType == ProviderAuthType.NONE) {
+                                            authType = ProviderAuthType.BEARER
+                                            authHeaderName = "Authorization"
+                                            authHeaderPrefix = "Bearer "
+                                        }
+                                    }
+                                    ServiceMode.LOCAL -> {
+                                        providerType = AIProviderType.OLLAMA
+                                        billingMode = ProviderBillingMode.LOCAL
+                                        authType = ProviderAuthType.NONE
+                                        endpoint = AIProviderType.OLLAMA.defaultEndpoint
+                                        apiPath = AIProviderType.OLLAMA.defaultApiPath
+                                        modelsPath = AIProviderType.OLLAMA.defaultModelsPath
+                                        imagesPath = AIProviderType.OLLAMA.defaultImagesPath
+                                        savedModels = AIProviderType.OLLAMA.defaultModels
+                                        selectedModel = savedModels.firstOrNull() ?: ""
+                                    }
+                                }
+                            },
+                            label = { Text(mode.displayLabel()) }
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ProviderBillingMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = billingMode == mode,
+                            onClick = { billingMode = mode },
+                            label = { Text(mode.displayLabel()) }
+                        )
+                    }
+                }
             }
 
             // API 配置卡片
@@ -698,15 +1164,17 @@ fun ProviderEditScreen(
                             apiKey = it
                             naapiActivationMessage = null
                             naapiActivationSuccess = null
+                            naapiLicenseMessage = null
+                            naapiLicenseSuccess = null
                         },
-                        label = { Text(if (isNaapiProvider) "兑换码" else "API Key") },
+                                    label = { Text(if (isNaapiProvider) "许可证 / API Key" else "API Key") },
                         placeholder = {
-                            Text(if (isNaapiProvider) "NAAPI-TCHAT-XXXX-XXXX-XXXX" else "sk-xxxxxxxxxxxxxxxxxxxxxxxx")
+                            Text(if (isNaapiProvider) "naapi_dev_xxxxx" else "sk-xxxxxxxxxxxxxxxxxxxxxxxx")
                         },
                         supportingText = {
                             Text(
                                 if (isNaapiProvider) {
-                                    "填入购买后获得的兑换码，App 会自动携带本机设备标识"
+                                            "建议保存许可证；旧版 Gateway Key 仍可兼容"
                                 } else if (multiKeyEnabled && apiKeys.isNotEmpty()) {
                                     "已启用多 Key，聊天将使用下方 Key 列表（此处作为备用）"
                                 } else {
@@ -719,6 +1187,20 @@ fun ProviderEditScreen(
                     )
 
                     if (isNaapiProvider) {
+                        OutlinedTextField(
+                            value = redeemCode,
+                            onValueChange = {
+                                redeemCode = it
+                                naapiActivationMessage = null
+                                naapiActivationSuccess = null
+                            },
+                            label = { Text("兑换码（激活时使用）") },
+                            placeholder = { Text("NAAPI-TCHAT-XXXX-XXXX-XXXX") },
+                                    supportingText = { Text("已有许可证或旧版兑换码时填写；许可证会绑定当前设备") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
                         Surface(
                             color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.56f),
                             shape = MaterialTheme.shapes.medium
@@ -735,7 +1217,7 @@ fun ProviderEditScreen(
                                     color = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                                 Text(
-                                    text = "激活后，聊天请求会带上 ${NaapiTChatSupport.DEVICE_HEADER}，服务端可识别当前设备并记录 NewAPI 明细。",
+                                    text = "官方服务使用 t.naapi.cc 套餐。开通后使用许可证访问官方 OpenAI 兼容网关。",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
@@ -744,24 +1226,77 @@ fun ProviderEditScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     FilledTonalButton(
+                                        onClick = loadNaapiPlans,
+                                        enabled = !isNaapiLicenseBusy && !isActivatingNaapi
+                                    ) {
+                                        if (isLoadingNaapiPlans || isCreatingNaapiOrder || isPollingNaapiOrder) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(16.dp),
+                                                strokeWidth = 2.dp
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                        }
+                                        Text(
+                                            when {
+                                                isLoadingNaapiPlans -> "读取套餐"
+                                                isCreatingNaapiOrder -> "创建订单"
+                                                isPollingNaapiOrder -> "确认支付"
+                                                else -> "获取许可证"
+                                            }
+                                        )
+                                    }
+
+                                    FilledTonalButton(
                                         onClick = {
                                             scope.launch {
                                                 isActivatingNaapi = true
                                                 naapiActivationMessage = null
                                                 naapiActivationSuccess = null
                                                 customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
-                                                val result = NaapiTChatSupport.activateDevice(
-                                                    context = context,
-                                                    httpClient = httpClient,
-                                                    endpoint = endpoint,
-                                                    redeemCode = apiKey
-                                                )
+                                                val credential = redeemCode.ifBlank { apiKey }
+                                                val result = if (credential.trim().startsWith("TCHAT-LIC-", ignoreCase = true)) {
+                                                    naapiLicenseClient.bindLicenseDevice(
+                                                        context = context,
+                                                        endpoint = endpoint,
+                                                        licenseCode = credential
+                                                    )
+                                                } else {
+                                                    NaapiTChatSupport.activateDevice(
+                                                        context = context,
+                                                        httpClient = httpClient,
+                                                        endpoint = endpoint,
+                                                        redeemCode = credential
+                                                    )
+                                                }
+                                                if (result.success) {
+                                                    result.gatewayBaseUrl?.takeIf { it.isNotBlank() }?.let {
+                                                        endpoint = it
+                                                    }
+                                                    if (credential.trim().startsWith("TCHAT-LIC-", ignoreCase = true)) {
+                                                        apiKey = credential.trim()
+                                                        redeemCode = credential.trim()
+                                                        authType = ProviderAuthType.LICENSE_CODE
+                                                        customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+                                                        billingMode = ProviderBillingMode.NAAPI_LICENSE
+                                                    } else {
+                                                        result.gatewayKey?.takeIf { it.isNotBlank() }?.let {
+                                                            apiKey = it
+                                                            authType = ProviderAuthType.GATEWAY_KEY
+                                                            customHeaders = customHeaders - NaapiTChatSupport.DEVICE_HEADER
+                                                        }
+                                                        billingMode = ProviderBillingMode.OFFICIAL_TCHAT
+                                                    }
+                                                    serviceMode = ServiceMode.OFFICIAL
+                                                }
                                                 naapiActivationSuccess = result.success
                                                 naapiActivationMessage = result.message
                                                 isActivatingNaapi = false
                                             }
                                         },
-                                        enabled = !isActivatingNaapi && apiKey.isNotBlank() && endpoint.isNotBlank()
+                                        enabled = !isActivatingNaapi &&
+                                            !isNaapiLicenseBusy &&
+                                            (apiKey.isNotBlank() || redeemCode.isNotBlank()) &&
+                                            endpoint.isNotBlank()
                                     ) {
                                         if (isActivatingNaapi) {
                                             CircularProgressIndicator(
@@ -772,19 +1307,38 @@ fun ProviderEditScreen(
                                         }
                                         Text("激活当前设备")
                                     }
+                                }
 
-                                    naapiActivationMessage?.let { message ->
-                                        Text(
-                                            text = message,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = if (naapiActivationSuccess == true) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.error
-                                            },
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
+                                naapiPendingOrderNo?.let { orderNo ->
+                                    Text(
+                                        text = "订单号：$orderNo",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+
+                                naapiLicenseMessage?.let { message ->
+                                    Text(
+                                        text = message,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (naapiLicenseSuccess == true) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.error
+                                        }
+                                    )
+                                }
+
+                                naapiActivationMessage?.let { message ->
+                                    Text(
+                                        text = message,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (naapiActivationSuccess == true) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.error
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -792,13 +1346,290 @@ fun ProviderEditScreen(
 
                     OutlinedTextField(
                         value = endpoint,
-                        onValueChange = { endpoint = it },
+                        onValueChange = {
+                            endpoint = it
+                            naapiLicenseMessage = null
+                            naapiLicenseSuccess = null
+                        },
                         label = { Text("API 端点") },
                         placeholder = { Text(providerType.defaultEndpoint) },
                         supportingText = { Text("留空使用默认端点") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
+
+                    Text(
+                        text = "鉴权方式",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ProviderAuthType.entries.forEach { type ->
+                            FilterChip(
+                                selected = authType == type,
+                                onClick = {
+                                    authType = type
+                                    when (type) {
+                    ProviderAuthType.BEARER,
+                    ProviderAuthType.LICENSE_CODE,
+                    ProviderAuthType.GATEWAY_KEY -> {
+                        authHeaderName = "Authorization"
+                        authHeaderPrefix = "Bearer "
+                                        }
+                                        ProviderAuthType.API_KEY -> {
+                                            if (authHeaderName.isBlank() || authHeaderName == "Authorization") {
+                                                authHeaderName = "x-api-key"
+                                            }
+                                            authHeaderPrefix = ""
+                                        }
+                                        ProviderAuthType.NONE -> {
+                                            authHeaderName = ""
+                                            authHeaderPrefix = ""
+                                        }
+                                    }
+                                },
+                                label = { Text(type.displayLabel()) }
+                            )
+                        }
+                    }
+
+                    if (authType != ProviderAuthType.NONE) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = authHeaderName,
+                                onValueChange = { authHeaderName = it },
+                                label = { Text("鉴权 Header") },
+                                placeholder = { Text("Authorization") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = authHeaderPrefix,
+                                onValueChange = { authHeaderPrefix = it },
+                                label = { Text("前缀") },
+                                placeholder = { Text("Bearer ") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledTonalButton(
+                            onClick = {
+                                scope.launch {
+                                    isTestingConnection = true
+                                    connectionTestMessage = null
+                                    connectionTestSuccess = null
+                                    try {
+                                        testProviderConnection(
+                                            httpClient = httpClient,
+                                            endpoint = endpoint,
+                                            apiKey = apiKey,
+                                            providerType = providerType,
+                                            modelsPath = modelsPath.ifBlank { providerType.defaultModelsPath },
+                                            authHeaderName = authHeaderName,
+                                            authHeaderValue = authHeaderValueFor(authType, authHeaderPrefix, apiKey),
+                                            extraHeaders = customHeaders
+                                        )
+                                        connectionTestSuccess = true
+                                        connectionTestMessage = "连通测试通过"
+                                    } catch (e: Exception) {
+                                        connectionTestSuccess = false
+                                        connectionTestMessage = e.message ?: "连通测试失败"
+                                    } finally {
+                                        isTestingConnection = false
+                                    }
+                                }
+                            },
+                            enabled = !isTestingConnection &&
+                                endpoint.isNotBlank() &&
+                                (authType == ProviderAuthType.NONE || apiKey.isNotBlank())
+                        ) {
+                            if (isTestingConnection) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text("测试连通")
+                        }
+
+                        connectionTestMessage?.let { message ->
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (connectionTestSuccess == true) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.error
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+            }
+
+            AppSectionCard(
+                title = "路径与扩展端点",
+                description = "兼容 NewAPI、自建网关、Responses、图片与 Embedding 路由。"
+            ) {
+                OutlinedTextField(
+                    value = apiPath,
+                    onValueChange = { apiPath = it },
+                    label = { Text("聊天路径") },
+                    placeholder = { Text(providerType.defaultApiPath) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = modelsPath,
+                    onValueChange = { modelsPath = it },
+                    label = { Text("模型列表路径") },
+                    placeholder = { Text(providerType.defaultModelsPath) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = imagesPath,
+                    onValueChange = { imagesPath = it },
+                    label = { Text("图片生成路径") },
+                    placeholder = { Text(providerType.defaultImagesPath.ifBlank { "可留空" }) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = embeddingsPath,
+                    onValueChange = { embeddingsPath = it },
+                    label = { Text("Embedding 路径") },
+                    placeholder = { Text("/embeddings") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = modelCatalogPath,
+                    onValueChange = { modelCatalogPath = it },
+                    label = { Text("友好模型目录路径") },
+                    placeholder = { Text("/api/tchat/model-catalog") },
+                    supportingText = { Text("官方服务可返回模型展示名、推荐标记与能力标签") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("启用代理", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            text = "保留代理配置开关，后续可接入全局代理设置",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = useProxy, onCheckedChange = { useProxy = it })
+                }
+            }
+
+            AppSectionCard(
+                title = "自定义 Header",
+                description = "可添加任意网关需要的 Header，例如组织 ID、项目 ID 或路由标记。"
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = headerName,
+                        onValueChange = { headerName = it },
+                        label = { Text("Header 名") },
+                        placeholder = { Text("X-Custom-Header") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = headerValue,
+                        onValueChange = { headerValue = it },
+                        label = { Text("Header 值") },
+                        placeholder = { Text("value") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    FilledIconButton(
+                        onClick = {
+                            val key = headerName.trim()
+                            val value = headerValue.trim()
+                            if (key.isNotBlank() && value.isNotBlank()) {
+                                customHeaders = customHeaders + (key to value)
+                                headerName = ""
+                                headerValue = ""
+                            }
+                        },
+                        enabled = headerName.isNotBlank() && headerValue.isNotBlank()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "添加 Header")
+                    }
+                }
+
+                if (customHeaders.isEmpty()) {
+                    Text(
+                        text = "暂无自定义 Header",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        customHeaders.forEach { (key, value) ->
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.medium,
+                                color = MaterialTheme.colorScheme.surfaceContainerLow
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = key,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = maskSecret(value),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    IconButton(onClick = { customHeaders = customHeaders - key }) {
+                                        Icon(
+                                            Icons.Outlined.Delete,
+                                            contentDescription = "删除 Header",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // 多 Key 管理卡片
@@ -1013,26 +1844,44 @@ fun ProviderEditScreen(
                                     isFetchingModels = true
                                     fetchError = null
                                     try {
-                                        val models = fetchModelsFromApi(
-                                            httpClient = httpClient,
-                                            endpoint = endpoint,
-                                            apiKey = modelFetchKey,
-                                            providerType = providerType,
-                                            extraHeaders = if (providerType == AIProviderType.NAAPI_TCHAT) {
-                                                NaapiTChatSupport.withDeviceHeader(context, customHeaders)
-                                            } else {
-                                                customHeaders
-                                            }
-                                        )
-                                        fetchedModels = models
-                                        showModelPicker = true
+                                        if (providerType == AIProviderType.NAAPI_TCHAT) {
+                                            val catalog = naapiLicenseClient.fetchModelCatalog(
+                                                endpoint = endpoint.ifBlank { NaapiTChatSupport.DEFAULT_ENDPOINT },
+                                                gatewayKey = modelFetchKey.takeIf { it.isNotBlank() && authType != ProviderAuthType.NONE }
+                                            )
+                                            applyNaapiModelCatalog(catalog)
+                                            showModelPicker = false
+                                        } else {
+                                            val models = fetchModelsFromApi(
+                                                httpClient = httpClient,
+                                                endpoint = endpoint,
+                                                apiKey = modelFetchKey,
+                                                providerType = providerType,
+                                                modelsPath = modelsPath.ifBlank { providerType.defaultModelsPath },
+                                                authHeaderName = authHeaderName,
+                                                authHeaderValue = authHeaderValueFor(authType, authHeaderPrefix, modelFetchKey),
+                                                extraHeaders = if (providerType == AIProviderType.NAAPI_TCHAT) {
+                                                    if (authType == ProviderAuthType.GATEWAY_KEY) {
+                                                        customHeaders
+                                                    } else {
+                                                        NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+                                                    }
+                                                } else {
+                                                    customHeaders
+                                                }
+                                            )
+                                            fetchedModels = models
+                                            showModelPicker = true
+                                        }
                                     } catch (e: Exception) {
                                         fetchError = e.message ?: "拉取失败"
                                     }
                                     isFetchingModels = false
                                 }
                             },
-                            enabled = !isFetchingModels && modelFetchKey.isNotBlank() && endpoint.isNotBlank()
+                            enabled = !isFetchingModels &&
+                                endpoint.isNotBlank() &&
+                                (providerType == AIProviderType.NAAPI_TCHAT || modelFetchKey.isNotBlank())
                         ) {
                             if (isFetchingModels) {
                                 CircularProgressIndicator(
@@ -1041,7 +1890,7 @@ fun ProviderEditScreen(
                                 )
                                 Spacer(Modifier.width(8.dp))
                             }
-                            Text("拉取模型")
+                            Text(if (providerType == AIProviderType.NAAPI_TCHAT) "刷新模型" else "拉取模型")
                         }
                     }
 
@@ -1060,7 +1909,7 @@ fun ProviderEditScreen(
                     }
 
                     Text(
-                        text = "已保存 ${savedModels.size} 个模型",
+                        text = "${savedModels.size} 个模型",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1121,6 +1970,20 @@ fun ProviderEditScreen(
                                                     )
                                                 }
                                             }
+                                            val capabilityLabels = modelCapabilities[model]?.labels().orEmpty().take(3)
+                                            capabilityLabels.forEach { label ->
+                                                Surface(
+                                                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
+                                                    shape = MaterialTheme.shapes.extraSmall
+                                                ) {
+                                                    Text(
+                                                        text = label,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
                                         }
                                         // 配置按钮
                                         IconButton(
@@ -1138,8 +2001,23 @@ fun ProviderEditScreen(
                                             )
                                         }
                                         IconButton(
+                                            onClick = { showModelCapabilityDialog = model },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = "能力标签",
+                                                modifier = Modifier.size(18.dp),
+                                                tint = if (modelCapabilities.containsKey(model))
+                                                    MaterialTheme.colorScheme.primary
+                                                else
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        IconButton(
                                             onClick = {
                                                 savedModels = savedModels - model
+                                                modelCapabilities = modelCapabilities - model
                                                 if (selectedModel == model) {
                                                     selectedModel = savedModels.firstOrNull() ?: ""
                                                 }
@@ -1218,34 +2096,46 @@ private suspend fun fetchModelsFromApi(
     endpoint: String,
     apiKey: String,
     providerType: AIProviderType,
+    modelsPath: String = providerType.defaultModelsPath,
+    authHeaderName: String = "Authorization",
+    authHeaderValue: String? = authHeaderValueFor(ProviderAuthType.BEARER, "Bearer ", apiKey),
     extraHeaders: Map<String, String> = emptyMap()
 ): List<String> = withContext(Dispatchers.IO) {
     val normalizedEndpoint = endpoint.trim().trimEnd('/')
 
     val url = when (providerType) {
         AIProviderType.OPENAI,
-        AIProviderType.NAAPI_TCHAT -> "$normalizedEndpoint/models"
+        AIProviderType.OPENAI_RESPONSES,
+        AIProviderType.DEEPSEEK,
+        AIProviderType.OPENROUTER,
+        AIProviderType.OLLAMA,
+        AIProviderType.NAAPI_TCHAT -> buildEndpointUrl(normalizedEndpoint, modelsPath.ifBlank { providerType.defaultModelsPath })
         AIProviderType.ANTHROPIC -> {
             // Anthropic models API 使用 /v1/models，并需要 x-api-key + anthropic-version
             val baseUrl = if (normalizedEndpoint.endsWith("/v1")) normalizedEndpoint else "$normalizedEndpoint/v1"
-            "$baseUrl/models"
+            buildEndpointUrl(baseUrl, modelsPath.ifBlank { "/models" })
         }
-        AIProviderType.GEMINI -> "$normalizedEndpoint/models?key=$apiKey"
+        AIProviderType.GEMINI -> {
+            val base = buildEndpointUrl(normalizedEndpoint, modelsPath.ifBlank { "/models" })
+            if (apiKey.isBlank()) base else "$base?key=$apiKey"
+        }
     }
 
     val requestBuilder = Request.Builder().url(url)
 
     when (providerType) {
         AIProviderType.OPENAI,
+        AIProviderType.OPENAI_RESPONSES,
+        AIProviderType.DEEPSEEK,
+        AIProviderType.OPENROUTER,
+        AIProviderType.OLLAMA,
         AIProviderType.NAAPI_TCHAT -> {
-            if (apiKey.isNotBlank()) {
-                requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+            if (!authHeaderValue.isNullOrBlank() && authHeaderName.isNotBlank()) {
+                requestBuilder.addHeader(authHeaderName, authHeaderValue)
             }
-            if (providerType == AIProviderType.NAAPI_TCHAT) {
-                extraHeaders.forEach { (name, value) ->
-                    if (name.isNotBlank() && value.isNotBlank()) {
-                        requestBuilder.addHeader(name, value)
-                    }
+            extraHeaders.forEach { (name, value) ->
+                if (name.isNotBlank() && value.isNotBlank()) {
+                    requestBuilder.addHeader(name, value)
                 }
             }
         }
@@ -1257,6 +2147,11 @@ private suspend fun fetchModelsFromApi(
         }
         AIProviderType.GEMINI -> {
             // Gemini 使用 URL query 的 key；某些代理也支持 header，但这里保持最小集合。
+            extraHeaders.forEach { (name, value) ->
+                if (name.isNotBlank() && value.isNotBlank()) {
+                    requestBuilder.addHeader(name, value)
+                }
+            }
         }
     }
 
@@ -1306,6 +2201,162 @@ private suspend fun fetchModelsFromApi(
     }
 
     models.toList()
+}
+
+@Composable
+private fun ModelCapabilityDialog(
+    modelName: String,
+    capability: ModelCapabilityConfig,
+    onDismiss: () -> Unit,
+    onSave: (ModelCapabilityConfig) -> Unit,
+    onClear: () -> Unit
+) {
+    var displayName by remember { mutableStateOf(capability.displayName) }
+    var vendor by remember { mutableStateOf(capability.vendor) }
+    var category by remember { mutableStateOf(capability.category) }
+    var supportsVision by remember { mutableStateOf(capability.supportsVision) }
+    var supportsTools by remember { mutableStateOf(capability.supportsTools) }
+    var supportsResponses by remember { mutableStateOf(capability.supportsResponses) }
+    var supportsImageGeneration by remember { mutableStateOf(capability.supportsImageGeneration) }
+    var supportsEmbedding by remember { mutableStateOf(capability.supportsEmbedding) }
+    var speed by remember { mutableStateOf(capability.speed) }
+    var quality by remember { mutableStateOf(capability.quality) }
+    var costLevel by remember { mutableStateOf(capability.costLevel) }
+    var recommended by remember { mutableStateOf(capability.recommended) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("模型能力标签")
+                Text(
+                    text = modelName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    label = { Text("展示名称") },
+                    placeholder = { Text("日常推荐") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = vendor,
+                        onValueChange = { vendor = it },
+                        label = { Text("厂商") },
+                        placeholder = { Text("OpenAI") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = category,
+                        onValueChange = { category = it },
+                        label = { Text("分类") },
+                        placeholder = { Text("general") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                }
+
+                CapabilitySwitchRow("推荐模型", recommended) { recommended = it }
+                CapabilitySwitchRow("视觉输入", supportsVision) { supportsVision = it }
+                CapabilitySwitchRow("工具调用", supportsTools) { supportsTools = it }
+                CapabilitySwitchRow("Responses API", supportsResponses) { supportsResponses = it }
+                CapabilitySwitchRow("图片生成", supportsImageGeneration) { supportsImageGeneration = it }
+                CapabilitySwitchRow("Embedding", supportsEmbedding) { supportsEmbedding = it }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = speed,
+                        onValueChange = { speed = it },
+                        label = { Text("速度") },
+                        placeholder = { Text("fast") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = quality,
+                        onValueChange = { quality = it },
+                        label = { Text("质量") },
+                        placeholder = { Text("balanced") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                }
+                OutlinedTextField(
+                    value = costLevel,
+                    onValueChange = { costLevel = it },
+                    label = { Text("成本等级") },
+                    placeholder = { Text("low") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        ModelCapabilityConfig(
+                            modelName = modelName,
+                            displayName = displayName.trim(),
+                            vendor = vendor.trim(),
+                            category = category.trim(),
+                            supportsVision = supportsVision,
+                            supportsTools = supportsTools,
+                            supportsResponses = supportsResponses,
+                            supportsImageGeneration = supportsImageGeneration,
+                            supportsEmbedding = supportsEmbedding,
+                            speed = speed.trim(),
+                            quality = quality.trim(),
+                            costLevel = costLevel.trim(),
+                            recommended = recommended
+                        )
+                    )
+                }
+            ) {
+                Text("保存")
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onClear) {
+                    Text("清除")
+                }
+                OutlinedButton(onClick = onDismiss) {
+                    Text("取消")
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun CapabilitySwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
 }
 
 /**
@@ -1583,6 +2634,27 @@ private fun ParamInputItem(
 
 private val API_KEY_SPLIT_REGEX = "[\\s,]+".toRegex()
 
+private fun formatNaapiPrice(amount: Int, currency: String): String {
+    if (amount <= 0) return "免费"
+    val major = amount / 100.0
+    return when (currency.uppercase()) {
+        "CNY", "RMB" -> "¥%.2f".format(major)
+        "USD" -> "$%.2f".format(major)
+        else -> "%s %.2f".format(currency.uppercase(), major)
+    }
+}
+
+private fun formatNaapiPlanMeta(plan: NaapiPlan): String {
+    val parts = mutableListOf<String>()
+    if (plan.quotaAmount > 0) {
+        parts += "额度：${plan.quotaAmount}"
+    }
+    if (plan.validDays > 0) {
+        parts += "有效期：${plan.validDays} 天"
+    }
+    return parts.ifEmpty { listOf("套餐详情以支付页面为准") }.joinToString(" · ")
+}
+
 private fun splitApiKeys(raw: String): List<String> {
     return raw
         .split(API_KEY_SPLIT_REGEX)
@@ -1606,5 +2678,112 @@ private fun KeySelectionStrategy.displayLabel(): String {
         KeySelectionStrategy.PRIORITY -> "优先级"
         KeySelectionStrategy.RANDOM -> "随机"
         KeySelectionStrategy.LEAST_USED -> "最少使用"
+    }
+}
+
+private fun ServiceMode.displayLabel(): String {
+    return when (this) {
+        ServiceMode.OFFICIAL -> "官方服务"
+        ServiceMode.CUSTOM -> "自定义服务"
+        ServiceMode.LOCAL -> "本地模型"
+    }
+}
+
+private fun ProviderBillingMode.displayLabel(): String {
+    return when (this) {
+        ProviderBillingMode.OFFICIAL_TCHAT -> "官方套餐"
+        ProviderBillingMode.NAAPI_LICENSE -> "许可证"
+        ProviderBillingMode.USER_API_KEY -> "自有 Key"
+        ProviderBillingMode.LOCAL -> "本地"
+        ProviderBillingMode.TEAM -> "团队"
+    }
+}
+
+private fun ProviderAuthType.displayLabel(): String {
+    return when (this) {
+        ProviderAuthType.BEARER -> "Bearer"
+        ProviderAuthType.LICENSE_CODE -> "许可证"
+        ProviderAuthType.API_KEY -> "API Key"
+        ProviderAuthType.GATEWAY_KEY -> "Gateway Key"
+        ProviderAuthType.NONE -> "无鉴权"
+    }
+}
+
+private fun authHeaderValueFor(
+    authType: ProviderAuthType,
+    prefix: String,
+    apiKey: String
+): String? {
+    val trimmed = apiKey.trim()
+    if (authType == ProviderAuthType.NONE || trimmed.isBlank()) return null
+    val resolvedPrefix = when (authType) {
+        ProviderAuthType.BEARER,
+        ProviderAuthType.LICENSE_CODE,
+        ProviderAuthType.GATEWAY_KEY -> prefix.ifBlank { "Bearer " }
+        ProviderAuthType.API_KEY -> prefix
+        ProviderAuthType.NONE -> ""
+    }
+    return "$resolvedPrefix$trimmed".trim()
+}
+
+private fun buildEndpointUrl(baseUrl: String, path: String): String {
+    val trimmedPath = path.trim().ifBlank { "/" }
+    if (trimmedPath.startsWith("http://") || trimmedPath.startsWith("https://")) {
+        return trimmedPath
+    }
+    val normalizedPath = if (trimmedPath.startsWith("/")) trimmedPath else "/$trimmedPath"
+    return "${baseUrl.trimEnd('/')}$normalizedPath"
+}
+
+private suspend fun testProviderConnection(
+    httpClient: OkHttpClient,
+    endpoint: String,
+    apiKey: String,
+    providerType: AIProviderType,
+    modelsPath: String,
+    authHeaderName: String,
+    authHeaderValue: String?,
+    extraHeaders: Map<String, String>
+) = withContext(Dispatchers.IO) {
+    val normalizedEndpoint = endpoint.trim().trimEnd('/')
+    val url = when (providerType) {
+        AIProviderType.GEMINI -> {
+            val base = buildEndpointUrl(normalizedEndpoint, modelsPath.ifBlank { providerType.defaultModelsPath })
+            if (apiKey.isBlank()) base else "$base?key=$apiKey"
+        }
+        AIProviderType.ANTHROPIC -> {
+            val baseUrl = if (normalizedEndpoint.endsWith("/v1")) normalizedEndpoint else "$normalizedEndpoint/v1"
+            buildEndpointUrl(baseUrl, modelsPath.ifBlank { "/models" })
+        }
+        else -> buildEndpointUrl(normalizedEndpoint, modelsPath.ifBlank { providerType.defaultModelsPath })
+    }
+
+    val requestBuilder = Request.Builder().url(url).get()
+    if (!authHeaderValue.isNullOrBlank() && authHeaderName.isNotBlank()) {
+        requestBuilder.addHeader(authHeaderName, authHeaderValue)
+    }
+    if (providerType == AIProviderType.ANTHROPIC && apiKey.isNotBlank()) {
+        requestBuilder.addHeader("x-api-key", apiKey)
+        requestBuilder.addHeader("anthropic-version", "2023-06-01")
+    }
+    extraHeaders.forEach { (name, value) ->
+        if (name.isNotBlank() && value.isNotBlank()) {
+            requestBuilder.addHeader(name, value)
+        }
+    }
+
+    httpClient.newCall(requestBuilder.build()).execute().use { response ->
+        if (!response.isSuccessful) {
+            val body = response.body?.string().orEmpty()
+            throw Exception("HTTP ${response.code}: ${body.take(160).ifBlank { response.message }}")
+        }
+    }
+}
+
+private fun maskSecret(value: String): String {
+    val trimmed = value.trim()
+    return when {
+        trimmed.length <= 8 -> "****"
+        else -> "${trimmed.take(4)}****${trimmed.takeLast(4)}"
     }
 }

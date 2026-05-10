@@ -76,7 +76,6 @@ import com.tchat.data.model.LocalToolOption.Companion.displayName
 import com.tchat.data.model.McpServer
 import com.tchat.wanxiaot.settings.RegexRule
 import com.tchat.wanxiaot.ui.components.AppEmptyState
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionCard
@@ -148,17 +147,6 @@ fun AssistantDetailScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                AppHeroCard(
-                    eyebrow = "Role Design",
-                    title = "把角色边界、工具链和知识检索拆清楚",
-                    description = "助手不是聊天皮肤，而是一份可复用的工作配置。越清晰，后续对话越稳定。",
-                    icon = Lucide.Bot,
-                    trailing = {
-                        if (assistant!!.knowledgeBaseId != null) {
-                            AppPill(text = "已绑定知识库")
-                        }
-                    }
-                )
 
                 AppSectionSurface {
                     Column(

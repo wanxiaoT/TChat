@@ -39,6 +39,10 @@ class MultiKeyAIProvider(
     private val model: String,
     private val customParams: CustomParams? = null,
     private val extraHeaders: Map<String, String> = emptyMap(),
+    private val chatPath: String = "",
+    private val imagesPath: String = "",
+    private val authHeaderName: String = "Authorization",
+    private val authHeaderValueFactory: (String) -> String? = { key -> "Bearer $key" },
     private val maxRetryAttempts: Int = 3
 ) : AIProvider {
 
@@ -197,7 +201,11 @@ class MultiKeyAIProvider(
                 baseUrl = baseUrl,
                 model = model,
                 customParams = customParams,
-                extraHeaders = extraHeaders
+                extraHeaders = extraHeaders,
+                chatPath = chatPath,
+                imagesPath = imagesPath,
+                authHeaderName = authHeaderName,
+                authHeaderValue = authHeaderValueFactory(apiKey)
             )
         )
     }

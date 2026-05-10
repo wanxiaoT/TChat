@@ -15,7 +15,6 @@ import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.*
 import com.tchat.data.model.*
 import com.tchat.wanxiaot.ui.components.AppEmptyState
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppIconTile
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
@@ -253,16 +252,6 @@ fun CreateGroupChatScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            item {
-                AppHeroCard(
-                    title = if (editingGroup == null) "新建协作群聊" else groupName.ifBlank { "编辑协作群聊" },
-                    description = "至少选择两个助手，才能建立可协同响应的群聊。",
-                    eyebrow = "Group Definition",
-                    icon = Lucide.Users
-                ) {
-                    AppPill(text = "${selectedAssistants.size} 个助手")
-                }
-            }
 
             item {
                 AppSectionCard(

@@ -49,7 +49,6 @@ import androidx.compose.ui.unit.dp
 import com.tchat.data.model.McpServer
 import com.tchat.data.model.McpServerType
 import com.tchat.wanxiaot.ui.components.AppEmptyState
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionCard
@@ -111,12 +110,6 @@ fun McpScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    AppHeroCard(
-                        eyebrow = "Tool Bridge",
-                        title = "把外部工具能力接进来",
-                        description = "MCP 让助手调用搜索、文件、自动化等外部能力，但连接层本身必须足够清晰。",
-                        icon = Icons.Default.Cloud
-                    )
                     AppEmptyState(
                         icon = Icons.Default.Cloud,
                         title = "暂无 MCP 服务器",
@@ -132,17 +125,6 @@ fun McpScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                item {
-                    AppHeroCard(
-                        eyebrow = "Tool Bridge",
-                        title = "集中维护 MCP 服务连接与启用状态",
-                        description = "建议把不同工具能力拆成独立服务，而不是把所有能力堆到一个端点里。",
-                        icon = Icons.Default.Cloud,
-                        trailing = {
-                            AppPill(text = "${servers.count { it.enabled }} 个启用中")
-                        }
-                    )
-                }
 
                 items(servers, key = { it.id }) { server ->
                     McpServerCard(

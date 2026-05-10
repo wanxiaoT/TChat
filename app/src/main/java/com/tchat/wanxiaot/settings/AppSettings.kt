@@ -3,6 +3,7 @@ package com.tchat.wanxiaot.settings
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.composables.icons.lucide.Bot
+import com.composables.icons.lucide.BrainCircuit
 import com.composables.icons.lucide.KeyRound
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Sparkles
@@ -150,6 +151,70 @@ enum class KeySelectionStrategy {
 }
 
 /**
+ * 服务模式。
+ */
+enum class ServiceMode {
+    OFFICIAL, // TChat 官方服务
+    CUSTOM,   // 用户自定义服务
+    LOCAL     // 本地模型服务
+}
+
+/**
+ * 计费/权益来源。
+ */
+enum class ProviderBillingMode {
+    OFFICIAL_TCHAT,
+    NAAPI_LICENSE,
+    USER_API_KEY,
+    LOCAL,
+    TEAM
+}
+
+/**
+ * 鉴权方式。
+ */
+enum class ProviderAuthType {
+    BEARER,
+    LICENSE_CODE,
+    API_KEY,
+    GATEWAY_KEY,
+    NONE
+}
+
+/**
+ * 模型能力标签。
+ */
+data class ModelCapabilityConfig(
+    val modelName: String = "",
+    val displayName: String = "",
+    val vendor: String = "",
+    val category: String = "",
+    val supportsVision: Boolean = false,
+    val supportsTools: Boolean = false,
+    val supportsResponses: Boolean = false,
+    val supportsImageGeneration: Boolean = false,
+    val supportsEmbedding: Boolean = false,
+    val speed: String = "",
+    val quality: String = "",
+    val costLevel: String = "",
+    val recommended: Boolean = false
+) {
+    fun labels(): List<String> {
+        val result = mutableListOf<String>()
+        if (recommended) result += "推荐"
+        if (supportsVision) result += "视觉"
+        if (supportsTools) result += "工具"
+        if (supportsResponses) result += "Responses"
+        if (supportsImageGeneration) result += "图片"
+        if (supportsEmbedding) result += "Embedding"
+        if (speed.isNotBlank()) result += speed
+        if (quality.isNotBlank()) result += quality
+        if (costLevel.isNotBlank()) result += costLevel
+        return result
+    }
+}
+
+/**
  * API Key 条目
  * 用于多 Key 管理
  */
@@ -193,10 +258,22 @@ data class ProviderConfig(
     val id: String = UUID.randomUUID().toString(),
     val name: String = "",  // 用户自定义名称，如 "我的 OpenAI"
     val providerType: AIProviderType = AIProviderType.OPENAI,
+    val serviceMode: ServiceMode = ServiceMode.CUSTOM,
+    val billingMode: ProviderBillingMode = ProviderBillingMode.USER_API_KEY,
+    val authType: ProviderAuthType = ProviderAuthType.BEARER,
     val apiKey: String = "",
     val endpoint: String = "",
+    val apiPath: String = "",
+    val modelsPath: String = "",
+    val imagesPath: String = "",
+    val embeddingsPath: String = "",
+    val modelCatalogPath: String = "",
+    val authHeaderName: String = "Authorization",
+    val authHeaderPrefix: String = "Bearer ",
+    val useProxy: Boolean = false,
     val selectedModel: String = "",
     val availableModels: List<String> = emptyList(),
+    val modelCapabilities: Map<String, ModelCapabilityConfig> = emptyMap(),
     val modelCustomParams: Map<String, ModelCustomParams> = emptyMap(),  // 模型名 -> 自定义参数
     val customHeaders: Map<String, String> = emptyMap(),
     // 多 Key 管理
@@ -240,6 +317,45 @@ data class ProviderConfig(
         } else {
             if (apiKey.isNotBlank()) 1 else 0
         }
+    }
+
+    fun resolvedEndpoint(): String = endpoint.ifBlank { providerType.defaultEndpoint }
+
+    fun resolvedApiPath(): String = apiPath.ifBlank { providerType.defaultApiPath }
+
+    fun resolvedModelsPath(): String = modelsPath.ifBlank { providerType.defaultModelsPath }
+
+    fun resolvedImagesPath(): String = imagesPath.ifBlank { providerType.defaultImagesPath }
+
+    fun resolvedEmbeddingsPath(): String = embeddingsPath.ifBlank { "/embeddings" }
+
+    fun resolvedModelCatalogPath(): String = modelCatalogPath.ifBlank {
+        if (billingMode == ProviderBillingMode.OFFICIAL_TCHAT || billingMode == ProviderBillingMode.NAAPI_LICENSE) {
+            "/api/tchat/model-catalog"
+        } else {
+            ""
+        }
+    }
+
+    fun isOfficialService(): Boolean {
+        return serviceMode == ServiceMode.OFFICIAL ||
+            billingMode == ProviderBillingMode.OFFICIAL_TCHAT ||
+            billingMode == ProviderBillingMode.NAAPI_LICENSE
+    }
+
+    fun requiresApiKey(): Boolean = authType != ProviderAuthType.NONE
+
+    fun authorizationHeaderValue(key: String = apiKey): String? {
+        val trimmedKey = key.trim()
+        if (authType == ProviderAuthType.NONE || trimmedKey.isBlank()) return null
+        val prefix = when (authType) {
+            ProviderAuthType.BEARER,
+            ProviderAuthType.LICENSE_CODE,
+            ProviderAuthType.GATEWAY_KEY -> authHeaderPrefix.ifBlank { "Bearer " }
+            ProviderAuthType.API_KEY -> authHeaderPrefix
+            ProviderAuthType.NONE -> ""
+        }
+        return "$prefix$trimmedKey".trim()
     }
 }
 
@@ -320,30 +436,81 @@ enum class AIProviderType(
     val displayName: String,
     val defaultEndpoint: String,
     val defaultModels: List<String>,
+    val defaultApiPath: String,
+    val defaultModelsPath: String,
+    val defaultImagesPath: String,
     val icon: @Composable () -> ImageVector
 ) {
     OPENAI(
-        "OpenAI",
+        "OpenAI Compatible",
         "https://api.openai.com/v1",
         listOf("gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"),
+        defaultApiPath = "/chat/completions",
+        defaultModelsPath = "/models",
+        defaultImagesPath = "/images/generations",
+        icon = { Lucide.Sparkles }
+    ),
+    OPENAI_RESPONSES(
+        "OpenAI Responses",
+        "https://api.openai.com/v1",
+        listOf("gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"),
+        defaultApiPath = "/responses",
+        defaultModelsPath = "/models",
+        defaultImagesPath = "/images/generations",
         icon = { Lucide.Sparkles }
     ),
     ANTHROPIC(
         "Anthropic (Claude)",
         "https://api.anthropic.com/v1",
         listOf("claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"),
+        defaultApiPath = "/messages",
+        defaultModelsPath = "/models",
+        defaultImagesPath = "",
         icon = { Lucide.Bot }
     ),
     GEMINI(
         "Google Gemini",
         "https://generativelanguage.googleapis.com/v1",
         listOf("gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash"),
+        defaultApiPath = "/models/{model}:streamGenerateContent",
+        defaultModelsPath = "/models",
+        defaultImagesPath = "",
         icon = { Lucide.Sparkles }
     ),
+    DEEPSEEK(
+        "DeepSeek",
+        "https://api.deepseek.com/v1",
+        listOf("deepseek-chat", "deepseek-reasoner"),
+        defaultApiPath = "/chat/completions",
+        defaultModelsPath = "/models",
+        defaultImagesPath = "",
+        icon = { Lucide.BrainCircuit }
+    ),
+    OPENROUTER(
+        "OpenRouter",
+        "https://openrouter.ai/api/v1",
+        listOf("openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "google/gemini-flash-1.5"),
+        defaultApiPath = "/chat/completions",
+        defaultModelsPath = "/models",
+        defaultImagesPath = "",
+        icon = { Lucide.Bot }
+    ),
+    OLLAMA(
+        "Ollama / LM Studio",
+        "http://127.0.0.1:11434/v1",
+        listOf("llama3.1", "qwen2.5", "deepseek-r1"),
+        defaultApiPath = "/chat/completions",
+        defaultModelsPath = "/models",
+        defaultImagesPath = "",
+        icon = { Lucide.Bot }
+    ),
     NAAPI_TCHAT(
-        "NAAPI for TChat",
+        "TChat 官方服务",
         "https://t.naapi.cc/v1",
         listOf("gpt-4o-mini", "gpt-4o", "deepseek-chat"),
+        defaultApiPath = "/chat/completions",
+        defaultModelsPath = "/models",
+        defaultImagesPath = "/images/generations",
         icon = { Lucide.KeyRound }
     )
 }

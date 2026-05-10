@@ -11,6 +11,7 @@ object AIProviderFactory {
      */
     enum class ProviderType {
         OPENAI,
+        OPENAI_RESPONSES,
         ANTHROPIC,
         GEMINI
     }
@@ -24,7 +25,11 @@ object AIProviderFactory {
         val baseUrl: String = "",
         val model: String = "",
         val customParams: CustomParams? = null,
-        val extraHeaders: Map<String, String> = emptyMap()
+        val extraHeaders: Map<String, String> = emptyMap(),
+        val chatPath: String = "",
+        val imagesPath: String = "",
+        val authHeaderName: String = "Authorization",
+        val authHeaderValue: String? = null
     )
 
     /**
@@ -37,7 +42,21 @@ object AIProviderFactory {
                 baseUrl = config.baseUrl.ifEmpty { "https://api.openai.com/v1" },
                 model = config.model.ifEmpty { "gpt-3.5-turbo" },
                 customParams = config.customParams,
-                extraHeaders = config.extraHeaders
+                extraHeaders = config.extraHeaders,
+                chatPath = config.chatPath.ifBlank { "/chat/completions" },
+                imagesPath = config.imagesPath.ifBlank { "/images/generations" },
+                authHeaderName = config.authHeaderName,
+                authHeaderValue = config.authHeaderValue
+            )
+            ProviderType.OPENAI_RESPONSES -> createOpenAIResponses(
+                apiKey = config.apiKey,
+                baseUrl = config.baseUrl.ifEmpty { "https://api.openai.com/v1" },
+                model = config.model.ifEmpty { "gpt-4.1-mini" },
+                customParams = config.customParams,
+                extraHeaders = config.extraHeaders,
+                responsesPath = config.chatPath.ifBlank { "/responses" },
+                authHeaderName = config.authHeaderName,
+                authHeaderValue = config.authHeaderValue
             )
             ProviderType.ANTHROPIC -> createAnthropic(
                 apiKey = config.apiKey,
@@ -63,9 +82,45 @@ object AIProviderFactory {
         baseUrl: String = "https://api.openai.com/v1",
         model: String = "gpt-3.5-turbo",
         customParams: CustomParams? = null,
-        extraHeaders: Map<String, String> = emptyMap()
+        extraHeaders: Map<String, String> = emptyMap(),
+        chatPath: String = "/chat/completions",
+        imagesPath: String = "/images/generations",
+        authHeaderName: String = "Authorization",
+        authHeaderValue: String? = null
     ): AIProvider {
-        return OpenAIProvider(apiKey, baseUrl, model, customParams, extraHeaders)
+        return OpenAIProvider(
+            apiKey = apiKey,
+            baseUrl = baseUrl,
+            model = model,
+            customParams = customParams,
+            extraHeaders = extraHeaders,
+            chatPath = chatPath,
+            imagesPath = imagesPath,
+            authHeaderName = authHeaderName,
+            authHeaderValue = authHeaderValue
+        )
+    }
+
+    fun createOpenAIResponses(
+        apiKey: String,
+        baseUrl: String = "https://api.openai.com/v1",
+        model: String = "gpt-4.1-mini",
+        customParams: CustomParams? = null,
+        extraHeaders: Map<String, String> = emptyMap(),
+        responsesPath: String = "/responses",
+        authHeaderName: String = "Authorization",
+        authHeaderValue: String? = null
+    ): AIProvider {
+        return OpenAIResponsesProvider(
+            apiKey = apiKey,
+            baseUrl = baseUrl,
+            model = model,
+            customParams = customParams,
+            extraHeaders = extraHeaders,
+            responsesPath = responsesPath,
+            authHeaderName = authHeaderName,
+            authHeaderValue = authHeaderValue
+        )
     }
 
     /**
@@ -112,8 +167,10 @@ object AIProviderFactory {
     ): AIProvider {
         val type = when (providerType.lowercase()) {
             "openai", "naapi", "naapi_tchat", "naapi-tchat" -> ProviderType.OPENAI
+            "openai_responses", "openai-responses", "responses" -> ProviderType.OPENAI_RESPONSES
             "anthropic" -> ProviderType.ANTHROPIC
             "gemini" -> ProviderType.GEMINI
+            "deepseek", "openrouter", "ollama" -> ProviderType.OPENAI
             else -> ProviderType.OPENAI  // 默认使用 OpenAI 格式
         }
         return create(ProviderConfig(

@@ -26,7 +26,6 @@ import com.tchat.data.database.entity.KnowledgeBaseEntity
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.components.AppEmptyState
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppIconTile
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
@@ -217,17 +216,6 @@ fun ExportImportScreenEnhanced(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                item {
-                    AppHeroCard(
-                        title = "迁移与备份中心",
-                        description = "统一管理数据库备份、R2 云同步，以及供应商、知识库和自定义 Skills 的迁移。",
-                        eyebrow = "Safety & Portability",
-                        icon = Lucide.Archive
-                    ) {
-                        AppPill(text = "${providers.size} 供应商")
-                        AppPill(text = "${knowledgeBases.size} 知识库")
-                    }
-                }
 
                 item {
                     DatabaseBackupSection(

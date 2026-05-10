@@ -45,7 +45,6 @@ import com.tchat.data.database.dao.ModelUsageStat
 import com.tchat.data.database.dao.ProviderUsageStat
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.TokenRecordingStatus
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionCard
@@ -154,15 +153,6 @@ fun UsageStatsScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                AppHeroCard(
-                    eyebrow = "Telemetry",
-                    title = "把调用成本和使用分布看清楚",
-                    description = "只有把 Token、服务商和模型分布看清楚，后续优化成本和策略才有抓手。",
-                    icon = Icons.Default.QueryStats,
-                    trailing = {
-                        AppPill(text = "${stats.totalMessages} 次调用")
-                    }
-                )
 
                 TokenRecordingControlCard(
                     status = tokenRecordingStatus,

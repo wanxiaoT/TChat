@@ -22,7 +22,6 @@ import com.tchat.wanxiaot.settings.PresetRegexRules
 import com.tchat.wanxiaot.settings.RegexRule
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.components.AppEmptyState
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionCard
@@ -139,17 +138,6 @@ fun RegexRulesScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
-            item {
-                AppHeroCard(
-                    eyebrow = "Output Cleanup",
-                    title = "用规则把回复噪声清掉，而不是事后手动修",
-                    description = "这些规则会按顺序执行，并且可以在不同助手中按需启用。",
-                    icon = Icons.Default.Check,
-                    trailing = {
-                        AppPill(text = "${userRules.count { it.isEnabled }} 条启用")
-                    }
-                )
-            }
 
             item {
                 AppSectionCard(

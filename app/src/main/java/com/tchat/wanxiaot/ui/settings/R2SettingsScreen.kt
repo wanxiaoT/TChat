@@ -21,9 +21,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.*
 import com.tchat.wanxiaot.settings.R2Settings
 import com.tchat.wanxiaot.settings.SettingsManager
-import com.tchat.wanxiaot.ui.components.AppHeroCard
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppPill
 import com.tchat.wanxiaot.ui.components.AppSectionCard
 import com.tchat.wanxiaot.ui.components.AppSectionSurface
 import com.tchat.wanxiaot.util.CloudBackupManager
@@ -130,17 +128,6 @@ fun R2SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            AppHeroCard(
-                eyebrow = "Remote Storage",
-                title = "把备份链路配置成一个稳定的恢复通道",
-                description = "R2 适合承载数据库备份文件，但账号、桶和凭证必须清晰可验证。",
-                icon = Lucide.Cloud,
-                trailing = {
-                    if (hasChanges) {
-                        AppPill(text = "未保存更改")
-                    }
-                }
-            )
 
             AppSectionCard(
                 title = "R2 配置",
