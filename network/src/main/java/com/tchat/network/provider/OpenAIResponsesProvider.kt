@@ -61,7 +61,7 @@ class OpenAIResponsesProvider(
         var outputTokenCount = 0
         var inputTokens = 0
         var outputTokens = 0
-        val responseContent = StringBuilder()
+        val responseContent = NetworkLogger.newBodyCapture()
 
         val call = client.newCall(request)
         activeCalls += call

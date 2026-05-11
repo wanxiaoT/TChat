@@ -36,7 +36,7 @@ fun ScannerTopBar(
     modifier: Modifier = Modifier,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
-    AppSectionSurface(modifier = modifier) {
+    SettingsSurface(modifier = modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -81,7 +81,7 @@ fun ScannerHintCard(
     modifier: Modifier = Modifier,
     trailing: @Composable RowScope.() -> Unit = {}
 ) {
-    AppSectionSurface(modifier = modifier) {
+    SettingsSurface(modifier = modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()

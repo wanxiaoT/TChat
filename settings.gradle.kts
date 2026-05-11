@@ -36,4 +36,5 @@ include(":core")
 include(":data")
 include(":network")
 include(":feature-chat")
+include(":design-system")
  

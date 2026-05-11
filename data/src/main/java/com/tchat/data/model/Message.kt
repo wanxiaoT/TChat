@@ -124,7 +124,11 @@ data class Message(
     val groupMetadata: GroupMessageMetadata? = null,
     // 变体支持（仅 AI 消息使用）
     val variants: List<MessageVariant> = emptyList(),
-    val selectedVariantIndex: Int = 0
+    val selectedVariantIndex: Int = 0,
+    // 用户侧组织能力
+    val isBookmarked: Boolean = false,
+    val replyToMessageId: String? = null,
+    val replyPreview: String? = null
 ) {
     /**
      * 获取文本内容（从 parts 中提取所有 Text 部分）
@@ -184,14 +188,18 @@ data class Message(
             chatId: String,
             role: MessageRole,
             content: String,
-            timestamp: Long = System.currentTimeMillis()
+            timestamp: Long = System.currentTimeMillis(),
+            replyToMessageId: String? = null,
+            replyPreview: String? = null
         ): Message {
             return Message(
                 id = id,
                 chatId = chatId,
                 role = role,
                 parts = listOf(MessagePart.Text(content)),
-                timestamp = timestamp
+                timestamp = timestamp,
+                replyToMessageId = replyToMessageId,
+                replyPreview = replyPreview
             )
         }
     }

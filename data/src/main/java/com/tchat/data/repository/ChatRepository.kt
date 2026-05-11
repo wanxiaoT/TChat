@@ -2,6 +2,7 @@ package com.tchat.data.repository
 
 import com.tchat.core.util.Result
 import com.tchat.data.model.Chat
+import com.tchat.data.model.ChatSearchResult
 import com.tchat.data.model.GroupMessageMetadata
 import com.tchat.data.model.Message
 import com.tchat.data.tool.Tool
@@ -30,6 +31,7 @@ data class ChatConfig(
     val shouldRecordTokens: Boolean = true,  // 是否记录token统计
     val regexRules: List<RegexRuleData> = emptyList(),  // 正则规则（用于流式处理）
     val enabledSkillIds: List<String> = emptyList(),  // 启用的技能ID列表
+    val contextMessageSize: Int = 64,  // 每次请求携带的最近上下文消息数量，<=0 表示全部上下文
     val groupMetadata: GroupMessageMetadata? = null  // 群聊消息元数据
 )
 
@@ -38,9 +40,12 @@ interface ChatRepository {
     fun getChatById(chatId: String): Flow<Chat?>
     fun getMessagesByChatId(chatId: String): Flow<List<Message>>
     fun observeRecentMessages(chatId: String, limit: Int): Flow<List<Message>>
+    fun observeBookmarkedMessages(limit: Int = 50): Flow<List<ChatSearchResult>>
     suspend fun getMessagesBefore(chatId: String, beforeTimestamp: Long, limit: Int): List<Message>
+    suspend fun searchMessages(query: String, limit: Int = 50): List<ChatSearchResult>
     suspend fun createChat(title: String): Result<Chat>
     suspend fun updateChatTitle(chatId: String, title: String): Result<Unit>
+    suspend fun updateChatPinned(chatId: String, isPinned: Boolean): Result<Unit>
     suspend fun deleteChat(chatId: String): Result<Unit>
 
     /**
@@ -53,10 +58,14 @@ interface ChatRepository {
         chatId: String,
         content: String,
         config: ChatConfig? = null,
-        mediaParts: List<com.tchat.data.model.MessagePart> = emptyList()
+        mediaParts: List<com.tchat.data.model.MessagePart> = emptyList(),
+        replyToMessageId: String? = null,
+        replyPreview: String? = null
     ): Flow<Result<Message>>
 
     suspend fun addMessage(message: Message): Result<Unit>
+    suspend fun updateMessageBookmarked(messageId: String, isBookmarked: Boolean): Result<Unit>
+    suspend fun createBranchFromMessage(messageId: String): Result<Chat>
 
     /**
      * 发送消息到新聊天（懒创建，支持工具调用）
@@ -66,7 +75,9 @@ interface ChatRepository {
     suspend fun sendMessageToNewChat(
         content: String,
         config: ChatConfig? = null,
-        mediaParts: List<com.tchat.data.model.MessagePart> = emptyList()
+        mediaParts: List<com.tchat.data.model.MessagePart> = emptyList(),
+        replyToMessageId: String? = null,
+        replyPreview: String? = null
     ): Flow<Result<MessageResult>>
 
     /**

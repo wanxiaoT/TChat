@@ -22,8 +22,8 @@ import com.composables.icons.lucide.*
 import com.tchat.wanxiaot.settings.R2Settings
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import com.tchat.wanxiaot.util.CloudBackupManager
 import kotlinx.coroutines.launch
 
@@ -129,7 +129,7 @@ fun R2SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "R2 配置",
                 description = "填写账户、Key 和目标 Bucket。高级设置只在需要自定义端点时开启。"
             ) {
@@ -248,7 +248,7 @@ fun R2SettingsScreen(
 
             // 测试结果
             testResult?.let { result ->
-                AppSectionSurface {
+                SettingsSurface {
                     Row(
                         modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -276,8 +276,8 @@ fun R2SettingsScreen(
                 }
             }
 
-            AppSectionCard(title = "帮助") {
-                AppSectionSurface {
+            SettingsGroupCard(title = "帮助") {
+                SettingsSurface {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -317,7 +317,7 @@ fun R2SettingsScreen(
                 }
             }
 
-            AppSectionCard(title = "安全建议") {
+            SettingsGroupCard(title = "安全建议") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)

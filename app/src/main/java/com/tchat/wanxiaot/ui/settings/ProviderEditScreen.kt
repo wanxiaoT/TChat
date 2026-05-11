@@ -34,12 +34,15 @@ import com.tchat.wanxiaot.settings.ServiceMode
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionCard
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
 import com.tchat.wanxiaot.ui.components.QRCodeDialog
 import com.tchat.wanxiaot.util.NaapiLicenseClient
 import com.tchat.wanxiaot.util.NaapiModelCatalogItem
+import com.tchat.wanxiaot.util.NaapiOrderStatus
+import com.tchat.wanxiaot.util.NaapiPendingOrder
 import com.tchat.wanxiaot.util.NaapiPlan
 import com.tchat.wanxiaot.util.NaapiTChatSupport
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -59,9 +62,12 @@ fun ProviderEditScreen(
     settingsManager: SettingsManager,
     onBack: () -> Unit,
     onSave: (ProviderConfig) -> Unit,
-    onDelete: (() -> Unit)?
+    onDelete: (() -> Unit)?,
+    isNewProvider: Boolean = provider == null
 ) {
-    val isNew = provider == null
+    val isNew = isNewProvider
+    val providerId = remember(provider?.id) { provider?.id ?: UUID.randomUUID().toString() }
+    val context = LocalContext.current
 
     var name by remember { mutableStateOf(provider?.name ?: "") }
     var providerType by remember { mutableStateOf(provider?.providerType ?: AIProviderType.OPENAI) }
@@ -135,7 +141,7 @@ fun ProviderEditScreen(
     var naapiPlans by remember { mutableStateOf<List<NaapiPlan>>(emptyList()) }
     var naapiLicenseMessage by remember { mutableStateOf<String?>(null) }
     var naapiLicenseSuccess by remember { mutableStateOf<Boolean?>(null) }
-    var naapiPendingOrderNo by remember { mutableStateOf<String?>(null) }
+    var naapiPendingOrder by remember(context) { mutableStateOf(NaapiTChatSupport.loadPendingOrder(context)) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showQRDialog by remember { mutableStateOf(false) }
     var showModelParamsDialog by remember { mutableStateOf<String?>(null) }
@@ -148,9 +154,66 @@ fun ProviderEditScreen(
     val scope = rememberCoroutineScope()
     val httpClient = remember { OkHttpClient() }
     val naapiLicenseClient = remember(httpClient) { NaapiLicenseClient(httpClient) }
-    val context = LocalContext.current
     val isNaapiProvider = providerType == AIProviderType.NAAPI_TCHAT
     val isNaapiLicenseBusy = isLoadingNaapiPlans || isCreatingNaapiOrder || isPollingNaapiOrder
+    var hasPersistedProvider by remember(providerId, isNew) { mutableStateOf(!isNew) }
+
+    fun buildCurrentProvider(): ProviderConfig {
+        return ProviderConfig(
+            id = providerId,
+            name = name.trim().ifEmpty { providerType.displayName },
+            providerType = providerType,
+            serviceMode = serviceMode,
+            billingMode = billingMode,
+            authType = authType,
+            apiKey = apiKey.trim(),
+            endpoint = endpoint.trim(),
+            apiPath = apiPath.trim(),
+            modelsPath = modelsPath.trim(),
+            imagesPath = imagesPath.trim(),
+            embeddingsPath = embeddingsPath.trim(),
+            modelCatalogPath = modelCatalogPath.trim(),
+            authHeaderName = authHeaderName.trim().ifBlank { "Authorization" },
+            authHeaderPrefix = authHeaderPrefix,
+            useProxy = useProxy,
+            selectedModel = selectedModel,
+            availableModels = savedModels,
+            modelCapabilities = modelCapabilities,
+            modelCustomParams = modelCustomParams,
+            customHeaders = if (providerType == AIProviderType.NAAPI_TCHAT && authType != ProviderAuthType.GATEWAY_KEY) {
+                NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+            } else {
+                customHeaders - NaapiTChatSupport.DEVICE_HEADER
+            },
+            apiKeys = apiKeys,
+            multiKeyEnabled = multiKeyEnabled,
+            keySelectionStrategy = keySelectionStrategy,
+            roundRobinIndex = roundRobinIndex,
+            maxFailuresBeforeDisable = maxFailuresBeforeDisable,
+            autoRecoveryMinutes = autoRecoveryMinutes
+        )
+    }
+
+    fun persistCurrentProviderSilently(): ProviderConfig {
+        val currentProvider = buildCurrentProvider()
+        val exists = settingsManager.settings.value.providers.any { it.id == currentProvider.id }
+        if (exists) {
+            settingsManager.updateProvider(currentProvider)
+        } else {
+            settingsManager.addProvider(currentProvider)
+        }
+        settingsManager.setCurrentProvider(currentProvider.id)
+        hasPersistedProvider = true
+        return currentProvider
+    }
+
+    fun openNaapiPayPage(order: NaapiPendingOrder): Boolean {
+        return runCatching {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(order.payUrl))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }.isSuccess
+    }
 
     fun applyNaapiModelCatalog(catalog: List<NaapiModelCatalogItem>) {
         val models = catalog.map { it.id.trim() }.filter { it.isNotBlank() }.distinct()
@@ -223,6 +286,82 @@ fun ProviderEditScreen(
         }
     }
 
+    suspend fun applyPaidNaapiOrder(confirmedOrder: NaapiOrderStatus, pendingOrder: NaapiPendingOrder) {
+        val licenseCode = confirmedOrder.licenseCode?.trim().orEmpty()
+        val gatewayKey = confirmedOrder.gatewayKey?.trim().orEmpty()
+        val redeemCodeFromOrder = confirmedOrder.redeemCode?.trim().orEmpty()
+        if (licenseCode.isBlank() && gatewayKey.isBlank() && redeemCodeFromOrder.isBlank()) {
+            naapiLicenseSuccess = false
+            naapiLicenseMessage = "订单已支付，服务端暂未返回可用凭证，可稍后继续查询订单 ${pendingOrder.orderNo}"
+            return
+        }
+
+        endpoint = confirmedOrder.gatewayBaseUrl?.trim()?.takeIf { it.isNotBlank() }
+            ?: NaapiTChatSupport.DEFAULT_ENDPOINT
+        if (licenseCode.isNotBlank()) {
+            redeemCode = licenseCode
+            apiKey = licenseCode
+            authType = ProviderAuthType.LICENSE_CODE
+            customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+            naapiActivationMessage = "已写入许可证，当前设备可使用"
+        } else if (gatewayKey.isNotBlank()) {
+            apiKey = gatewayKey
+            authType = ProviderAuthType.GATEWAY_KEY
+            customHeaders = customHeaders - NaapiTChatSupport.DEVICE_HEADER
+            naapiActivationMessage = "已写入设备专属 Gateway Key"
+        } else {
+            redeemCode = redeemCodeFromOrder
+            apiKey = redeemCodeFromOrder
+            authType = ProviderAuthType.BEARER
+            customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+            naapiActivationMessage = "已写入兑换码，可继续激活设备"
+        }
+        serviceMode = ServiceMode.OFFICIAL
+        billingMode = ProviderBillingMode.NAAPI_LICENSE
+        multiKeyEnabled = false
+        apiKeys = emptyList()
+        naapiActivationSuccess = true
+        naapiLicenseSuccess = true
+        NaapiTChatSupport.clearPendingOrder(context, pendingOrder.orderNo)
+        naapiPendingOrder = null
+        persistCurrentProviderSilently()
+        naapiLicenseMessage = "支付已确认，许可证已自动保存，可直接使用"
+    }
+
+    suspend fun pollNaapiOrderUntilDone(order: NaapiPendingOrder) {
+        if (isPollingNaapiOrder) return
+        isPollingNaapiOrder = true
+        naapiLicenseSuccess = null
+        var attempt = 0
+        try {
+            while (true) {
+                attempt += 1
+                val status = naapiLicenseClient.getOrder(order.endpoint, order.orderNo, order.pollToken)
+                val normalizedStatus = status.status.lowercase()
+                if (normalizedStatus == "paid") {
+                    applyPaidNaapiOrder(status, order)
+                    return
+                }
+                if (normalizedStatus in setOf("failed", "cancelled", "canceled", "refunded")) {
+                    NaapiTChatSupport.clearPendingOrder(context, order.orderNo)
+                    naapiPendingOrder = null
+                    naapiLicenseSuccess = false
+                    naapiLicenseMessage = "订单 ${status.orderNo} 状态为 ${status.status}"
+                    return
+                }
+                naapiLicenseMessage = "等待支付确认：${status.status}（已查询 ${attempt} 次，可离开本页后回来继续）"
+                delay(2_000)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            naapiLicenseSuccess = false
+            naapiLicenseMessage = "订单查询中断：${e.message ?: "网络异常"}。订单已保存，可稍后继续查询 ${order.orderNo}"
+        } finally {
+            isPollingNaapiOrder = false
+        }
+    }
+
     val loadNaapiPlans: () -> Unit = {
         scope.launch {
             isLoadingNaapiPlans = true
@@ -249,7 +388,6 @@ fun ProviderEditScreen(
             isPollingNaapiOrder = false
             naapiLicenseMessage = null
             naapiLicenseSuccess = null
-            naapiPendingOrderNo = null
             try {
                 if (endpoint.isBlank()) {
                     endpoint = NaapiTChatSupport.DEFAULT_ENDPOINT
@@ -261,89 +399,34 @@ fun ProviderEditScreen(
                     endpoint = endpoint,
                     planId = plan.id
                 )
-                naapiPendingOrderNo = order.orderNo
+                val pendingOrder = NaapiPendingOrder(
+                    endpoint = endpoint,
+                    orderNo = order.orderNo,
+                    pollToken = order.pollToken,
+                    payUrl = order.payUrl,
+                    planId = plan.id,
+                    createdAt = System.currentTimeMillis()
+                )
+                NaapiTChatSupport.savePendingOrder(context, pendingOrder)
+                naapiPendingOrder = pendingOrder
                 showNaapiPlanDialog = false
                 isCreatingNaapiOrder = false
 
-                val openedPayPage = runCatching {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(order.payUrl))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                }.isSuccess
-
+                val openedPayPage = openNaapiPayPage(pendingOrder)
                 naapiLicenseMessage = if (openedPayPage) {
                     "订单 ${order.orderNo} 已创建，请在支付页完成付款"
                 } else {
                     "订单 ${order.orderNo} 已创建，但支付页未打开"
                 }
 
-                isPollingNaapiOrder = true
-                var paidOrder: com.tchat.wanxiaot.util.NaapiOrderStatus? = null
-                for (attempt in 1..60) {
-                    delay(2_000)
-                    val status = naapiLicenseClient.getOrder(endpoint, order.orderNo)
-                    val normalizedStatus = status.status.lowercase()
-                    if (normalizedStatus == "paid") {
-                        paidOrder = status
-                        break
-                    }
-                    if (normalizedStatus in setOf("failed", "cancelled", "canceled", "refunded")) {
-                        naapiLicenseSuccess = false
-                        naapiLicenseMessage = "订单 ${status.orderNo} 状态为 ${status.status}"
-                        return@launch
-                    }
-                    naapiLicenseMessage = "等待支付确认：${status.status}（$attempt/60）"
-                }
-
-                val confirmedOrder = paidOrder
-                if (confirmedOrder == null) {
-                    naapiLicenseSuccess = false
-                    naapiLicenseMessage = "支付确认超时，可稍后凭订单号 ${order.orderNo} 再查询"
-                    return@launch
-                }
-
-                val licenseCode = confirmedOrder.licenseCode?.trim().orEmpty()
-                val gatewayKey = confirmedOrder.gatewayKey?.trim().orEmpty()
-                val redeemCodeFromOrder = confirmedOrder.redeemCode?.trim().orEmpty()
-                if (licenseCode.isBlank() && gatewayKey.isBlank() && redeemCodeFromOrder.isBlank()) {
-                    naapiLicenseSuccess = false
-                    naapiLicenseMessage = "订单已支付，服务端暂未返回可用凭证"
-                    return@launch
-                }
-
-                endpoint = confirmedOrder.gatewayBaseUrl?.trim()?.takeIf { it.isNotBlank() }
-                    ?: NaapiTChatSupport.DEFAULT_ENDPOINT
-                if (licenseCode.isNotBlank()) {
-                    redeemCode = licenseCode
-                    apiKey = licenseCode
-                    authType = ProviderAuthType.LICENSE_CODE
-                    customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
-                    naapiActivationMessage = "已写入许可证，当前设备可使用"
-                } else if (gatewayKey.isNotBlank()) {
-                    apiKey = gatewayKey
-                    authType = ProviderAuthType.GATEWAY_KEY
-                    customHeaders = customHeaders - NaapiTChatSupport.DEVICE_HEADER
-                    naapiActivationMessage = "已写入设备专属 Gateway Key"
-                } else {
-                    redeemCode = redeemCodeFromOrder
-                    apiKey = redeemCodeFromOrder
-                    authType = ProviderAuthType.BEARER
-                    customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
-                    naapiActivationMessage = "已写入兑换码，可继续激活设备"
-                }
-                serviceMode = ServiceMode.OFFICIAL
-                billingMode = ProviderBillingMode.NAAPI_LICENSE
-                multiKeyEnabled = false
-                apiKeys = emptyList()
-                naapiActivationSuccess = true
-                naapiLicenseSuccess = true
-                naapiLicenseMessage = "许可证已写入本页配置，请保存后使用"
+                pollNaapiOrderUntilDone(pendingOrder)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 naapiLicenseSuccess = false
                 naapiLicenseMessage = e.message ?: "许可证流程失败"
             } finally {
                 isCreatingNaapiOrder = false
-                isPollingNaapiOrder = false
             }
         }
     }
@@ -908,43 +991,12 @@ fun ProviderEditScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
-                    val newProvider = ProviderConfig(
-                        id = provider?.id ?: UUID.randomUUID().toString(),
-                        name = name.trim().ifEmpty { providerType.displayName },
-                        providerType = providerType,
-                        serviceMode = serviceMode,
-                        billingMode = billingMode,
-                        authType = authType,
-                        apiKey = apiKey.trim(),
-                        endpoint = endpoint.trim(),
-                        apiPath = apiPath.trim(),
-                        modelsPath = modelsPath.trim(),
-                        imagesPath = imagesPath.trim(),
-                        embeddingsPath = embeddingsPath.trim(),
-                        modelCatalogPath = modelCatalogPath.trim(),
-                        authHeaderName = authHeaderName.trim().ifBlank { "Authorization" },
-                        authHeaderPrefix = authHeaderPrefix,
-                        useProxy = useProxy,
-                        selectedModel = selectedModel,
-                        availableModels = savedModels,
-                        modelCapabilities = modelCapabilities,
-                        modelCustomParams = modelCustomParams,
-                        customHeaders = if (providerType == AIProviderType.NAAPI_TCHAT && authType != ProviderAuthType.GATEWAY_KEY) {
-                            NaapiTChatSupport.withDeviceHeader(context, customHeaders)
-                        } else {
-                            customHeaders - NaapiTChatSupport.DEVICE_HEADER
-                        },
-                        apiKeys = apiKeys,
-                        multiKeyEnabled = multiKeyEnabled,
-                        keySelectionStrategy = keySelectionStrategy,
-                        roundRobinIndex = roundRobinIndex,
-                        maxFailuresBeforeDisable = maxFailuresBeforeDisable,
-                        autoRecoveryMinutes = autoRecoveryMinutes
-                    )
+                    val newProvider = buildCurrentProvider()
                     onSave(newProvider)
-                    if (isNew) {
+                    if (!hasPersistedProvider) {
                         settingsManager.setCurrentProvider(newProvider.id)
                     }
+                    hasPersistedProvider = true
                     onBack()
                 },
                 icon = { Icon(Icons.Default.Check, contentDescription = null) },
@@ -963,7 +1015,7 @@ fun ProviderEditScreen(
         ) {
 
             // 基本信息卡片
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "基本信息",
                 description = "先定义服务商类型、名称和默认端点。"
             ) {
@@ -1068,7 +1120,11 @@ fun ProviderEditScreen(
                                         naapiActivationSuccess = null
                                         naapiLicenseMessage = null
                                         naapiLicenseSuccess = null
-                                        naapiPendingOrderNo = null
+                                        naapiPendingOrder = if (type == AIProviderType.NAAPI_TCHAT) {
+                                            NaapiTChatSupport.loadPendingOrder(context)
+                                        } else {
+                                            null
+                                        }
                                         typeExpanded = false
                                     }
                                 )
@@ -1077,7 +1133,7 @@ fun ProviderEditScreen(
                     }
             }
 
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "服务模式",
                 description = "普通用户可使用官方服务，高级用户保留自定义与本地模型。"
             ) {
@@ -1154,7 +1210,7 @@ fun ProviderEditScreen(
             }
 
             // API 配置卡片
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "API 配置",
                 description = "单 Key 直连或作为多 Key 方案的备用入口。"
             ) {
@@ -1309,12 +1365,54 @@ fun ProviderEditScreen(
                                     }
                                 }
 
-                                naapiPendingOrderNo?.let { orderNo ->
-                                    Text(
-                                        text = "订单号：$orderNo",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                                    )
+                                naapiPendingOrder?.let { pendingOrder ->
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            text = "未完成订单：${pendingOrder.orderNo}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    scope.launch {
+                                                        pollNaapiOrderUntilDone(pendingOrder)
+                                                    }
+                                                },
+                                                enabled = !isNaapiLicenseBusy,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text("继续查询订单")
+                                            }
+                                            OutlinedButton(
+                                                onClick = {
+                                                    val opened = openNaapiPayPage(pendingOrder)
+                                                    naapiLicenseSuccess = opened
+                                                    naapiLicenseMessage = if (opened) {
+                                                        "已重新打开支付页"
+                                                    } else {
+                                                        "支付页未打开，请检查浏览器或系统限制"
+                                                    }
+                                                },
+                                                enabled = !isNaapiLicenseBusy,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text("打开支付页")
+                                            }
+                                            TextButton(
+                                                onClick = {
+                                                    NaapiTChatSupport.clearPendingOrder(context, pendingOrder.orderNo)
+                                                    naapiPendingOrder = null
+                                                    naapiLicenseSuccess = null
+                                                    naapiLicenseMessage = "已清除本地未完成订单"
+                                                },
+                                                enabled = !isNaapiLicenseBusy,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text("清除")
+                                            }
+                                        }
+                                    }
                                 }
 
                                 naapiLicenseMessage?.let { message ->
@@ -1482,7 +1580,7 @@ fun ProviderEditScreen(
                     }
             }
 
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "路径与扩展端点",
                 description = "兼容 NewAPI、自建网关、Responses、图片与 Embedding 路由。"
             ) {
@@ -1544,7 +1642,7 @@ fun ProviderEditScreen(
                 }
             }
 
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "自定义 Header",
                 description = "可添加任意网关需要的 Header，例如组织 ID、项目 ID 或路由标记。"
             ) {
@@ -1633,7 +1731,7 @@ fun ProviderEditScreen(
             }
 
             // 多 Key 管理卡片
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "多 Key 管理",
                 description = "用于轮询、优先级和故障切换，降低单 Key 失效风险。"
             ) {
@@ -1816,7 +1914,7 @@ fun ProviderEditScreen(
             }
 
             // 模型配置卡片
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "模型配置",
                 description = "拉取、筛选并维护这个服务商可用的聊天模型。"
             ) {

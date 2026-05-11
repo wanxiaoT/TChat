@@ -18,6 +18,11 @@ zxing = "3.5.4"
 camerax = "1.4.1"
 mlkitTextRecognition = "16.0.1"
 coroutinesTest = "1.7.3"
+coilCompose = "3.4.0"
+gson = "2.13.2"
+json = "20240303"
+markwon = "4.6.2"
+jlatexmath = "0.2.0"
 jsch = "2.27.9"
 
 [libraries]
@@ -39,6 +44,7 @@ androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-te
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+okhttp-sse = { group = "com.squareup.okhttp3", name = "okhttp-sse", version.ref = "okhttp" }
 lucide-icons = { group = "com.composables", name = "icons-lucide", version.ref = "lucideIcons" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleViewmodel" }
@@ -54,7 +60,19 @@ camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = 
 mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitTextRecognition" }
 mlkit-text-recognition-chinese = { group = "com.google.mlkit", name = "text-recognition-chinese", version.ref = "mlkitTextRecognition" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutinesTest" }
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coilCompose" }
+gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+json = { group = "org.json", name = "json", version.ref = "json" }
 jsch = { group = "com.github.mwiede", name = "jsch", version.ref = "jsch" }
+markwon-core = { group = "io.noties.markwon", name = "core", version.ref = "markwon" }
+markwon-ext-strikethrough = { group = "io.noties.markwon", name = "ext-strikethrough", version.ref = "markwon" }
+markwon-ext-tables = { group = "io.noties.markwon", name = "ext-tables", version.ref = "markwon" }
+markwon-linkify = { group = "io.noties.markwon", name = "linkify", version.ref = "markwon" }
+markwon-html = { group = "io.noties.markwon", name = "html", version.ref = "markwon" }
+markwon-ext-latex = { group = "io.noties.markwon", name = "ext-latex", version.ref = "markwon" }
+jlatexmath-android = { group = "ru.noties", name = "jlatexmath-android", version.ref = "jlatexmath" }
+jlatexmath-android-font-cyrillic = { group = "ru.noties", name = "jlatexmath-android-font-cyrillic", version.ref = "jlatexmath" }
+jlatexmath-android-font-greek = { group = "ru.noties", name = "jlatexmath-android-font-greek", version.ref = "jlatexmath" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

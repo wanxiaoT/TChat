@@ -913,3 +913,66 @@ Priority 0 (基础设施 — 必须先完成，否则页面反复返工)
 > 本设计系统为专有资产。
 > Part B 中的代码片段为示意代码，需适配项目实际依赖和 Compose 版本后编译。
 > Part A 作为设计判断依据，不应出现在 PR 的 check 清单中。
+
+---
+
+## Progression / Fix 记录
+
+### 2026-05-10 — DESIGN_SYSTEM.md 落地
+
+**Progression**
+
+- 完成 `:design-system` Android Library 模块创建，并接入 `settings.gradle.kts`、`app`、`feature-chat`。
+- 完成 Material 淡蓝色板、`DesignSystemTheme`、标准 `shapes`、`Spacing`、`Motion`、`PageLevel`、`DesignTouchTargets`、`ChatColors`、`AppColors`、`AppShapes`、`LocalReducedMotion`。
+- `app` 主题已精简为语言与系统栏外壳，颜色、形状、排版委托给 `DesignSystemTheme`。
+- 新增并接入 `ChatAvatar`、`ConversationListItem`、`SettingsRow`、`SettingsGroup`、`TChatModalBottomSheet`、`StaggeredVerticalList`。
+- 对话抽屉列表迁移到 `ConversationListItem`，支持左滑删除、右滑置顶/取消置顶；Room 增加 `Chat.isPinned`、`chats.isPinned` 与 28→29 迁移。
+- 主导航、设置页、服务商页的位移动画从 `tween` 迁移到 `Motion.pageTransition` spring；scrim/fade 使用 `Motion.fade`。
+- 消息列表新增 stable key stagger 入场，并接入 `LocalReducedMotion`。
+- 发送按钮、头像点击接入 spring 缩放反馈并保留 Material ripple。
+- BottomSheet 入口统一迁移为 `TChatModalBottomSheet`，使用 top 20dp 圆角、定制 handle、0.32 scrim。
+- 旧 `AppSectionCard` / `AppSectionSurface` 业务调用已迁移到 `SettingsGroupCard` / `SettingsSurface`，旧 API 仅在 `AppChrome.kt` 保留 deprecated 兼容定义。
+- `AppEmptyState` 已移除卡片容器，改为居中布局并支持 `illustration` slot；保留 nullable `icon` 作为旧调用兼容入口。
+- 完成检查：无茶色 `#205A56` 遗留；无业务侧 22/24/26/34dp 圆角遗留；业务侧 `ModalBottomSheet` 已统一走 `TChatModalBottomSheet`。
+
+**Fix**
+
+- 修复新增模块使用 Gradle alias 插件导致的 classpath unknown version 问题：`design-system` 改为与现有 library 模块一致的插件 id 声明。
+- 修复 `TChatModalBottomSheet` content receiver 类型，适配 Material3 `ModalBottomSheet` 的 `ColumnScope`。
+- 避免 `AppPageScaffold` 暴露 experimental `TopAppBarScrollBehavior` 到所有调用页：scroll behavior 改为组件内部创建，仍强制挂载 nested scroll。
+- 修复新增 `ChatRepository.updateChatPinned` 后测试 fake repository 缺少实现的问题。
+
+**Verification**
+
+- `.\gradlew.bat :app:assembleDebug` — passed。
+- `.\gradlew.bat testDebugUnitTest` — passed。
+- `.\gradlew.bat lint` — passed。
+
+**复核说明**
+
+- `AppSectionCard` / `AppSectionSurface` 业务调用从基线 151 处降至 0 处，旧命名仅剩 `AppChrome.kt` 中 2 个 deprecated 兼容定义。
+- `Spacing` 已落地并用于新设计系统组件与本轮重点迁移路径；遗留页面中个别局部布局数值仍作为屏幕级微调值保留，后续不应新增未归因的硬编码 spacing。
+- `scrollBehavior` 按文档目标由 `AppPageScaffold` 强制执行，但未作为公开参数暴露，原因是 Material3 类型仍为 experimental，公开会要求所有业务页面 opt-in。
+
+### 2026-05-10 — 手感修正：降低过度弹性
+
+**Fix**
+
+- 用户反馈页面与按钮手感过于弹性，已将 `Motion.pageTransition` 从 `DampingRatioMediumBouncy + StiffnessMedium` 调整为 `DampingRatioNoBouncy + StiffnessMediumLow`。
+- 已将 `Motion.pressFeedback` 从 `DampingRatioMediumBouncy` 调整为 `DampingRatioNoBouncy`，保留快速缩放反馈但移除回弹 overshoot。
+
+### 2026-05-10 — 设置页层级修正：压平嵌套 surface
+
+**Fix**
+
+- 用户反馈设置页层次感异常，已将 `SettingsSurface` 从较重的 `surfaceContainer` 调整为 `surfaceContainerLow`，并把描边透明度从 `0.26f` 降到 `0.14f`。
+- `SettingsRow` 默认行背景改为透明，选中态从 `primaryContainer.copy(alpha = 0.32f)` 降为 `0.22f`，避免侧栏每行都像独立卡片。
+- 设置分割线透明度下调：通用 `SettingsDivider` 为 `0.18f`，平板侧栏与 TTS 页内部为 `0.16f`。
+- TTS 设置页的 `ListItem` 改为透明容器，引擎选择项仅在选中时显示轻量填充和 1dp 弱描边，移除未选中项白底卡片感。
+- “关于 TTS 引擎”移除 `SettingsGroupCard` 内部二次 `SettingsSurface`，避免分组容器中再套卡片。
+
+**Verification**
+
+- `.\gradlew.bat :app:assembleDebug` — passed。
+- `.\gradlew.bat :app:installDebug` — passed，已安装到 `OPD2404 - 15`。
+- `.\gradlew.bat :app:lintDebug` — passed。

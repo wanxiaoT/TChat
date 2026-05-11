@@ -16,6 +16,9 @@ import com.tchat.wanxiaot.settings.SettingsManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 import java.time.Instant
@@ -44,10 +47,14 @@ class KnowledgeViewModel(
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
 
+    private val _processingQueue = MutableStateFlow(KnowledgeProcessingQueueState())
+    val processingQueue: StateFlow<KnowledgeProcessingQueueState> = _processingQueue.asStateFlow()
+
     private val _searchResults = MutableStateFlow<List<KnowledgeService.SearchResult>>(emptyList())
     val searchResults: StateFlow<List<KnowledgeService.SearchResult>> = _searchResults.asStateFlow()
 
     private var currentBaseId: String? = null
+    private var processingJob: Job? = null
 
     init {
         loadKnowledgeBases()
@@ -226,13 +233,28 @@ class KnowledgeViewModel(
      * 处理单个条目
      */
     fun processItem(item: KnowledgeItemEntity) {
-        viewModelScope.launch {
+        processingJob?.cancel()
+        processingJob = viewModelScope.launch {
             _isProcessing.value = true
+            _processingQueue.value = KnowledgeProcessingQueueState(
+                total = 1,
+                currentTitle = item.title,
+                running = true
+            )
             try {
                 val base = repository.getBaseById(item.knowledgeBaseId) ?: return@launch
                 val provider = getEmbeddingProvider(base) ?: return@launch
 
-                knowledgeService.processItem(item, provider, base.embeddingModelId)
+                val result = knowledgeService.processItem(item, provider, base.embeddingModelId)
+                _processingQueue.value = _processingQueue.value.copy(
+                    completed = if (result.isSuccess) 1 else 0,
+                    failed = if (result.isFailure) 1 else 0,
+                    running = false,
+                    currentTitle = null
+                )
+            } catch (e: CancellationException) {
+                _processingQueue.value = _processingQueue.value.copy(running = false, cancelled = true)
+                throw e
             } finally {
                 _isProcessing.value = false
             }
@@ -243,13 +265,63 @@ class KnowledgeViewModel(
      * 处理知识库中所有待处理的条目
      */
     fun processAllPending(baseId: String) {
-        viewModelScope.launch {
+        processingJob?.cancel()
+        processingJob = viewModelScope.launch {
             _isProcessing.value = true
             try {
                 val base = repository.getBaseById(baseId) ?: return@launch
                 val provider = getEmbeddingProvider(base) ?: return@launch
+                val pendingItems = repository.getItemsByBaseIdAndStatus(baseId, ProcessingStatus.PENDING)
+                _processingQueue.value = KnowledgeProcessingQueueState(
+                    total = pendingItems.size,
+                    running = pendingItems.isNotEmpty()
+                )
 
-                knowledgeService.processAllPending(baseId, provider, base.embeddingModelId)
+                var completed = 0
+                var failed = 0
+                pendingItems.forEachIndexed { index, item ->
+                    if (!isActive) throw CancellationException()
+                    _processingQueue.value = _processingQueue.value.copy(
+                        currentIndex = index + 1,
+                        currentTitle = item.title
+                    )
+                    val result = knowledgeService.processItem(item, provider, base.embeddingModelId)
+                    if (result.isSuccess) completed++ else failed++
+                    _processingQueue.value = _processingQueue.value.copy(
+                        completed = completed,
+                        failed = failed
+                    )
+                }
+                _processingQueue.value = _processingQueue.value.copy(
+                    running = false,
+                    currentTitle = null
+                )
+            } catch (e: CancellationException) {
+                _processingQueue.value = _processingQueue.value.copy(running = false, cancelled = true)
+                throw e
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    fun cancelProcessing() {
+        processingJob?.cancel()
+        processingJob = null
+        _isProcessing.value = false
+        _processingQueue.value = _processingQueue.value.copy(running = false, cancelled = true)
+    }
+
+    fun retryFailed(baseId: String) {
+        processingJob?.cancel()
+        processingJob = viewModelScope.launch {
+            try {
+                val failedItems = repository.getItemsByBaseIdAndStatus(baseId, ProcessingStatus.FAILED)
+                failedItems.forEach { item ->
+                    repository.updateItemStatus(item.id, ProcessingStatus.PENDING)
+                }
+                processingJob = null
+                processAllPending(baseId)
             } finally {
                 _isProcessing.value = false
             }
@@ -325,4 +397,17 @@ class KnowledgeViewModel(
             else -> ""
         }
     }
+}
+
+data class KnowledgeProcessingQueueState(
+    val total: Int = 0,
+    val currentIndex: Int = 0,
+    val completed: Int = 0,
+    val failed: Int = 0,
+    val currentTitle: String? = null,
+    val running: Boolean = false,
+    val cancelled: Boolean = false
+) {
+    val progress: Float
+        get() = if (total <= 0) 0f else ((completed + failed).toFloat() / total).coerceIn(0f, 1f)
 }

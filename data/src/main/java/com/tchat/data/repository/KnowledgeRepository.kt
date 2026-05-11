@@ -61,6 +61,11 @@ interface KnowledgeRepository {
     suspend fun getItemById(id: String): KnowledgeItemEntity?
 
     /**
+     * 批量获取条目
+     */
+    suspend fun getItemsByIds(ids: List<String>): List<KnowledgeItemEntity>
+
+    /**
      * 获取指定状态的条目
      */
     suspend fun getItemsByStatus(status: ProcessingStatus): List<KnowledgeItemEntity>

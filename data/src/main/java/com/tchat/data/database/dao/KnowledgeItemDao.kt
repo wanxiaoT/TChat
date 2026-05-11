@@ -15,6 +15,9 @@ interface KnowledgeItemDao {
     @Query("SELECT * FROM knowledge_items WHERE id = :id")
     suspend fun getItemById(id: String): KnowledgeItemEntity?
 
+    @Query("SELECT * FROM knowledge_items WHERE id IN (:ids)")
+    suspend fun getItemsByIds(ids: List<String>): List<KnowledgeItemEntity>
+
     @Query("SELECT * FROM knowledge_items WHERE knowledgeBaseId = :baseId")
     suspend fun getItemsByBaseIdSync(baseId: String): List<KnowledgeItemEntity>
 

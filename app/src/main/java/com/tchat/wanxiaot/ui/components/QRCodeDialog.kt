@@ -23,9 +23,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import com.tchat.designsystem.Spacing
+import com.tchat.designsystem.TChatModalBottomSheet
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import com.tchat.wanxiaot.util.QRCodeGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -61,17 +63,15 @@ fun QRCodeDialog(
         "${json.length}B"
     }
 
-    ModalBottomSheet(
+    TChatModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        dragHandle = { BottomSheetDefaults.DragHandle() }
+        sheetState = sheetState
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp)
+                .padding(horizontal = Spacing.xl)
+                .padding(bottom = Spacing.xxl)
         ) {
             // 标题栏
             Row(
@@ -161,7 +161,7 @@ fun QRCodeDialog(
             Spacer(modifier = Modifier.height(24.dp))
 
             // 二维码卡片
-            AppSectionSurface(
+            SettingsSurface(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(

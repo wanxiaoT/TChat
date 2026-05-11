@@ -60,7 +60,7 @@ import com.tchat.network.log.NetworkLogStatus
 import com.tchat.network.log.NetworkLogger
 import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import org.json.JSONObject
 
 /**
@@ -148,7 +148,7 @@ private fun NetworkLogItem(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    AppSectionSurface {
+    SettingsSurface {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

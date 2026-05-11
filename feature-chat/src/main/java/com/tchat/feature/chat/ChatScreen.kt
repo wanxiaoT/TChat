@@ -36,7 +36,9 @@ import com.composables.icons.lucide.Wrench
 import com.tchat.data.model.LocalToolOption
 import com.tchat.data.model.ChatToolbarItem
 import com.tchat.data.model.ChatToolbarSettings
+import com.tchat.data.model.Message
 import com.tchat.data.model.MessagePart
+import com.tchat.data.model.QuickMessage
 import com.tchat.data.tool.Tool
 import com.tchat.data.tts.TtsService
 import com.tchat.data.util.RegexRuleData
@@ -64,6 +66,10 @@ fun ChatScreen(
     systemPrompt: String? = null,
     // 正则规则
     regexRules: List<RegexRuleData> = emptyList(),
+    // 启用的技能
+    enabledSkillIds: List<String> = emptyList(),
+    // 发送给模型的最近上下文消息数量，<=0 表示全部上下文
+    contextMessageSize: Int = 64,
     // 提供商ID（用于按提供商统计token）
     providerId: String? = null,
     // 是否记录token统计
@@ -71,6 +77,7 @@ fun ChatScreen(
     // 深度研究支持
     onDeepResearch: ((String?) -> Unit)? = null,
     isDeepResearching: Boolean = false,
+    onOpenChat: (String) -> Unit = {},
     // 打野助手支持
     onJungleHelperClick: (() -> Unit)? = null,
     // 聊天工具栏显示/顺序设置
@@ -89,6 +96,15 @@ fun ChatScreen(
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     var inputText by remember { mutableStateOf("") }
     var draftMediaParts by remember { mutableStateOf<List<MessagePart>>(emptyList()) }
+    var replyTarget by remember { mutableStateOf<Message?>(null) }
+    val quickMessages = remember {
+        listOf(
+            QuickMessage("总结", "请总结上面的内容，并列出关键结论。"),
+            QuickMessage("翻译", "请将以下内容翻译成中文，并保留原有格式："),
+            QuickMessage("行动项", "请提取行动项，按负责人、截止时间、下一步整理。"),
+            QuickMessage("表格", "请用 Markdown 表格整理以上信息。")
+        )
+    }
 
     // Context for clipboard, share, TTS
     val context = LocalContext.current
@@ -200,16 +216,44 @@ fun ChatScreen(
     }
 
     // 当工具状态变化时更新ViewModel的配置
-    LaunchedEffect(enabledTools, currentTools, systemPrompt, currentModel, regexRules, providerId, shouldRecordTokens) {
+    LaunchedEffect(
+        enabledTools,
+        currentTools,
+        systemPrompt,
+        currentModel,
+        regexRules,
+        enabledSkillIds,
+        contextMessageSize,
+        providerId,
+        shouldRecordTokens
+    ) {
         // 只要有工具或系统提示，就设置配置
         val hasTools = currentTools.isNotEmpty()
         val hasSystemPrompt = !systemPrompt.isNullOrEmpty()
 
         if (hasTools || hasSystemPrompt) {
-            viewModel.setTools(currentTools, systemPrompt, currentModel, providerId, shouldRecordTokens, regexRules)
+            viewModel.setTools(
+                tools = currentTools,
+                systemPrompt = systemPrompt,
+                modelName = currentModel,
+                providerId = providerId,
+                shouldRecordTokens = shouldRecordTokens,
+                regexRules = regexRules,
+                enabledSkillIds = enabledSkillIds,
+                contextMessageSize = contextMessageSize
+            )
         } else {
             // 即使没有工具和系统提示，也设置一个空配置，确保消息可以正常发送
-            viewModel.setTools(emptyList(), null, currentModel, providerId, shouldRecordTokens, regexRules)
+            viewModel.setTools(
+                tools = emptyList(),
+                systemPrompt = null,
+                modelName = currentModel,
+                providerId = providerId,
+                shouldRecordTokens = shouldRecordTokens,
+                regexRules = regexRules,
+                enabledSkillIds = enabledSkillIds,
+                contextMessageSize = contextMessageSize
+            )
         }
     }
 
@@ -217,6 +261,7 @@ fun ChatScreen(
     LaunchedEffect(chatId, viewModel) {
         inputText = "" // 切换聊天时清空输入框，防止残留文本发送到错误聊天
         draftMediaParts = emptyList()
+        replyTarget = null
         initialScrollChatKey = null
         viewModel.loadChat(chatId)
     }
@@ -238,6 +283,8 @@ fun ChatScreen(
 
     // Chat 页面手动消费 IME inset，避免不同 OEM 对 resize 的行为不一致
     SoftInputModeEffect(SoftInputAdjustNothing)
+    val density = LocalDensity.current
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
 
     Box(modifier = modifier.fillMaxSize()) {
         ChatBackdrop(modifier = Modifier.matchParentSize())
@@ -311,11 +358,29 @@ fun ChatScreen(
                     onCopy = onCopy,
                     onSpeak = onSpeak,
                     onShare = onShare,
-                    onDelete = onDelete
+                    onDelete = onDelete,
+                    onToggleBookmark = { message ->
+                        viewModel.toggleBookmark(message)
+                    },
+                    onReply = { message ->
+                        replyTarget = message
+                    },
+                    onCreateBranch = { message ->
+                        viewModel.createBranchFromMessage(message.id) { newChatId ->
+                            onOpenChat(newChatId)
+                        }
+                    },
+                    onQuoteClick = { quotedMessageId ->
+                        val index = state.messages.indexOfFirst { it.id == quotedMessageId }
+                        if (index >= 0) {
+                            scope.launch { messageListState.animateScrollToItem(index) }
+                        }
+                    }
                 )
 
                 // 输入区域（工具栏 + 输入框），固定在底部并跟随 IME 上移
                 ChatComposerDock(
+                    imeVisible = imeVisible,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .onSizeChanged { inputAreaHeightPx = it.height }
@@ -328,7 +393,7 @@ fun ChatScreen(
                     }
 
                     // 工具栏
-                    if (availableModels.isNotEmpty()) {
+                    if (availableModels.isNotEmpty() && !imeVisible) {
                         InputToolbar(
                             availableModels = availableModels,
                             currentModel = currentModel,
@@ -359,14 +424,31 @@ fun ChatScreen(
                     }
 
                     // 输入框
+                    if (inputText.isBlank() && draftMediaParts.isEmpty()) {
+                        QuickMessageRow(
+                            quickMessages = quickMessages,
+                            onInsert = { quickMessage ->
+                                inputText = quickMessage.content
+                            }
+                        )
+                    }
+
                     MessageInput(
                         text = inputText,
                         onTextChange = { inputText = it },
                         onSend = {
                             if (inputText.isNotBlank() || draftMediaParts.isNotEmpty()) {
-                                viewModel.sendMessage(actualChatId ?: chatId, inputText, draftMediaParts)
+                                val reply = replyTarget
+                                viewModel.sendMessage(
+                                    chatId = actualChatId ?: chatId,
+                                    content = inputText,
+                                    mediaParts = draftMediaParts,
+                                    replyToMessageId = reply?.id,
+                                    replyPreview = reply?.toReplyPreview()
+                                )
                                 inputText = ""
                                 draftMediaParts = emptyList()
+                                replyTarget = null
                             }
                         },
                         mediaParts = draftMediaParts,
@@ -384,7 +466,9 @@ fun ChatScreen(
                             }
                         },
                         inputHint = inputHint,
-                        sendContentDescription = sendContentDescription
+                        sendContentDescription = sendContentDescription,
+                        replyPreview = replyTarget?.toReplyPreview(),
+                        onClearReply = { replyTarget = null }
                     )
                 }
             }
@@ -400,6 +484,36 @@ fun ChatScreen(
                 hostState = snackbarHostState,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickMessageRow(
+    quickMessages: List<QuickMessage>,
+    onInsert: (QuickMessage) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 10.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        quickMessages.forEach { quickMessage ->
+            FilterChip(
+                selected = false,
+                onClick = { onInsert(quickMessage) },
+                label = { Text(quickMessage.title, maxLines = 1) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Lucide.Sparkles,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             )
         }
     }
@@ -654,6 +768,22 @@ internal fun getModelDisplayName(model: String): String {
         model.length <= 16 -> model
         else -> model.take(14) + "..."
     }
+}
+
+private fun Message.toReplyPreview(): String {
+    val text = getCurrentContent().ifBlank {
+        parts.firstNotNullOfOrNull { part ->
+            when (part) {
+                is MessagePart.Image -> part.fileName ?: "图片"
+                is MessagePart.Video -> part.fileName ?: "视频"
+                is MessagePart.ToolCall -> "工具调用：${part.toolName}"
+                is MessagePart.ToolResult -> "工具结果：${part.toolName}"
+                is MessagePart.Text -> part.content
+            }
+        }.orEmpty()
+    }.replace(Regex("\\s+"), " ").trim()
+
+    return if (text.length <= 120) text else text.take(117).trimEnd() + "..."
 }
 
 /**

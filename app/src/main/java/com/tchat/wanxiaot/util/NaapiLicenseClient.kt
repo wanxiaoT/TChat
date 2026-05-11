@@ -90,6 +90,8 @@ class NaapiLicenseClient(
             val data = parseDataObject(body)
             NaapiCreateOrderResult(
                 orderNo = data.optString("order_no"),
+                pollToken = data.optString("poll_token").takeIf { it.isNotBlank() }
+                    ?: data.optString("pollToken"),
                 status = data.optString("status", "pending"),
                 amount = data.optInt("amount", 0),
                 currency = data.optString("currency", "CNY"),
@@ -101,18 +103,26 @@ class NaapiLicenseClient(
                 if (it.payUrl.isBlank()) {
                     throw Exception("订单创建失败：缺少支付链接")
                 }
+                if (it.pollToken.isBlank()) {
+                    throw Exception("订单创建失败：缺少订单查询凭证")
+                }
             }
         }
     }
 
-    suspend fun getOrder(endpoint: String, orderNo: String): NaapiOrderStatus = withContext(Dispatchers.IO) {
+    suspend fun getOrder(endpoint: String, orderNo: String, pollToken: String): NaapiOrderStatus = withContext(Dispatchers.IO) {
         val trimmedOrderNo = orderNo.trim()
         if (trimmedOrderNo.isBlank()) {
             throw Exception("订单号为空")
         }
+        val trimmedPollToken = pollToken.trim()
+        if (trimmedPollToken.isBlank()) {
+            throw Exception("订单查询凭证为空")
+        }
 
         val request = Request.Builder()
             .url("${portalBase(endpoint)}/api/tchat/orders/$trimmedOrderNo")
+            .addHeader("X-TChat-Poll-Token", trimmedPollToken)
             .get()
             .build()
 
@@ -451,6 +461,7 @@ data class NaapiPlan(
 
 data class NaapiCreateOrderResult(
     val orderNo: String,
+    val pollToken: String,
     val status: String,
     val amount: Int,
     val currency: String,

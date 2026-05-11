@@ -14,6 +14,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /**
  * 本地工具集合
@@ -427,9 +428,9 @@ class LocalTools(private val context: Context) {
                         val freeBytes = stat.freeBytes
 
                         put("storage", JSONObject().apply {
-                            put("totalGB", String.format("%.2f", totalBytes / 1_000_000_000.0))
-                            put("freeGB", String.format("%.2f", freeBytes / 1_000_000_000.0))
-                            put("usedGB", String.format("%.2f", (totalBytes - freeBytes) / 1_000_000_000.0))
+                            put("totalGB", String.format(Locale.ROOT, "%.2f", totalBytes / 1_000_000_000.0))
+                            put("freeGB", String.format(Locale.ROOT, "%.2f", freeBytes / 1_000_000_000.0))
+                            put("usedGB", String.format(Locale.ROOT, "%.2f", (totalBytes - freeBytes) / 1_000_000_000.0))
                         })
                     } catch (e: Exception) {
                         put("storageError", e.message)
@@ -442,8 +443,8 @@ class LocalTools(private val context: Context) {
                         activityManager.getMemoryInfo(memInfo)
 
                         put("memory", JSONObject().apply {
-                            put("totalGB", String.format("%.2f", memInfo.totalMem / 1_000_000_000.0))
-                            put("availableGB", String.format("%.2f", memInfo.availMem / 1_000_000_000.0))
+                            put("totalGB", String.format(Locale.ROOT, "%.2f", memInfo.totalMem / 1_000_000_000.0))
+                            put("availableGB", String.format(Locale.ROOT, "%.2f", memInfo.availMem / 1_000_000_000.0))
                             put("lowMemory", memInfo.lowMemory)
                         })
                     } catch (e: Exception) {

@@ -1,7 +1,7 @@
 package com.tchat.wanxiaot.util
 
 import android.content.Context
-import android.os.Build
+import androidx.core.content.pm.PackageInfoCompat
 import com.tchat.data.database.AppDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -242,12 +242,7 @@ class DatabaseBackupManager(private val context: Context) {
     private fun getAppVersion(): String {
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                packageInfo.longVersionCode
-            } else {
-                @Suppress("DEPRECATION")
-                packageInfo.versionCode.toLong()
-            }
+            val versionCode = PackageInfoCompat.getLongVersionCode(packageInfo)
             "${packageInfo.versionName} ($versionCode)"
         } catch (e: Exception) {
             "Unknown"

@@ -21,6 +21,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CallSplit
+import androidx.compose.material.icons.filled.FormatQuote
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,10 +37,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -58,6 +61,8 @@ import com.composables.icons.lucide.X
 import com.tchat.data.model.Message
 import com.tchat.data.model.MessagePart
 import com.tchat.data.model.MessageRole
+import com.tchat.designsystem.ChatColors
+import com.tchat.designsystem.Spacing
 import com.tchat.feature.chat.markdown.MarkdownText
 
 @Composable
@@ -72,7 +77,11 @@ fun MessageItem(
     onCopy: ((content: String) -> Unit)? = null,
     onSpeak: ((content: String) -> Unit)? = null,
     onShare: ((content: String) -> Unit)? = null,
-    onDelete: ((messageId: String) -> Unit)? = null
+    onDelete: ((messageId: String) -> Unit)? = null,
+    onToggleBookmark: ((Message) -> Unit)? = null,
+    onReply: ((Message) -> Unit)? = null,
+    onCreateBranch: ((Message) -> Unit)? = null,
+    onQuoteClick: ((String) -> Unit)? = null
 ) {
     val isUser = message.role == MessageRole.USER
     val colorScheme = MaterialTheme.colorScheme
@@ -87,34 +96,23 @@ fun MessageItem(
     val speakerName = remember(message.groupMetadata) {
         message.groupMetadata?.assistantName?.takeIf { it.isNotBlank() }
     }
-    val assistantCardColor = colorScheme.surface.copy(alpha = 0.82f)
+    val assistantCardColor = ChatColors.aiBubbleSurface
     val assistantBorderColor = colorScheme.outlineVariant.copy(alpha = 0.34f)
 
     if (isUser) {
-        val bubbleShape = RoundedCornerShape(
-            topStart = 21.dp,
-            topEnd = 21.dp,
-            bottomStart = 21.dp,
-            bottomEnd = 7.dp
-        )
-        val bubbleStart = colorScheme.primary
-        val bubbleEnd = lerp(colorScheme.primary, colorScheme.tertiary, 0.38f)
+        val bubbleShape = MaterialTheme.shapes.extraLarge
 
         Column(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp),
+                .padding(horizontal = Spacing.xs),
             horizontalAlignment = Alignment.End
         ) {
             Box(
                 modifier = Modifier
                     .widthIn(max = 328.dp)
                     .clip(bubbleShape)
-                    .background(
-                        brush = Brush.linearGradient(
-                            colors = listOf(bubbleStart, bubbleEnd)
-                        )
-                    )
+                    .background(ChatColors.userBubbleContainer)
                     .border(
                         width = 1.dp,
                         color = Color.White.copy(alpha = 0.18f),
@@ -122,8 +120,8 @@ fun MessageItem(
                     )
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
                     if (imageParts.isNotEmpty() || videoParts.isNotEmpty()) {
                         MessageMediaSection(
@@ -133,11 +131,17 @@ fun MessageItem(
                         )
                     }
 
+                    MessageQuotePreview(
+                        replyToMessageId = message.replyToMessageId,
+                        replyPreview = message.replyPreview,
+                        onQuoteClick = onQuoteClick
+                    )
+
                     if (textContent.isNotBlank()) {
                         SelectionContainer {
                             Text(
                                 text = textContent,
-                                color = colorScheme.onPrimary,
+                                color = ChatColors.onUserBubble,
                                 style = MaterialTheme.typography.bodyLarge
                             )
                         }
@@ -149,8 +153,8 @@ fun MessageItem(
         Column(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
+                .padding(horizontal = Spacing.xs),
+            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
             AssistantMessageHeader(
                 providerIcon = providerIcon,
@@ -159,12 +163,7 @@ fun MessageItem(
             )
 
             Surface(
-                shape = RoundedCornerShape(
-                    topStart = 20.dp,
-                    topEnd = 20.dp,
-                    bottomStart = 20.dp,
-                    bottomEnd = 8.dp
-                ),
+                shape = MaterialTheme.shapes.extraLarge,
                 color = assistantCardColor,
                 border = BorderStroke(1.dp, assistantBorderColor),
                 tonalElevation = 0.dp,
@@ -173,8 +172,8 @@ fun MessageItem(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 13.dp, vertical = 11.dp),
-                    verticalArrangement = Arrangement.spacedBy(9.dp)
+                        .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
                     if (imageParts.isNotEmpty() || videoParts.isNotEmpty()) {
                         MessageMediaSection(
@@ -184,17 +183,34 @@ fun MessageItem(
                         )
                     }
 
+                    MessageQuotePreview(
+                        replyToMessageId = message.replyToMessageId,
+                        replyPreview = message.replyPreview,
+                        onQuoteClick = onQuoteClick
+                    )
+
                     val toolResults = message.getToolResults()
                     if (toolResults.isNotEmpty()) {
                         ToolResultsSection(toolResults = toolResults)
                     }
 
                     if (textContent.isNotEmpty()) {
-                        MarkdownText(
-                            markdown = textContent,
-                            modifier = Modifier.fillMaxWidth(),
-                            selectable = true
-                        )
+                        if (message.isStreaming) {
+                            SelectionContainer {
+                                Text(
+                                    text = textContent,
+                                    color = colorScheme.onSurface,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        } else {
+                            MarkdownText(
+                                markdown = textContent,
+                                modifier = Modifier.fillMaxWidth(),
+                                selectable = true
+                            )
+                        }
                     }
                 }
             }
@@ -287,6 +303,30 @@ fun MessageItem(
                         )
                     }
 
+                    if (onToggleBookmark != null) {
+                        BubbleActionButton(
+                            onClick = { onToggleBookmark(message) },
+                            icon = if (message.isBookmarked) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            contentDescription = if (message.isBookmarked) "取消收藏" else "收藏"
+                        )
+                    }
+
+                    if (onReply != null) {
+                        BubbleActionButton(
+                            onClick = { onReply(message) },
+                            icon = Icons.Filled.FormatQuote,
+                            contentDescription = "引用回复"
+                        )
+                    }
+
+                    if (onCreateBranch != null) {
+                        BubbleActionButton(
+                            onClick = { onCreateBranch(message) },
+                            icon = Icons.Filled.CallSplit,
+                            contentDescription = "创建分支"
+                        )
+                    }
+
                     if (previousMessage != null &&
                         previousMessage.role == MessageRole.USER &&
                         onRegenerate != null
@@ -367,6 +407,47 @@ private fun AssistantMessageHeader(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun MessageQuotePreview(
+    replyToMessageId: String?,
+    replyPreview: String?,
+    onQuoteClick: ((String) -> Unit)?
+) {
+    val preview = replyPreview?.takeIf { it.isNotBlank() } ?: return
+    Surface(
+        onClick = {
+            if (replyToMessageId != null) {
+                onQuoteClick?.invoke(replyToMessageId)
+            }
+        },
+        enabled = replyToMessageId != null && onQuoteClick != null,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        shape = RoundedCornerShape(12.dp),
+        tonalElevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.FormatQuote,
+                contentDescription = null,
+                modifier = Modifier.size(15.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = preview,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

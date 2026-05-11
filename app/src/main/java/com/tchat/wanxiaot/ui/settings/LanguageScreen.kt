@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.tchat.wanxiaot.i18n.Language
 import com.tchat.wanxiaot.i18n.strings
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,7 +76,7 @@ private fun LanguageItem(
         language.displayName
     }
 
-    AppSectionSurface {
+    SettingsSurface {
         androidx.compose.material3.Surface(
             onClick = onClick,
             color = if (isSelected) {

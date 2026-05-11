@@ -116,8 +116,8 @@ class GeminiProvider(
                         return
                     }
 
-                    // 收集完整响应，用于日志展示
-                    val responseContent = StringBuilder()
+                    // 收集有限响应体用于调试日志，避免长输出占用过多内存
+                    val responseContent = NetworkLogger.newBodyCapture()
 
                     processStreamResponseWithTools(response, toolCallsBuilder) { chunk ->
                         // 收集统计信息

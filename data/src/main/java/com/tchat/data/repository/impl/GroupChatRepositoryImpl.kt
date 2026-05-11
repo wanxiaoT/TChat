@@ -231,12 +231,16 @@ class GroupChatRepositoryImpl(
     }
 
     override suspend fun getGroupStats(groupId: String): GroupChatStats {
-        // TODO: 实现统计信息收集
-        // 需要统计消息数量、每个助手的发言次数等
+        val messagesByAssistant = messageDao.getAssistantMessageCountsByGroup(groupId)
+            .associate { it.groupAssistantId to it.count }
+        val lastActiveAt = messageDao.getLastGroupMessageTimestamp(groupId)
+            ?: getGroupById(groupId)?.updatedAt
+            ?: System.currentTimeMillis()
         return GroupChatStats(
             groupId = groupId,
-            totalMessages = 0,
-            messagesByAssistant = emptyMap()
+            totalMessages = messageDao.getAssistantMessageCountByGroup(groupId),
+            messagesByAssistant = messagesByAssistant,
+            lastActiveAt = lastActiveAt
         )
     }
 

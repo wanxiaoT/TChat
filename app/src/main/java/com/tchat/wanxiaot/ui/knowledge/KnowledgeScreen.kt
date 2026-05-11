@@ -53,7 +53,7 @@ import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppIconTile
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -201,7 +201,7 @@ private fun KnowledgeBaseCard(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    AppSectionSurface {
+    SettingsSurface {
         Surface(
             onClick = onClick,
             color = androidx.compose.ui.graphics.Color.Transparent

@@ -1,16 +1,16 @@
 package com.tchat.feature.chat
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Videocam
+import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.focus.onFocusChanged
@@ -36,17 +38,22 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.tchat.data.model.MessagePart
+import com.tchat.designsystem.LocalReducedMotion
+import com.tchat.designsystem.Motion
+import com.tchat.designsystem.Spacing
 
 @Composable
 fun MessageInput(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
+    modifier: Modifier = Modifier,
     mediaParts: List<MessagePart> = emptyList(),
     onPickMedia: (() -> Unit)? = null,
     onRemoveMedia: ((MessagePart) -> Unit)? = null,
     onGenerateImage: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
+    replyPreview: String? = null,
+    onClearReply: (() -> Unit)? = null,
     // i18n strings
     inputHint: String = "输入消息...",
     sendContentDescription: String = "发送",
@@ -55,12 +62,13 @@ fun MessageInput(
 ) {
     val thumbSizePx = with(LocalDensity.current) { 72.dp.roundToPx() }
     var isInputFocused by remember { mutableStateOf(false) }
+    val reducedMotion = LocalReducedMotion.current
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = Spacing.sm, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         val sendEnabled = text.isNotBlank() || mediaParts.isNotEmpty()
         val utilityButtonColors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -68,12 +76,54 @@ fun MessageInput(
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
+        if (!replyPreview.isNullOrBlank()) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)),
+                tonalElevation = 0.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.FormatQuote,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = replyPreview,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2
+                    )
+                    if (onClearReply != null) {
+                        IconButton(
+                            onClick = onClearReply,
+                            modifier = Modifier.size(30.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "取消引用",
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         if (mediaParts.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 mediaParts.forEach { part ->
@@ -109,7 +159,7 @@ fun MessageInput(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
             if (onPickMedia != null) {
                 FilledTonalIconButton(
@@ -140,7 +190,7 @@ fun MessageInput(
                 }
             }
 
-            val inputShape = RoundedCornerShape(22.dp)
+            val inputShape = MaterialTheme.shapes.extraLarge
 
             val inputBorderWidth = animateDpAsState(
                 targetValue = if (isInputFocused) 1.25.dp else 1.dp,
@@ -166,10 +216,7 @@ fun MessageInput(
                 modifier = Modifier
                     .weight(1f)
                     .animateContentSize(
-                        animationSpec = spring(
-                            stiffness = Spring.StiffnessMediumLow,
-                            dampingRatio = Spring.DampingRatioNoBouncy
-                        )
+                        animationSpec = Motion.snapIfReduced(reducedMotion, Motion.sheetTransition())
                     ),
                 shape = inputShape,
                 color = inputContainerColor,
@@ -184,7 +231,7 @@ fun MessageInput(
                         .fillMaxWidth()
                         .heightIn(min = 42.dp, max = 128.dp)
                         .onFocusChanged { isInputFocused = it.isFocused }
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                        .padding(horizontal = Spacing.md, vertical = Spacing.sm),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = MaterialTheme.colorScheme.onSurface
                     ),
@@ -215,11 +262,24 @@ fun MessageInput(
                 )
             }
 
+            val sendInteractionSource = remember { MutableInteractionSource() }
+            val sendPressed by sendInteractionSource.collectIsPressedAsState()
+            val sendScale by animateFloatAsState(
+                targetValue = if (sendPressed && sendEnabled) 0.96f else 1f,
+                animationSpec = Motion.snapIfReduced(reducedMotion, Motion.pressFeedback()),
+                label = "send_button_scale"
+            )
             FilledIconButton(
                 onClick = onSend,
                 enabled = sendEnabled,
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier
+                    .size(40.dp)
+                    .graphicsLayer {
+                        scaleX = sendScale
+                        scaleY = sendScale
+                    },
                 shape = CircleShape,
+                interactionSource = sendInteractionSource,
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -297,9 +357,9 @@ private fun MediaChip(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
             Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(18.dp))
             Text(text = label, style = MaterialTheme.typography.bodySmall)

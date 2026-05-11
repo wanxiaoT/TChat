@@ -21,6 +21,7 @@ import com.tchat.data.database.dao.AppSettingsDao
 import com.tchat.data.database.dao.SkillDao
 import com.tchat.data.database.entity.ChatEntity
 import com.tchat.data.database.entity.MessageEntity
+import com.tchat.data.database.entity.MessageSearchIndexEntity
 import com.tchat.data.database.entity.KnowledgeBaseEntity
 import com.tchat.data.database.entity.KnowledgeItemEntity
 import com.tchat.data.database.entity.KnowledgeChunkEntity
@@ -44,6 +45,7 @@ import com.tchat.data.database.entity.SkillEntity
     entities = [
         ChatEntity::class,
         MessageEntity::class,
+        MessageSearchIndexEntity::class,
         KnowledgeBaseEntity::class,
         KnowledgeItemEntity::class,
         KnowledgeChunkEntity::class,
@@ -57,7 +59,7 @@ import com.tchat.data.database.entity.SkillEntity
         AppSettingsEntity::class,
         SkillEntity::class
     ],
-    version = 28,
+    version = 31,
     exportSchema = true
 )
 @TypeConverters(LocalToolOptionConverter::class)
@@ -512,6 +514,70 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE chats ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_chats_isPinned_updatedAt ON chats(isPinned, updatedAt)")
+            }
+        }
+
+        private val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN isBookmarked INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE messages ADD COLUMN replyToMessageId TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE messages ADD COLUMN replyPreview TEXT DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_isBookmarked_timestamp ON messages(isBookmarked, timestamp)")
+            }
+        }
+
+        private val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS message_search_index (
+                        messageId TEXT NOT NULL,
+                        chatId TEXT NOT NULL,
+                        normalizedText TEXT NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        PRIMARY KEY(messageId),
+                        FOREIGN KEY(messageId) REFERENCES messages(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_message_search_index_messageId " +
+                        "ON message_search_index(messageId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_message_search_index_chatId " +
+                        "ON message_search_index(chatId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_message_search_index_updatedAt " +
+                        "ON message_search_index(updatedAt)"
+                )
+                db.execSQL(
+                    """
+                    INSERT OR REPLACE INTO message_search_index(messageId, chatId, normalizedText, updatedAt)
+                    SELECT
+                        messages.id,
+                        messages.chatId,
+                        LOWER(
+                            IFNULL(chats.title, '') || CHAR(10) ||
+                            IFNULL(messages.partsJson, '') || CHAR(10) ||
+                            IFNULL(messages.variantsJson, '') || CHAR(10) ||
+                            IFNULL(messages.modelName, '') || CHAR(10) ||
+                            IFNULL(messages.providerId, '') || CHAR(10) ||
+                            IFNULL(messages.groupAssistantName, '')
+                        ),
+                        messages.timestamp
+                    FROM messages
+                    INNER JOIN chats ON chats.id = messages.chatId
+                    """.trimIndent()
+                )
+            }
+        }
+
         // 迁移:采用 MessagePart 架构，将旧字段迁移到 partsJson
         private val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -656,7 +722,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                         MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                         MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
-                        MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28
+                        MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
+                        MIGRATION_29_30, MIGRATION_30_31
                     )
                     .build()
                 INSTANCE = instance

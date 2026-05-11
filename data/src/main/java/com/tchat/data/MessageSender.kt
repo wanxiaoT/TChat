@@ -128,7 +128,9 @@ class MessageSender(
         chatId: String,
         content: String,
         config: ChatConfig? = null,
-        mediaParts: List<MessagePart> = emptyList()
+        mediaParts: List<MessagePart> = emptyList(),
+        replyToMessageId: String? = null,
+        replyPreview: String? = null
     ) {
         val repo = repository ?: return
         val chatConfig = resolveConfig(chatId = chatId, explicitConfig = config)
@@ -142,7 +144,9 @@ class MessageSender(
                 chatId = chatId,
                 content = content,
                 config = chatConfig,
-                mediaParts = mediaParts
+                mediaParts = mediaParts,
+                replyToMessageId = replyToMessageId,
+                replyPreview = replyPreview
             ).collect { result ->
                 when (result) {
                     is Result.Success -> {
@@ -181,6 +185,8 @@ class MessageSender(
         content: String,
         config: ChatConfig? = null,
         mediaParts: List<MessagePart> = emptyList(),
+        replyToMessageId: String? = null,
+        replyPreview: String? = null,
         onChatCreated: (String) -> Unit
     ) {
         val repo = repository ?: return
@@ -195,7 +201,9 @@ class MessageSender(
             repo.sendMessageToNewChat(
                 content = content,
                 config = chatConfig,
-                mediaParts = mediaParts
+                mediaParts = mediaParts,
+                replyToMessageId = replyToMessageId,
+                replyPreview = replyPreview
             ).collect { result ->
                 when (result) {
                     is Result.Success -> {

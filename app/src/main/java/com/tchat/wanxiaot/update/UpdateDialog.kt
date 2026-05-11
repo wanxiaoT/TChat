@@ -21,7 +21,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.tchat.feature.chat.markdown.MarkdownText
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -52,7 +52,7 @@ fun UpdateDialog(
             dismissOnClickOutside = canDismiss
         )
     ) {
-        AppSectionSurface(
+        SettingsSurface(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -106,7 +106,7 @@ fun UpdateDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                AppSectionSurface(
+                SettingsSurface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 200.dp)
@@ -329,7 +329,7 @@ fun UpdateDialog(
                 usePlatformDefaultWidth = false
             )
         ) {
-            AppSectionSurface(
+            SettingsSurface(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(16.dp)

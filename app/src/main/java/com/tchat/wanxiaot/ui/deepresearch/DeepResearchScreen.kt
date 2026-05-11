@@ -41,14 +41,15 @@ import com.tchat.data.deepresearch.model.DeepResearchConfig
 import com.tchat.data.deepresearch.model.Learning
 import com.tchat.data.deepresearch.repository.DeepResearchHistory
 import com.tchat.data.deepresearch.service.WebSearchProvider
+import com.tchat.data.database.entity.KnowledgeBaseEntity
 import com.tchat.wanxiaot.settings.DeepResearchSettings
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.ui.ProviderSelectionSheet
 import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppIconTile
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import com.tchat.feature.chat.markdown.MarkdownText
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -70,7 +71,10 @@ fun DeepResearchScreen(
     availableModels: List<String> = emptyList(),
     currentModel: String = "",
     onProviderSelected: (String) -> Unit = {},
-    onModelSelected: (String) -> Unit = {}
+    onModelSelected: (String) -> Unit = {},
+    knowledgeBases: List<KnowledgeBaseEntity> = emptyList(),
+    onSaveReportToKnowledge: (KnowledgeBaseEntity, String, String) -> Unit = { _, _, _ -> },
+    onSendReportToChat: ((String) -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val nodes by viewModel.nodes.collectAsStateWithLifecycle()
@@ -138,7 +142,7 @@ fun DeepResearchScreen(
             }
 
             configError?.let { error ->
-                AppSectionSurface {
+                SettingsSurface {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -179,7 +183,10 @@ fun DeepResearchScreen(
                         val completeState = state as ResearchState.Complete
                         ResearchResult(
                             learnings = completeState.learnings,
-                            report = completeState.report
+                            report = completeState.report,
+                            knowledgeBases = knowledgeBases,
+                            onSaveReportToKnowledge = onSaveReportToKnowledge,
+                            onSendReportToChat = onSendReportToChat
                         )
                     }
                     is ResearchState.Error -> {
@@ -240,7 +247,7 @@ private fun InputSection(
     onStartResearch: () -> Unit,
     onCancel: () -> Unit
 ) {
-    AppSectionCard(
+    SettingsGroupCard(
         title = "研究问题",
         description = "输入明确的问题或任务，让系统开始多轮检索与分析。"
     ) {
@@ -255,7 +262,7 @@ private fun InputSection(
             keyboardActions = KeyboardActions(onSearch = { onStartResearch() }),
             minLines = 3,
             maxLines = 5,
-            shape = RoundedCornerShape(22.dp)
+            shape = MaterialTheme.shapes.extraLarge
         )
 
         Row(
@@ -297,7 +304,7 @@ private fun DeepResearchToolbar(
 ) {
     var modelMenuExpanded by remember { mutableStateOf(false) }
 
-    AppSectionSurface {
+    SettingsSurface {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -462,7 +469,7 @@ private fun StateIndicator(state: ResearchState) {
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()
     ) {
-        AppSectionSurface {
+        SettingsSurface {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -511,7 +518,7 @@ private fun ResearchProgress(
             .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        AppSectionCard(
+        SettingsGroupCard(
             title = "研究进度",
             description = "节点会按查询生成、搜索、处理和收束报告的顺序推进。"
         ) {
@@ -521,7 +528,7 @@ private fun ResearchProgress(
         }
 
         if (report.isNotEmpty()) {
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "研究报告",
                 description = if (isGeneratingReport) "报告仍在生成，内容会继续补全。" else "当前生成的研究报告预览。"
             ) {
@@ -557,7 +564,7 @@ private fun NodeItem(node: ResearchNode) {
         NodeStatus.ERROR -> Icons.Default.Error
     }
 
-    AppSectionSurface(
+    SettingsSurface(
         modifier = Modifier.padding(vertical = 2.dp)
     ) {
         Row(
@@ -625,15 +632,22 @@ private fun NodeItem(node: ResearchNode) {
 @Composable
 private fun ResearchResult(
     learnings: List<Learning>,
-    report: String?
+    report: String?,
+    knowledgeBases: List<KnowledgeBaseEntity> = emptyList(),
+    onSaveReportToKnowledge: (KnowledgeBaseEntity, String, String) -> Unit = { _, _, _ -> },
+    onSendReportToChat: ((String) -> Unit)? = null
 ) {
     var selectedTab by remember { mutableStateOf(0) }
+    var showKnowledgeMenu by remember { mutableStateOf(false) }
+    val reportContent = remember(report, learnings) {
+        buildReportWithSources(report.orEmpty(), learnings)
+    }
 
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        AppSectionSurface {
+        SettingsSurface {
             PrimaryTabRow(selectedTabIndex = selectedTab) {
                 Tab(
                     selected = selectedTab == 0,
@@ -650,7 +664,7 @@ private fun ResearchResult(
 
         when (selectedTab) {
             0 -> {
-                AppSectionCard(
+                SettingsGroupCard(
                     modifier = Modifier.fillMaxWidth(),
                     title = "最终报告",
                     description = "整理后的结论和分析会在这里呈现。"
@@ -667,6 +681,52 @@ private fun ResearchResult(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box {
+                                    FilledTonalButton(
+                                        onClick = { showKnowledgeMenu = true },
+                                        enabled = knowledgeBases.isNotEmpty()
+                                    ) {
+                                        Icon(Icons.Default.BookmarkAdd, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("保存到知识库")
+                                    }
+                                    DropdownMenu(
+                                        expanded = showKnowledgeMenu,
+                                        onDismissRequest = { showKnowledgeMenu = false }
+                                    ) {
+                                        knowledgeBases.forEach { base ->
+                                            DropdownMenuItem(
+                                                text = { Text(base.name) },
+                                                onClick = {
+                                                    onSaveReportToKnowledge(
+                                                        base,
+                                                        report.lineSequence().firstOrNull()?.take(60)
+                                                            ?: "深度研究报告",
+                                                        reportContent
+                                                    )
+                                                    showKnowledgeMenu = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (onSendReportToChat != null) {
+                                    FilledTonalButton(
+                                        onClick = { onSendReportToChat(reportContent) }
+                                    ) {
+                                        Icon(Icons.Default.Send, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("发送到聊天")
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
                             MarkdownText(markdown = report)
                         }
                     }
@@ -688,9 +748,25 @@ private fun ResearchResult(
     }
 }
 
+private fun buildReportWithSources(report: String, learnings: List<Learning>): String {
+    if (learnings.isEmpty()) return report
+    return buildString {
+        append(report)
+        append("\n\n## 来源\n")
+        learnings.forEachIndexed { index, learning ->
+            append(index + 1)
+            append(". ")
+            append(learning.title ?: learning.url)
+            append(" - ")
+            append(learning.url)
+            append('\n')
+        }
+    }
+}
+
 @Composable
 private fun LearningItem(learning: Learning) {
-    AppSectionSurface {
+    SettingsSurface {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
                 text = learning.title ?: learning.url,
@@ -1161,7 +1237,7 @@ private fun HistoryItem(
 ) {
     val dateFormat = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
 
-    AppSectionSurface(
+    SettingsSurface(
         modifier = Modifier.clickable(onClick = onClick)
     ) {
         Row(

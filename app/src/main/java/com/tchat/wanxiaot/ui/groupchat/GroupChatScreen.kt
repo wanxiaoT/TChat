@@ -18,8 +18,8 @@ import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppIconTile
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 
 /**
  * 群聊列表页面
@@ -92,7 +92,7 @@ private fun GroupChatCard(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    AppSectionSurface(
+    SettingsSurface(
         modifier = modifier
             .fillMaxWidth()
     ) {
@@ -194,8 +194,8 @@ fun CreateGroupChatScreen(
     availableAssistants: List<Assistant>,
     onBackClick: () -> Unit,
     onSave: (GroupChat, List<String>) -> Unit,
-    editingGroup: GroupChat? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    editingGroup: GroupChat? = null
 ) {
     var groupName by remember { mutableStateOf(editingGroup?.name ?: "") }
     var groupDescription by remember { mutableStateOf(editingGroup?.description ?: "") }
@@ -254,7 +254,7 @@ fun CreateGroupChatScreen(
         ) {
 
             item {
-                AppSectionCard(
+                SettingsGroupCard(
                     title = "基本信息",
                     description = "设置群聊名称和说明。"
                 ) {
@@ -277,12 +277,12 @@ fun CreateGroupChatScreen(
             }
 
             item {
-                AppSectionCard(
+                SettingsGroupCard(
                     title = "选择助手",
                     description = "至少需要 2 个助手参与协作。"
                 ) {
                     availableAssistants.forEach { assistant ->
-                        AppSectionSurface {
+                        SettingsSurface {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -311,7 +311,7 @@ fun CreateGroupChatScreen(
             }
 
             item {
-                AppSectionCard(
+                SettingsGroupCard(
                     title = "激活策略",
                     description = "决定哪个助手响应用户消息。"
                 ) {
@@ -321,7 +321,7 @@ fun CreateGroupChatScreen(
                         GroupActivationStrategy.POOLED to Pair("随机选择", "随机选择一个助手回复"),
                         GroupActivationStrategy.NATURAL to Pair("自然对话", "基于话语权智能选择")
                     ).forEach { (strategy, info) ->
-                        AppSectionSurface {
+                        SettingsSurface {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -348,11 +348,11 @@ fun CreateGroupChatScreen(
             }
 
             item {
-                AppSectionCard(
+                SettingsGroupCard(
                     title = "高级设置",
                     description = "控制自动连聊和节奏。"
                 ) {
-                    AppSectionSurface {
+                    SettingsSurface {
                         Column(
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(14.dp)

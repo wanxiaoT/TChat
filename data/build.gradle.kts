@@ -48,17 +48,18 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     // OkHttp for MCP client
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.sse)
 
     // Local SSH tools
     implementation(libs.jsch)
 
     // Gson for JSON serialization
-    implementation("com.google.code.gson:gson:2.13.2")
+    implementation(libs.gson)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.json)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.room.testing)
 }

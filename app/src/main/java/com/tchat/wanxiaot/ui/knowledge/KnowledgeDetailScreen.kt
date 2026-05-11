@@ -39,7 +39,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
@@ -71,9 +70,10 @@ import com.tchat.data.database.entity.KnowledgeItemType
 import com.tchat.data.database.entity.ProcessingStatus
 import com.tchat.data.knowledge.FileLoader
 import com.tchat.data.service.KnowledgeService
+import com.tchat.designsystem.TChatModalBottomSheet
 import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import com.tchat.wanxiaot.ui.components.AppSheetSurface
 import java.io.File
 
@@ -92,6 +92,7 @@ fun KnowledgeDetailScreen(
     val knowledgeBases by viewModel.knowledgeBases.collectAsStateWithLifecycle()
     val items by viewModel.currentItems.collectAsStateWithLifecycle()
     val isProcessing by viewModel.isProcessing.collectAsStateWithLifecycle()
+    val processingQueue by viewModel.processingQueue.collectAsStateWithLifecycle()
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
 
     val base = remember(knowledgeBases, baseId) {
@@ -155,6 +156,9 @@ fun KnowledgeDetailScreen(
 
     val pendingCount = remember(items) {
         items.count { it.getProcessingStatus() == ProcessingStatus.PENDING }
+    }
+    val failedCount = remember(items) {
+        items.count { it.getProcessingStatus() == ProcessingStatus.FAILED }
     }
 
     AppPageScaffold(
@@ -238,7 +242,17 @@ fun KnowledgeDetailScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            AppSectionSurface {
+            if (isProcessing || processingQueue.total > 0 || failedCount > 0) {
+                ProcessingQueueCard(
+                    queue = processingQueue,
+                    pendingCount = pendingCount,
+                    failedCount = failedCount,
+                    onCancel = { viewModel.cancelProcessing() },
+                    onRetryFailed = { viewModel.retryFailed(baseId) }
+                )
+            }
+
+            SettingsSurface {
                 SecondaryTabRow(
                     selectedTabIndex = selectedTab,
                     divider = {}
@@ -378,6 +392,74 @@ fun KnowledgeDetailScreen(
     }
 }
 
+@Composable
+private fun ProcessingQueueCard(
+    queue: KnowledgeProcessingQueueState,
+    pendingCount: Int,
+    failedCount: Int,
+    onCancel: () -> Unit,
+    onRetryFailed: () -> Unit
+) {
+    SettingsSurface {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (queue.running) "处理队列运行中" else "处理队列",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        text = buildString {
+                            append("待处理 $pendingCount")
+                            append(" · 失败 $failedCount")
+                            if (queue.total > 0) {
+                                append(" · 已完成 ${queue.completed}/${queue.total}")
+                            }
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (queue.running) {
+                    TextButton(onClick = onCancel) {
+                        Text("取消")
+                    }
+                } else if (failedCount > 0) {
+                    TextButton(onClick = onRetryFailed) {
+                        Text("重试失败")
+                    }
+                }
+            }
+
+            if (queue.total > 0) {
+                LinearProgressIndicator(
+                    progress = queue.progress,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            queue.currentTitle?.let { title ->
+                Text(
+                    text = "当前：$title",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
 /**
  * 知识条目卡片
  */
@@ -393,7 +475,7 @@ private fun KnowledgeItemCard(
     val status = item.getProcessingStatus()
     val itemType = item.getItemType()
 
-    AppSectionSurface {
+    SettingsSurface {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -536,10 +618,9 @@ private fun AddNoteSheet(
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
 
-    ModalBottomSheet(
+    TChatModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = androidx.compose.ui.graphics.Color.Transparent
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
         AppSheetSurface(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
@@ -598,10 +679,9 @@ private fun EditNoteSheet(
     var title by remember { mutableStateOf(item.title) }
     var content by remember { mutableStateOf(item.content) }
 
-    ModalBottomSheet(
+    TChatModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = androidx.compose.ui.graphics.Color.Transparent
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
         AppSheetSurface(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
@@ -659,10 +739,9 @@ private fun AddUrlSheet(
     var url by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
 
-    ModalBottomSheet(
+    TChatModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = androidx.compose.ui.graphics.Color.Transparent
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
         AppSheetSurface(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
@@ -720,10 +799,9 @@ private fun EditUrlSheet(
     var url by remember { mutableStateOf(item.sourceUri ?: item.content) }
     var title by remember { mutableStateOf(item.title) }
 
-    ModalBottomSheet(
+    TChatModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = androidx.compose.ui.graphics.Color.Transparent
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
         AppSheetSurface(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
@@ -780,10 +858,9 @@ private fun SearchSheet(
 ) {
     var query by remember { mutableStateOf("") }
 
-    ModalBottomSheet(
+    TChatModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = androidx.compose.ui.graphics.Color.Transparent
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
         AppSheetSurface(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
@@ -821,7 +898,7 @@ private fun SearchSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(searchResults) { result ->
-                        AppSectionSurface {
+                        SettingsSurface {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),

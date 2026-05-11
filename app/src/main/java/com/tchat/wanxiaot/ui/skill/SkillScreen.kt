@@ -25,7 +25,7 @@ import com.tchat.data.model.Skill
 import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -147,7 +147,7 @@ private fun SkillCard(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    AppSectionSurface(
+    SettingsSurface(
         modifier = Modifier.clickable(onClick = onClick)
     ) {
         Row(

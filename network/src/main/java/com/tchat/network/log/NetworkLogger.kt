@@ -51,6 +51,7 @@ object NetworkLogger {
     private const val INVALID_REQUEST_ID = -1L
     private const val MAX_LOGS = 100
     private const val MAX_BODY_CHARS = 4096
+    private const val TRUNCATION_SUFFIX_RESERVE = 64
 
     private val logs = CopyOnWriteArrayList<NetworkLogEntry>()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
@@ -59,6 +60,15 @@ object NetworkLogger {
     private var enabledOverrideForTests: Boolean? = null
 
     private fun isEnabled(): Boolean = enabledOverrideForTests ?: BuildConfig.DEBUG
+
+    fun newBodyCapture(): BodyCapture {
+        val maxChars = if (isEnabled()) {
+            (MAX_BODY_CHARS - TRUNCATION_SUFFIX_RESERVE).coerceAtLeast(512)
+        } else {
+            0
+        }
+        return BodyCapture(maxChars)
+    }
 
     /**
      * 记录新的请求
@@ -194,6 +204,40 @@ object NetworkLogger {
             append("\n…[truncated ")
             append(omitted)
             append(" chars]")
+        }
+    }
+
+    class BodyCapture internal constructor(
+        private val maxChars: Int
+    ) {
+        private val body = StringBuilder(maxChars.coerceAtLeast(0))
+        private var omittedChars = 0
+
+        fun append(chunk: String) {
+            if (maxChars <= 0 || chunk.isEmpty()) return
+
+            val remaining = maxChars - body.length
+            if (remaining > 0) {
+                if (chunk.length <= remaining) {
+                    body.append(chunk)
+                    return
+                }
+                body.append(chunk.take(remaining))
+                omittedChars += chunk.length - remaining
+            } else {
+                omittedChars += chunk.length
+            }
+        }
+
+        override fun toString(): String {
+            if (omittedChars <= 0) return body.toString()
+
+            return buildString(body.length + 64) {
+                append(body)
+                append("\n…[truncated ")
+                append(omittedChars)
+                append(" chars]")
+            }
         }
     }
 }

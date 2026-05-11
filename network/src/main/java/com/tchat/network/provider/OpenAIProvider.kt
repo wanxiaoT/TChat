@@ -75,8 +75,8 @@ class OpenAIProvider(
         var inputTokens = 0
         var outputTokens = 0
 
-        // 收集完整响应
-        val responseContent = StringBuilder()
+        // 收集有限响应体用于调试日志，避免长输出占用过多内存
+        val responseContent = NetworkLogger.newBodyCapture()
 
         val call = client.newCall(request)
         activeCalls += call

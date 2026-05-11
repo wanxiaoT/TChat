@@ -2,6 +2,7 @@ package com.tchat.data
 
 import com.tchat.core.util.Result
 import com.tchat.data.model.Chat
+import com.tchat.data.model.ChatSearchResult
 import com.tchat.data.model.Message
 import com.tchat.data.model.MessagePart
 import com.tchat.data.model.MessageRole
@@ -71,17 +72,25 @@ class MessageSenderTest {
 
         override fun observeRecentMessages(chatId: String, limit: Int): Flow<List<Message>> = emptyFlow()
 
+        override fun observeBookmarkedMessages(limit: Int): Flow<List<ChatSearchResult>> = emptyFlow()
+
         override suspend fun getMessagesBefore(
             chatId: String,
             beforeTimestamp: Long,
             limit: Int
         ): List<Message> = emptyList()
 
+        override suspend fun searchMessages(query: String, limit: Int): List<ChatSearchResult> = emptyList()
+
         override suspend fun createChat(title: String): Result<Chat> {
             error("Not needed in this test")
         }
 
         override suspend fun updateChatTitle(chatId: String, title: String): Result<Unit> {
+            return Result.Success(Unit)
+        }
+
+        override suspend fun updateChatPinned(chatId: String, isPinned: Boolean): Result<Unit> {
             return Result.Success(Unit)
         }
 
@@ -93,7 +102,9 @@ class MessageSenderTest {
             chatId: String,
             content: String,
             config: ChatConfig?,
-            mediaParts: List<MessagePart>
+            mediaParts: List<MessagePart>,
+            replyToMessageId: String?,
+            replyPreview: String?
         ): Flow<Result<Message>> = flow {
             sentConfigs[chatId] = config
             emit(Result.Success(assistantMessage(chatId)))
@@ -103,10 +114,20 @@ class MessageSenderTest {
             return Result.Success(Unit)
         }
 
+        override suspend fun updateMessageBookmarked(messageId: String, isBookmarked: Boolean): Result<Unit> {
+            return Result.Success(Unit)
+        }
+
+        override suspend fun createBranchFromMessage(messageId: String): Result<Chat> {
+            return Result.Success(Chat(id = "branch-chat-id", title = "branch"))
+        }
+
         override suspend fun sendMessageToNewChat(
             content: String,
             config: ChatConfig?,
-            mediaParts: List<MessagePart>
+            mediaParts: List<MessagePart>,
+            replyToMessageId: String?,
+            replyPreview: String?
         ): Flow<Result<MessageResult>> = flow {
             emit(
                 Result.Success(

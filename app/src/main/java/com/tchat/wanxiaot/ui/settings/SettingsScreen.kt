@@ -3,7 +3,6 @@ package com.tchat.wanxiaot.ui.settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -11,12 +10,15 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.stopScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.ChartColumn
@@ -40,8 +42,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.BookOpen
@@ -76,10 +81,17 @@ import com.tchat.data.repository.impl.GroupChatRepositoryImpl
 import com.tchat.wanxiaot.ui.groupchat.GroupChatListScreen
 import com.tchat.wanxiaot.ui.groupchat.CreateGroupChatScreen
 import com.tchat.data.repository.impl.SkillRepositoryImpl
+import com.tchat.designsystem.LocalReducedMotion
+import com.tchat.designsystem.Motion
+import com.tchat.designsystem.SettingsDivider
+import com.tchat.designsystem.SettingsGroup
+import com.tchat.designsystem.SettingsRow
+import com.tchat.designsystem.Spacing
 import com.tchat.wanxiaot.ui.skill.SkillScreen
 import com.tchat.wanxiaot.ui.skill.SkillDetailScreen
 import com.tchat.wanxiaot.ui.skill.SkillViewModel
 import com.tchat.wanxiaot.ui.ssh.SshProfilesScreen
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 // 平板模式的最小宽度阈值
@@ -447,6 +459,7 @@ private fun TabletSettingsLayout(
     var showSearchBar by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
+    val reducedMotion = LocalReducedMotion.current
 
     // 处理系统返回键
     BackHandler {
@@ -476,14 +489,14 @@ private fun TabletSettingsLayout(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(Spacing.md),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.md)
     ) {
         Surface(
             modifier = Modifier
                 .width(TABLET_LIST_WIDTH)
                 .fillMaxHeight(),
-            shape = RoundedCornerShape(22.dp),
+            shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.surface,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
             tonalElevation = 0.dp,
@@ -565,7 +578,8 @@ private fun TabletSettingsLayout(
             AnimatedContent(
                 targetState = currentSubPage,
                 transitionSpec = {
-                    fadeIn(animationSpec = tween(150)) togetherWith fadeOut(animationSpec = tween(150))
+                    fadeIn(animationSpec = Motion.fade(reducedMotion)) togetherWith
+                            fadeOut(animationSpec = Motion.fade(reducedMotion))
                 },
                 label = "tablet_detail_transition"
             ) { page ->
@@ -900,7 +914,9 @@ private fun PhoneSettingsLayout(
     groupChatRepository: GroupChatRepositoryImpl,
     skillRepository: SkillRepositoryImpl
 ) {
-    val mainScrollState = rememberScrollState()
+    val mainListState = rememberLazyListState()
+    val mainPressTracker = remember { SettingsScrollPressTracker() }
+    val reducedMotion = LocalReducedMotion.current
 
     // 处理系统返回键
     BackHandler {
@@ -927,24 +943,23 @@ private fun PhoneSettingsLayout(
     AnimatedContent(
         targetState = currentSubPage,
         transitionSpec = {
-            val animationDuration = 100
             val isNavigatingBack = targetState.level() < initialState.level()
             if (isNavigatingBack) {
                 // 返回上级页面：从左边滑入，旧页面向右滑出
                 slideInHorizontally(
-                    animationSpec = tween(animationDuration),
+                    animationSpec = Motion.snapIfReduced(reducedMotion, Motion.pageTransition<IntOffset>()),
                     initialOffsetX = { -it }
                 ) togetherWith slideOutHorizontally(
-                    animationSpec = tween(animationDuration),
+                    animationSpec = Motion.snapIfReduced(reducedMotion, Motion.pageTransition<IntOffset>()),
                     targetOffsetX = { it }
                 )
             } else {
                 // 进入子页面：从右边滑入，旧页面向左滑出
                 slideInHorizontally(
-                    animationSpec = tween(animationDuration),
+                    animationSpec = Motion.snapIfReduced(reducedMotion, Motion.pageTransition<IntOffset>()),
                     initialOffsetX = { it }
                 ) togetherWith slideOutHorizontally(
-                    animationSpec = tween(animationDuration),
+                    animationSpec = Motion.snapIfReduced(reducedMotion, Motion.pageTransition<IntOffset>()),
                     targetOffsetX = { -it }
                 )
             }
@@ -956,7 +971,8 @@ private fun PhoneSettingsLayout(
                 SettingsMainContent(
                     onBack = onBack,
                     onSubPageChange = onSubPageChange,
-                    scrollState = mainScrollState
+                    listState = mainListState,
+                    pressTracker = mainPressTracker
                 )
             }
             is SettingsSubPage.PROVIDERS -> {
@@ -1214,7 +1230,8 @@ private fun PhoneSettingsLayout(
 private fun SettingsMainContent(
     onBack: () -> Unit,
     onSubPageChange: (SettingsSubPage) -> Unit,
-    scrollState: ScrollState
+    listState: LazyListState,
+    pressTracker: SettingsScrollPressTracker
 ) {
     val allItems = getAllSettingsItems()
     val groupOrder = listOf(strings.settingsGeneral, strings.settingsOther)
@@ -1243,27 +1260,29 @@ private fun SettingsMainContent(
             )
         )
 
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .trackSettingsScrollPresses(listState, pressTracker),
+            state = listState,
+            contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(Spacing.lg)
         ) {
             groupOrder.forEach { group ->
                 val items = groupedItems[group] ?: return@forEach
 
-                SettingsSectionCard(title = group) {
-                    items.forEachIndexed { index, item ->
-                        SettingsCardItem(
-                            item = item,
-                            onClick = { onSubPageChange(item.targetPage) }
-                        )
-                        if (index != items.lastIndex) {
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
-                                modifier = Modifier.padding(start = 58.dp)
+                item(key = "settings_group_$group") {
+                    SettingsSectionCard(title = group) {
+                        items.forEachIndexed { index, item ->
+                            SettingsCardItem(
+                                item = item,
+                                listState = listState,
+                                pressTracker = pressTracker,
+                                onClick = { onSubPageChange(item.targetPage) }
                             )
+                            if (index != items.lastIndex) {
+                                SettingsDivider()
+                            }
                         }
                     }
                 }
@@ -1279,11 +1298,15 @@ private fun SettingsMainContent(
 @Composable
 private fun SettingsCardItem(
     item: SettingsItemData,
+    listState: LazyListState,
+    pressTracker: SettingsScrollPressTracker,
     onClick: () -> Unit
 ) {
     SettingsEntryRow(
         item = item,
         isSelected = false,
+        listState = listState,
+        pressTracker = pressTracker,
         onClick = onClick
     )
 }
@@ -1299,6 +1322,8 @@ private fun SettingsListContent(
     searchQuery: String = "",
     onSubPageChange: (SettingsSubPage) -> Unit
 ) {
+    val listState = rememberLazyListState()
+    val pressTracker = remember { SettingsScrollPressTracker() }
     val allItems = getAllSettingsItems()
 
     // 根据搜索词过滤
@@ -1315,44 +1340,51 @@ private fun SettingsListContent(
     val groupOrder = listOf(strings.settingsGeneral, strings.settingsOther)
     val groupedItems = filteredItems.groupBy { it.group }
 
-    Column(
+    LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .verticalScroll(rememberScrollState()),
+            .trackSettingsScrollPresses(listState, pressTracker),
+        state = listState,
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         if (filteredItems.isEmpty()) {
             // 无搜索结果
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = strings.settingsNoResults,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            item(key = "settings_empty") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = strings.settingsNoResults,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         } else {
             groupOrder.forEach { group ->
                 val items = groupedItems[group] ?: return@forEach
 
-                SettingsSidebarSection(title = group) {
-                    items.forEachIndexed { index, item ->
-                        val isSelected = isSettingsItemSelected(item.id, currentSubPage)
-                        SettingsListItemFromData(
-                            item = item,
-                            isSelected = isSelected,
-                            onClick = { onSubPageChange(item.targetPage) }
-                        )
-                        if (index != items.lastIndex) {
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f),
-                                modifier = Modifier.padding(start = 58.dp)
+                item(key = "settings_sidebar_group_$group") {
+                    SettingsSidebarSection(title = group) {
+                        items.forEachIndexed { index, item ->
+                            val isSelected = isSettingsItemSelected(item.id, currentSubPage)
+                            SettingsListItemFromData(
+                                item = item,
+                                isSelected = isSelected,
+                                listState = listState,
+                                pressTracker = pressTracker,
+                                onClick = { onSubPageChange(item.targetPage) }
                             )
+                            if (index != items.lastIndex) {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f),
+                                    modifier = Modifier.padding(start = 58.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -1368,13 +1400,88 @@ private fun SettingsListContent(
 private fun SettingsListItemFromData(
     item: SettingsItemData,
     isSelected: Boolean,
+    listState: LazyListState,
+    pressTracker: SettingsScrollPressTracker,
     onClick: () -> Unit
 ) {
     SettingsEntryRow(
         item = item,
         isSelected = isSelected,
+        listState = listState,
+        pressTracker = pressTracker,
         onClick = onClick
     )
+}
+
+private class SettingsScrollPressTracker {
+    var downStartedDuringScroll: Boolean = false
+}
+
+private fun Modifier.trackSettingsScrollPresses(
+    scrollState: LazyListState,
+    pressTracker: SettingsScrollPressTracker
+): Modifier = pointerInput(scrollState, pressTracker) {
+    awaitEachGesture {
+        try {
+            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            pressTracker.downStartedDuringScroll = scrollState.isScrollInProgress
+
+            do {
+                val event = awaitPointerEvent(PointerEventPass.Final)
+            } while (event.changes.any { it.pressed })
+        } finally {
+            pressTracker.downStartedDuringScroll = false
+        }
+    }
+}
+
+private fun Modifier.clickDuringSettingsScroll(
+    scrollState: LazyListState,
+    pressTracker: SettingsScrollPressTracker,
+    onClick: () -> Unit
+): Modifier = pointerInput(scrollState, pressTracker, onClick) {
+    coroutineScope {
+        val scope = this
+
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            val shouldHandleTap = pressTracker.downStartedDuringScroll ||
+                scrollState.isScrollInProgress ||
+                down.isConsumed
+
+            if (shouldHandleTap) {
+                if (scrollState.isScrollInProgress) {
+                    scope.launch { scrollState.stopScroll() }
+                }
+
+                val pointerId = down.id
+                val startPosition = down.position
+                val touchSlop = viewConfiguration.touchSlop
+                var released = false
+                var cancelled = false
+
+                while (!released && !cancelled) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val change = event.changes.firstOrNull { it.id == pointerId }
+
+                    if (change == null) {
+                        cancelled = true
+                    } else {
+                        if ((change.position - startPosition).getDistance() > touchSlop) {
+                            cancelled = true
+                        }
+                        if (!change.pressed) {
+                            released = true
+                        }
+                    }
+                }
+
+                if (released && !cancelled) {
+                    onClick()
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1404,125 +1511,27 @@ private fun SettingsSectionCard(
     title: String,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = 4.dp)
-        )
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-                content = content
-            )
-        }
-    }
+    SettingsGroup(title = title, content = content)
 }
 
 @Composable
 private fun SettingsEntryRow(
     item: SettingsItemData,
     isSelected: Boolean,
+    listState: LazyListState,
+    pressTracker: SettingsScrollPressTracker,
     onClick: () -> Unit
 ) {
-    val contentColor = if (isSelected) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.onSurface
+    val icon = when (val source = item.icon) {
+        is SettingsIcon.Material -> source.icon
+        is SettingsIcon.Lucide -> source.icon
     }
-    val subtitleColor = if (isSelected) {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val containerColor = if (isSelected) {
-        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.26f)
-    } else {
-        Color.Transparent
-    }
-
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = containerColor,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = if (isSelected) {
-                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.10f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f)
-                },
-                modifier = Modifier.size(34.dp),
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    when (val icon = item.icon) {
-                        is SettingsIcon.Material -> Icon(
-                            icon.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(17.dp),
-                            tint = if (isSelected) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        is SettingsIcon.Lucide -> Icon(
-                            icon.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(17.dp),
-                            tint = if (isSelected) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
-                    color = contentColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = item.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = subtitleColor,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Icon(
-                imageVector = Lucide.ChevronRight,
-                contentDescription = null,
-                tint = subtitleColor
-            )
-        }
-    }
+    SettingsRow(
+        icon = icon,
+        title = item.title,
+        description = item.subtitle,
+        modifier = Modifier.clickDuringSettingsScroll(listState, pressTracker, onClick),
+        selected = isSelected,
+        onClick = onClick
+    )
 }

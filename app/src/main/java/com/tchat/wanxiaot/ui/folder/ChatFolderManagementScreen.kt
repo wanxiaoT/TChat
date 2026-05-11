@@ -19,8 +19,8 @@ import com.tchat.data.model.ChatFolder
 import com.tchat.data.model.FolderTreeNode
 import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 
 /**
  * 聊天文件夹管理页面
@@ -125,7 +125,7 @@ private fun FolderTreeItem(
 
     Column(modifier = modifier) {
         // 文件夹项
-        AppSectionSurface(
+        SettingsSurface(
             modifier = Modifier.padding(start = (level * 24).dp)
         ) {
             Row(
@@ -338,7 +338,7 @@ fun SmartGroupingCard(
     onGroupTypeChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    AppSectionCard(
+    SettingsGroupCard(
         modifier = modifier,
         title = "智能分组",
         description = "自动按时间、模型或助手将聊天归档到文件夹。"

@@ -37,6 +37,8 @@ class SettingsManager(context: Context) {
 
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
+    private val _isLoaded = MutableStateFlow(false)
+    val isLoaded: StateFlow<Boolean> = _isLoaded.asStateFlow()
     private val initialized = CompletableDeferred<Unit>()
 
     // 原子轮询索引管理（解决多线程竞态问题）
@@ -48,6 +50,7 @@ class SettingsManager(context: Context) {
         scope.launch {
             val initialSettings = runCatching { loadSettings() }.getOrDefault(AppSettings())
             applyPersistedSettings(initialSettings)
+            _isLoaded.value = true
             initialized.complete(Unit)
 
             settingsDao.getSettingsFlow().collect { entity ->

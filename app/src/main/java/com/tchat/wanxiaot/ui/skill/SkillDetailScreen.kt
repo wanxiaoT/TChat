@@ -11,8 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tchat.data.model.Skill
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 
 /**
  * 技能详情/编辑页面
@@ -134,7 +134,7 @@ fun SkillDetailScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
 
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "基本信息",
                 description = "定义技能身份、触发场景和关键词。"
             ) {
@@ -179,7 +179,7 @@ fun SkillDetailScreen(
                 )
             }
 
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "技能内容",
                 description = "触发后注入系统提示的指令文本。"
             ) {
@@ -195,7 +195,7 @@ fun SkillDetailScreen(
                 )
             }
 
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "执行策略",
                 description = "控制优先级与启用状态。"
             ) {
@@ -213,7 +213,7 @@ fun SkillDetailScreen(
                         singleLine = true
                     )
 
-                    AppSectionSurface(
+                    SettingsSurface(
                         modifier = Modifier.weight(1f)
                     ) {
                         Column(
@@ -240,7 +240,7 @@ fun SkillDetailScreen(
             }
 
             if (isBuiltIn) {
-                AppSectionSurface {
+                SettingsSurface {
                     Text(
                         text = "内置 Skill 不可编辑，但可以复制后修改。",
                         style = MaterialTheme.typography.bodySmall,

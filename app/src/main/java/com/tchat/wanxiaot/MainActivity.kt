@@ -7,7 +7,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -28,16 +27,23 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tchat.data.MessageSender
 import com.tchat.data.database.AppDatabase
 import com.tchat.data.database.entity.AssistantEntity
+import com.tchat.data.database.entity.KnowledgeItemEntity
+import com.tchat.data.database.entity.ProcessingStatus
 import com.tchat.data.model.Assistant
 import com.tchat.data.model.GroupChat
 import com.tchat.data.model.GroupMessageMetadata
 import com.tchat.data.model.LocalToolOption
+import com.tchat.data.model.Message
+import com.tchat.data.model.MessagePart
+import com.tchat.data.model.MessageRole
 import com.tchat.data.repository.ChatConfig
+import com.tchat.data.repository.ChatSearchRepository
 import com.tchat.data.repository.impl.ChatRepositoryImpl
 import com.tchat.data.repository.impl.KnowledgeRepositoryImpl
 import com.tchat.data.repository.impl.GroupChatRepositoryImpl
@@ -48,6 +54,7 @@ import com.tchat.data.tool.Tool
 import com.tchat.data.mcp.McpToolService
 import com.tchat.data.repository.impl.McpServerRepositoryImpl
 import java.io.File
+import java.util.UUID
 import com.tchat.data.tts.TtsService
 import com.tchat.data.tts.TtsEngineType as DataTtsEngineType
 import com.tchat.feature.chat.ChatScreen
@@ -80,6 +87,8 @@ import com.tchat.data.deepresearch.model.DeepResearchConfig
 import com.tchat.data.deepresearch.repository.DeepResearchHistoryRepository
 import com.tchat.data.deepresearch.repository.DeepResearchRepositoryFactory
 import com.tchat.data.deepresearch.service.WebSearchServiceFactory
+import com.tchat.designsystem.LocalReducedMotion
+import com.tchat.designsystem.Motion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -236,6 +245,7 @@ fun MainScreen(
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val settings by settingsManager.settings.collectAsStateWithLifecycle()
+    val settingsLoaded by settingsManager.isLoaded.collectAsStateWithLifecycle()
     val currentProvider = settings.getCurrentProvider()
     val context = LocalContext.current
     val chatMediaDir = remember(context) { File(context.filesDir, "chat_media") }
@@ -243,6 +253,12 @@ fun MainScreen(
     val chatDao = database.chatDao()
     val messageDao = database.messageDao()
     val assistantDao = database.assistantDao()
+    val chatSearchRepository = remember(database) {
+        ChatSearchRepository(messageDao)
+    }
+    val bookmarkedMessages by chatSearchRepository
+        .observeBookmarkedMessages(limit = 30)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
 
     // 知识库相关
     val knowledgeRepository = remember(database) {
@@ -255,6 +271,9 @@ fun MainScreen(
     val knowledgeService = remember(knowledgeRepository) {
         KnowledgeService(knowledgeRepository)
     }
+    val knowledgeBases by knowledgeRepository
+        .getAllBases()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
 
     // 群聊相关
     val groupChatRepository = remember(database) {
@@ -281,6 +300,7 @@ fun MainScreen(
     var repository by remember { mutableStateOf<ChatRepositoryImpl?>(null) }
     var currentNavState by remember { mutableStateOf(MainNavState.CHAT) }
     var isDrawerRequested by remember { mutableStateOf(false) }
+    var deepResearchReturnChatId by remember { mutableStateOf<String?>(null) }
     val chatList = remember(allChatList, groupChatList) {
         val activeGroupChatIds = groupChatList
             .mapNotNull { it.activeChatId }
@@ -333,6 +353,11 @@ fun MainScreen(
     val customParamsKey = currentProvider?.modelCustomParams?.get(activeModel)
     val multiKeyEnabledKey = currentProvider?.multiKeyEnabled
     val apiKeysCountKey = currentProvider?.apiKeys?.size ?: 0
+    val hasUsableProvider = currentProvider != null && (
+        !currentProvider.requiresApiKey() ||
+            currentProvider.apiKey.isNotBlank() ||
+            (currentProvider.multiKeyEnabled && currentProvider.apiKeys.isNotEmpty())
+        )
 
     LaunchedEffect(
         settings.currentProviderId,
@@ -351,13 +376,7 @@ fun MainScreen(
         apiKeysCountKey
     ) {
         try {
-            val hasCredential = currentProvider != null && (
-                !currentProvider.requiresApiKey() ||
-                    currentProvider.apiKey.isNotBlank() ||
-                    (currentProvider.multiKeyEnabled && currentProvider.apiKeys.isNotEmpty())
-                )
-
-            if (currentProvider != null && hasCredential) {
+            if (currentProvider != null && hasUsableProvider) {
                 val selectedModel = activeModel
 
                 val mappedType = when (currentProvider.providerType) {
@@ -465,26 +484,26 @@ fun MainScreen(
     }
 
     // 主页面切换动画
+    val reducedMotion = LocalReducedMotion.current
     AnimatedContent(
         targetState = currentNavState,
         transitionSpec = {
-            val animationDuration = 200
             if (targetState != MainNavState.CHAT) {
                 // 进入其他页面：从右边滑入，主页面向左滑出
                 slideInHorizontally(
-                    animationSpec = tween(animationDuration),
+                    animationSpec = Motion.snapIfReduced(reducedMotion, Motion.pageTransition<IntOffset>()),
                     initialOffsetX = { it }
                 ) togetherWith slideOutHorizontally(
-                    animationSpec = tween(animationDuration),
+                    animationSpec = Motion.snapIfReduced(reducedMotion, Motion.pageTransition<IntOffset>()),
                     targetOffsetX = { -it }
                 )
             } else {
                 // 返回主页面：从左边滑入，其他页面向右滑出
                 slideInHorizontally(
-                    animationSpec = tween(animationDuration),
+                    animationSpec = Motion.snapIfReduced(reducedMotion, Motion.pageTransition<IntOffset>()),
                     initialOffsetX = { -it }
                 ) togetherWith slideOutHorizontally(
-                    animationSpec = tween(animationDuration),
+                    animationSpec = Motion.snapIfReduced(reducedMotion, Motion.pageTransition<IntOffset>()),
                     targetOffsetX = { it }
                 )
             }
@@ -520,6 +539,40 @@ fun MainScreen(
                     },
                     onModelSelected = { model ->
                         settingsManager.setCurrentModel(model)
+                    },
+                    knowledgeBases = knowledgeBases,
+                    onSaveReportToKnowledge = { base, title, content ->
+                        scope.launch(Dispatchers.IO) {
+                            knowledgeRepository.addItem(
+                                KnowledgeItemEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    knowledgeBaseId = base.id,
+                                    title = title.ifBlank { "深度研究报告" },
+                                    content = content,
+                                    sourceType = "text",
+                                    status = ProcessingStatus.PENDING.name
+                                )
+                            )
+                        }
+                    },
+                    onSendReportToChat = deepResearchReturnChatId?.let { targetChatId ->
+                        { content ->
+                            scope.launch {
+                                repository?.addMessage(
+                                    Message(
+                                        id = UUID.randomUUID().toString(),
+                                        chatId = targetChatId,
+                                        role = MessageRole.ASSISTANT,
+                                        parts = listOf(MessagePart.Text(content)),
+                                        modelName = "deep-research"
+                                    )
+                                )
+                                currentGroupChatId = null
+                                currentChatId = targetChatId
+                                currentNavState = MainNavState.CHAT
+                                deepResearchReturnChatId = null
+                            }
+                        }
                     }
                 )
             }
@@ -532,7 +585,7 @@ fun MainScreen(
         drawerContent = {
             ModalDrawerSheet(
                 modifier = Modifier.width(296.dp),
-                drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
+                drawerShape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
                 drawerContainerColor = MaterialTheme.colorScheme.surface,
                 drawerContentColor = MaterialTheme.colorScheme.onSurface
             ) {
@@ -569,6 +622,30 @@ fun MainScreen(
                             }
                         }
                     },
+                    onToggleChatPinned = { chat ->
+                        scope.launch {
+                            repository?.updateChatPinned(chat.id, !chat.isPinned)
+                        }
+                    },
+                    onSearchMessages = { query ->
+                        chatSearchRepository.searchMessages(query)
+                    },
+                    bookmarkedMessages = bookmarkedMessages,
+                    onSearchResultSelected = { result ->
+                        val groupChat = result.groupId?.let { groupId ->
+                            groupChatList.find { it.id == groupId }
+                        } ?: groupChatList.find { it.activeChatId == result.chatId }
+
+                        if (groupChat != null) {
+                            currentGroupChatId = groupChat.id
+                            currentChatId = groupChat.activeChatId ?: result.chatId
+                        } else {
+                            currentGroupChatId = null
+                            currentChatId = result.chatId
+                        }
+                        currentNavState = MainNavState.CHAT
+                        scope.launch { drawerState.close() }
+                    },
                     onSettingsClick = {
                         scope.launch { drawerState.close() }
                         currentNavState = MainNavState.SETTINGS
@@ -583,6 +660,7 @@ fun MainScreen(
         // 自定义遮罩层 - 使用本地状态立即响应
         val scrimAlpha by animateFloatAsState(
             targetValue = if (isDrawerRequested) 0.12f else 0f,
+            animationSpec = Motion.fade(reducedMotion),
             label = "scrim"
         )
 
@@ -658,6 +736,9 @@ fun MainScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     when {
+                        !settingsLoaded || (hasUsableProvider && repository == null) -> {
+                            StartupLoadingState()
+                        }
                         // 群聊模式
                         currentGroupChatId != null && repository != null -> {
                             val groupChatViewModel = remember(repository, groupChatRepository, currentGroupChatId) {
@@ -772,6 +853,7 @@ fun MainScreen(
                                             com.tchat.wanxiaot.settings.TokenRecordingStatus.ENABLED,
                                         regexRules = assistantRegexRules,
                                         enabledSkillIds = assistant.enabledSkillIds,
+                                        contextMessageSize = assistant.contextMessageSize,
                                         groupMetadata = groupChat?.let { group ->
                                             GroupMessageMetadata(
                                                 groupId = group.id,
@@ -821,6 +903,7 @@ fun MainScreen(
                                         // 深度研究进行中，直接导航到深度研究页面查看进度
                                         currentNavState = MainNavState.DEEP_RESEARCH
                                     } else if (query != null) {
+                                        deepResearchReturnChatId = actualGroupChatId ?: currentChatId
                                         startDeepResearch(
                                             query = query,
                                             settingsManager = settingsManager
@@ -950,6 +1033,8 @@ fun MainScreen(
                                 systemPrompt = currentAssistant?.systemPrompt,
                                 // 正则规则
                                 regexRules = enabledRegexRules,
+                                enabledSkillIds = currentAssistant?.enabledSkillIds ?: emptyList(),
+                                contextMessageSize = currentAssistant?.contextMessageSize ?: 64,
                                 // 提供商ID和token记录设置
                                 providerId = settings.currentProviderId,
                                 shouldRecordTokens = settings.tokenRecordingStatus == com.tchat.wanxiaot.settings.TokenRecordingStatus.ENABLED,
@@ -960,6 +1045,7 @@ fun MainScreen(
                                         currentNavState = MainNavState.DEEP_RESEARCH
                                     } else if (query != null) {
                                         // 有输入内容，直接开始研究
+                                        deepResearchReturnChatId = actualChatId ?: currentChatId
                                         startDeepResearch(
                                             query = query,
                                             settingsManager = settingsManager
@@ -970,6 +1056,10 @@ fun MainScreen(
                                     }
                                 },
                                 isDeepResearching = isDeepResearching,
+                                onOpenChat = { chatId ->
+                                    currentGroupChatId = null
+                                    currentChatId = chatId
+                                },
                                 // 打野助手
                                 onJungleHelperClick = {
                                     if (!com.tchat.wanxiaot.junglehelper.JungleHelperManager.hasOverlayPermission(context)) {
@@ -1023,6 +1113,19 @@ fun MainScreen(
     }
         }
         }
+    }
+}
+
+@Composable
+private fun StartupLoadingState() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(28.dp),
+            strokeWidth = 2.5.dp
+        )
     }
 }
 

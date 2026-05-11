@@ -30,6 +30,7 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":data"))
     implementation(project(":network"))
+    implementation(project(":design-system"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -46,15 +47,15 @@ dependencies {
     implementation(libs.lucide.icons)
 
     // Markwon - Markdown rendering
-    implementation("io.noties.markwon:core:4.6.2")
-    implementation("io.noties.markwon:ext-strikethrough:4.6.2")
-    implementation("io.noties.markwon:ext-tables:4.6.2")
-    implementation("io.noties.markwon:linkify:4.6.2")
-    implementation("io.noties.markwon:html:4.6.2")
-    implementation("io.noties.markwon:ext-latex:4.6.2")
+    implementation(libs.markwon.core)
+    implementation(libs.markwon.ext.strikethrough)
+    implementation(libs.markwon.ext.tables)
+    implementation(libs.markwon.linkify)
+    implementation(libs.markwon.html)
+    implementation(libs.markwon.ext.latex)
 
     // JLatexMath for LaTeX rendering
-    implementation("ru.noties:jlatexmath-android:0.2.0")
-    implementation("ru.noties:jlatexmath-android-font-cyrillic:0.2.0")
-    implementation("ru.noties:jlatexmath-android-font-greek:0.2.0")
+    implementation(libs.jlatexmath.android)
+    implementation(libs.jlatexmath.android.font.cyrillic)
+    implementation(libs.jlatexmath.android.font.greek)
 }

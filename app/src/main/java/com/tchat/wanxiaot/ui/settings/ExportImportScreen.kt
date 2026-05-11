@@ -19,8 +19,8 @@ import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.ui.components.AppIconTile
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import com.tchat.wanxiaot.util.ExportDataType
 
 /**
@@ -95,17 +95,17 @@ private fun ExportImportSection(
     description: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onExportFile: () -> Unit,
-    onExportQRCode: (() -> Unit)? = null,
     onImportFile: () -> Unit,
+    modifier: Modifier = Modifier,
+    onExportQRCode: (() -> Unit)? = null,
     onImportQRCode: (() -> Unit)? = null,
     supportsQRCode: Boolean = true,
-    requiresEncryption: Boolean = false,
-    modifier: Modifier = Modifier
+    requiresEncryption: Boolean = false
 ) {
     var showExportOptions by remember { mutableStateOf(false) }
     var showImportOptions by remember { mutableStateOf(false) }
 
-    AppSectionCard(
+    SettingsGroupCard(
         modifier = modifier,
         title = title,
         description = description
@@ -120,7 +120,7 @@ private fun ExportImportSection(
         }
 
         if (requiresEncryption) {
-            AppSectionSurface {
+            SettingsSurface {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

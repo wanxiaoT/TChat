@@ -852,6 +852,9 @@ class JungleHelperService : Service() {
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (!isDragging && event.actionMasked == MotionEvent.ACTION_UP) {
+                        view.performClick()
+                    }
                     isDragging = false
                     false
                 }

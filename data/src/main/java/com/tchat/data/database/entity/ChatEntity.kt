@@ -11,7 +11,10 @@ import androidx.room.PrimaryKey
  */
 @Entity(
     tableName = "chats",
-    indices = [Index(value = ["updatedAt"])]
+    indices = [
+        Index(value = ["updatedAt"]),
+        Index(value = ["isPinned", "updatedAt"])
+    ]
 )
 data class ChatEntity(
     @PrimaryKey
@@ -19,5 +22,6 @@ data class ChatEntity(
     val title: String,
     val createdAt: Long,
     val updatedAt: Long,
+    val isPinned: Boolean = false,
     val isNameManuallyEdited: Boolean = false  // 标题是否手动编辑过
 )

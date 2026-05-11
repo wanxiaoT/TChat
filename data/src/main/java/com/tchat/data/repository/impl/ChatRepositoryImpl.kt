@@ -5,7 +5,9 @@ import com.tchat.data.database.dao.ChatDao
 import com.tchat.data.database.dao.MessageDao
 import com.tchat.data.database.entity.ChatEntity
 import com.tchat.data.database.entity.MessageEntity
+import com.tchat.data.database.entity.MessageSearchIndexEntity
 import com.tchat.data.model.Chat
+import com.tchat.data.model.ChatSearchResult
 import com.tchat.data.model.GroupActivationStrategy
 import com.tchat.data.model.GroupMessageMetadata
 import com.tchat.data.model.Message
@@ -14,6 +16,7 @@ import com.tchat.data.model.MessageRole
 import com.tchat.data.model.MessageVariant
 import com.tchat.data.repository.ChatConfig
 import com.tchat.data.repository.ChatRepository
+import com.tchat.data.repository.MessageSearchMapper
 import com.tchat.data.repository.MessageResult
 import com.tchat.data.repository.SkillRepository
 import com.tchat.data.skill.SkillService
@@ -33,6 +36,7 @@ import com.tchat.network.provider.ToolDefinition
 import com.tchat.network.provider.MessageRole as ProviderMessageRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -68,23 +72,30 @@ class ChatRepositoryImpl(
     override fun getAllChats(): Flow<List<Chat>> {
         return chatDao.getAllChats().map { entities ->
             entities.map { it.toChat() }
-        }
+        }.flowOn(Dispatchers.Default)
     }
 
     override fun getChatById(chatId: String): Flow<Chat?> {
         return chatDao.observeChatById(chatId).map { it?.toChat() }
+            .flowOn(Dispatchers.Default)
     }
 
     override fun getMessagesByChatId(chatId: String): Flow<List<Message>> {
         return messageDao.getMessagesByChatId(chatId).map { entities ->
             entities.map { it.toMessage() }
-        }
+        }.flowOn(Dispatchers.Default)
     }
 
     override fun observeRecentMessages(chatId: String, limit: Int): Flow<List<Message>> {
         return messageDao.observeRecentMessages(chatId, limit).map { entities ->
             entities.map { it.toMessage() }
-        }
+        }.flowOn(Dispatchers.Default)
+    }
+
+    override fun observeBookmarkedMessages(limit: Int): Flow<List<ChatSearchResult>> {
+        return messageDao.observeBookmarkedMessages(limit.coerceIn(1, 200))
+            .map { rows -> rows.map { row -> MessageSearchMapper.toSearchResult(row, "") } }
+            .flowOn(Dispatchers.Default)
     }
 
     override suspend fun getMessagesBefore(
@@ -93,6 +104,10 @@ class ChatRepositoryImpl(
         limit: Int
     ): List<Message> {
         return messageDao.getMessagesBefore(chatId, beforeTimestamp, limit).map { it.toMessage() }
+    }
+
+    override suspend fun searchMessages(query: String, limit: Int): List<ChatSearchResult> {
+        return MessageSearchMapper.search(messageDao, query, limit)
     }
 
     override suspend fun createChat(title: String): Result<Chat> {
@@ -120,6 +135,15 @@ class ChatRepositoryImpl(
         }
     }
 
+    override suspend fun updateChatPinned(chatId: String, isPinned: Boolean): Result<Unit> {
+        return try {
+            chatDao.updateChatPinned(chatId, isPinned)
+            Result.Success(Unit)
+        } catch (e: Exception) {
+            Result.Error(e)
+        }
+    }
+
     override suspend fun deleteChat(chatId: String): Result<Unit> {
         return try {
             chatDao.deleteChat(chatId)
@@ -133,7 +157,9 @@ class ChatRepositoryImpl(
         chatId: String,
         content: String,
         config: ChatConfig?,
-        mediaParts: List<MessagePart>
+        mediaParts: List<MessagePart>,
+        replyToMessageId: String?,
+        replyPreview: String?
     ): Flow<Result<Message>> = flow {
         try {
             val normalizedMediaParts = mediaParts.filter { it is MessagePart.Image || it is MessagePart.Video }
@@ -156,7 +182,9 @@ class ChatRepositoryImpl(
                 id = UUID.randomUUID().toString(),
                 chatId = chatId,
                 role = MessageRole.USER,
-                parts = userParts
+                parts = userParts,
+                replyToMessageId = replyToMessageId,
+                replyPreview = replyPreview
             )
             addMessage(userMessage)
             emit(Result.Success(userMessage))
@@ -197,7 +225,12 @@ class ChatRepositoryImpl(
             val allTools = (config?.tools ?: emptyList()) + skillTools
 
             // 获取聊天历史
-            val messages = getMessagesForAI(chatId, enhancedSystemPrompt)
+            val messages = getMessagesForAI(
+                chatId = chatId,
+                systemPrompt = enhancedSystemPrompt,
+                contextMessageSize = config.resolvedContextMessageSize(),
+                includeMediaForMessageId = userMessage.id
+            )
 
             // 转换工具定义
             val toolDefinitions = allTools.map { it.toToolDefinition() }
@@ -246,10 +279,57 @@ class ChatRepositoryImpl(
         }
     }
 
+    override suspend fun updateMessageBookmarked(
+        messageId: String,
+        isBookmarked: Boolean
+    ): Result<Unit> {
+        return try {
+            messageDao.updateMessageBookmarked(messageId, isBookmarked)
+            Result.Success(Unit)
+        } catch (e: Exception) {
+            Result.Error(e)
+        }
+    }
+
+    override suspend fun createBranchFromMessage(messageId: String): Result<Chat> {
+        return try {
+            val sourceMessage = messageDao.getMessageById(messageId)
+                ?: return Result.Error(IllegalArgumentException("消息不存在"))
+            val sourceChat = chatDao.getChatById(sourceMessage.chatId)
+                ?: return Result.Error(IllegalArgumentException("会话不存在"))
+            val now = System.currentTimeMillis()
+            val newChatEntity = ChatEntity(
+                id = UUID.randomUUID().toString(),
+                title = "分支 - ${sourceChat.title}".take(80),
+                createdAt = now,
+                updatedAt = now,
+                isNameManuallyEdited = true
+            )
+            chatDao.insertChat(newChatEntity)
+
+            val copiedMessages = messageDao
+                .getMessagesUpTo(sourceMessage.chatId, sourceMessage.timestamp)
+                .map { entity ->
+                    entity.copy(
+                        id = UUID.randomUUID().toString(),
+                        chatId = newChatEntity.id,
+                        isBookmarked = false
+                    )
+                }
+            messageDao.insertMessages(copiedMessages)
+            upsertSearchIndexesForMessages(copiedMessages)
+            Result.Success(newChatEntity.toChat())
+        } catch (e: Exception) {
+            Result.Error(e)
+        }
+    }
+
     override suspend fun sendMessageToNewChat(
         content: String,
         config: ChatConfig?,
-        mediaParts: List<MessagePart>
+        mediaParts: List<MessagePart>,
+        replyToMessageId: String?,
+        replyPreview: String?
     ): Flow<Result<MessageResult>> = flow {
         try {
             // 创建新聊天
@@ -291,7 +371,9 @@ class ChatRepositoryImpl(
                 id = UUID.randomUUID().toString(),
                 chatId = chatId,
                 role = MessageRole.USER,
-                parts = userParts
+                parts = userParts,
+                replyToMessageId = replyToMessageId,
+                replyPreview = replyPreview
             )
             saveMessageToDb(userMessage)
             emit(Result.Success(MessageResult(chatId, userMessage)))
@@ -329,7 +411,7 @@ class ChatRepositoryImpl(
                     messages.add(ChatMessage(role = ProviderMessageRole.SYSTEM, content = it))
                 }
             }
-            messages.add(buildUserChatMessage(userMessage))
+            messages.add(buildUserChatMessage(userMessage, includeMedia = true))
 
             // 转换工具定义
             val toolDefinitions = allTools.map { it.toToolDefinition() }
@@ -557,8 +639,9 @@ class ChatRepositoryImpl(
         groupMetadata: GroupMessageMetadata? = null,
         onStreamingUpdate: suspend (Message) -> Unit
     ): Message {
-        var currentContent = ""
-        var rawContent = ""  // 原始内容（未经正则处理）
+        var currentContent = StringBuilder()
+        var lastStreamingUpdateAt = 0L
+        var hasEmittedContentInIteration = false
         var inputTokens = 0
         var outputTokens = 0
         var tokensPerSecond = 0.0
@@ -571,6 +654,31 @@ class ChatRepositoryImpl(
             RegexStreamProcessor(regexRules)
         } else {
             null
+        }
+
+        suspend fun emitStreamingUpdate(force: Boolean = false) {
+            val now = System.currentTimeMillis()
+            if (!force &&
+                hasEmittedContentInIteration &&
+                now - lastStreamingUpdateAt < STREAMING_UPDATE_INTERVAL_MS
+            ) {
+                return
+            }
+
+            val currentText = currentContent.toString()
+            val streamingParts = buildStreamingParts(currentText, allParts)
+            if (streamingParts.isEmpty()) return
+
+            onStreamingUpdate(Message(
+                id = assistantId,
+                chatId = chatId,
+                role = MessageRole.ASSISTANT,
+                parts = streamingParts,
+                isStreaming = true,
+                groupMetadata = groupMetadata
+            ))
+            lastStreamingUpdateAt = now
+            hasEmittedContentInIteration = true
         }
 
         // 工具调用循环，最多执行10轮避免无限循环
@@ -587,36 +695,21 @@ class ChatRepositoryImpl(
             }
 
             var hasToolCall = false
-            currentContent = ""
-            rawContent = ""
+            currentContent = StringBuilder()
+            lastStreamingUpdateAt = 0L
+            hasEmittedContentInIteration = false
 
             flow.collect { chunk ->
                 when (chunk) {
                     is StreamChunk.Content -> {
-                        rawContent += chunk.text
                         // 使用正则处理器处理流式内容
                         val processedText = if (regexProcessor != null) {
                             regexProcessor.processChunk(chunk.text)
                         } else {
                             chunk.text
                         }
-                        currentContent += processedText
-
-                        // 流式更新：显示文本内容和已执行的工具结果
-                        val streamingParts = mutableListOf<MessagePart>()
-                        if (currentContent.isNotEmpty()) {
-                            streamingParts.add(MessagePart.Text(currentContent))
-                        }
-                        streamingParts.addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
-
-                        onStreamingUpdate(Message(
-                            id = assistantId,
-                            chatId = chatId,
-                            role = MessageRole.ASSISTANT,
-                            parts = streamingParts,
-                            isStreaming = true,
-                            groupMetadata = groupMetadata
-                        ))
+                        currentContent.append(processedText)
+                        emitStreamingUpdate()
                     }
                     is StreamChunk.ToolCall -> {
                         hasToolCall = true
@@ -635,6 +728,7 @@ class ChatRepositoryImpl(
                     }
                 }
             }
+            emitStreamingUpdate(force = true)
 
             // 如果没有工具调用，退出循环
             if (!hasToolCall || pendingToolCalls.isNullOrEmpty()) {
@@ -647,7 +741,7 @@ class ChatRepositoryImpl(
             // 添加助手的工具调用消息到历史
             messages.add(ChatMessage(
                 role = ProviderMessageRole.ASSISTANT,
-                content = currentContent.ifEmpty { null } ?: "",
+                content = currentContent.toString(),
                 toolCalls = toolCalls
             ))
 
@@ -697,20 +791,7 @@ class ChatRepositoryImpl(
             }
 
             // 更新UI显示工具执行状态
-            val streamingParts = mutableListOf<MessagePart>()
-            if (currentContent.isNotEmpty()) {
-                streamingParts.add(MessagePart.Text(currentContent))
-            }
-            streamingParts.addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
-
-            onStreamingUpdate(Message(
-                id = assistantId,
-                chatId = chatId,
-                role = MessageRole.ASSISTANT,
-                parts = streamingParts,
-                isStreaming = true,
-                groupMetadata = groupMetadata
-            ))
+            emitStreamingUpdate(force = true)
 
             pendingToolCalls = null
         }
@@ -719,14 +800,16 @@ class ChatRepositoryImpl(
         if (regexProcessor != null) {
             val remainingContent = regexProcessor.flush()
             if (remainingContent.isNotEmpty()) {
-                currentContent += remainingContent
+                currentContent.append(remainingContent)
+                emitStreamingUpdate(force = true)
             }
         }
 
         // 构建最终的 parts 列表
         val finalParts = mutableListOf<MessagePart>()
-        if (currentContent.isNotEmpty()) {
-            finalParts.add(MessagePart.Text(currentContent))
+        val finalContent = currentContent.toString()
+        if (finalContent.isNotEmpty()) {
+            finalParts.add(MessagePart.Text(finalContent))
         }
         finalParts.addAll(allParts.filterIsInstance<MessagePart.ToolCall>())
         finalParts.addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
@@ -763,9 +846,15 @@ class ChatRepositoryImpl(
                 ?: throw Exception("消息不存在")
             val originalMessage = originalEntity.toMessage()
 
-            val allMessages = messageDao.getMessagesByChatIdOnce(chatId)
-            val userMessageIndex = allMessages.indexOfFirst { it.id == userMessageId }
-            if (userMessageIndex < 0) throw Exception("用户消息不存在")
+            val userEntity = messageDao.getMessageById(userMessageId)
+                ?: throw Exception("用户消息不存在")
+            val contextEntities = getContextMessageEntitiesUpTo(
+                chatId = chatId,
+                upToTimestamp = userEntity.timestamp,
+                contextMessageSize = config.resolvedContextMessageSize()
+            )
+            val allMessages = contextEntities.takeThroughMessage(userMessageId)
+            if (allMessages.isEmpty()) throw Exception("用户消息不存在")
 
             // 构建消息历史
             val messages = mutableListOf<ChatMessage>()
@@ -774,20 +863,11 @@ class ChatRepositoryImpl(
                     messages.add(ChatMessage(role = ProviderMessageRole.SYSTEM, content = it))
                 }
             }
-            messages.addAll(allMessages.take(userMessageIndex + 1).map {
-                val msg = it.toMessage()
-                when (it.role) {
-                    "user" -> ChatMessage(
-                        role = ProviderMessageRole.USER,
-                        content = msg.getTextContent()
-                    )
-                    "assistant" -> buildAssistantChatMessage(msg)
-                    else -> ChatMessage(
-                        role = ProviderMessageRole.SYSTEM,
-                        content = msg.getTextContent()
-                    )
-                }
-            })
+            appendMessageEntitiesForAI(
+                target = messages,
+                entities = allMessages,
+                includeMediaForMessageId = userMessageId
+            )
 
             val streamingMessage = originalMessage.copy(parts = emptyList(), isStreaming = true)
             emit(Result.Success(streamingMessage))
@@ -832,6 +912,7 @@ class ChatRepositoryImpl(
 
             val variantsJson = variantsToJson(existingVariants)
             messageDao.updateMessageVariants(aiMessageId, variantsJson, newSelectedIndex)
+            upsertSearchIndexForMessage(originalEntity.copy(variantsJson = variantsJson))
 
             val finalMessage = originalMessage.copy(
                 parts = finalResult.fourth,
@@ -858,8 +939,9 @@ class ChatRepositoryImpl(
         regexRules: List<RegexRuleData> = emptyList(),
         onStreamingUpdate: suspend (List<MessagePart>) -> Unit
     ): Quadruple<String, Int, Int, List<MessagePart>> {
-        var currentContent = ""
-        var rawContent = ""  // 原始内容（未经正则处理）
+        var currentContent = StringBuilder()
+        var lastStreamingUpdateAt = 0L
+        var hasEmittedContentInIteration = false
         var inputTokens = 0
         var outputTokens = 0
         var pendingToolCalls: List<ToolCallInfo>? = null
@@ -870,6 +952,23 @@ class ChatRepositoryImpl(
             RegexStreamProcessor(regexRules)
         } else {
             null
+        }
+
+        suspend fun emitStreamingUpdate(force: Boolean = false) {
+            val now = System.currentTimeMillis()
+            if (!force &&
+                hasEmittedContentInIteration &&
+                now - lastStreamingUpdateAt < STREAMING_UPDATE_INTERVAL_MS
+            ) {
+                return
+            }
+
+            val streamingParts = buildStreamingParts(currentContent.toString(), allParts)
+            if (streamingParts.isEmpty()) return
+
+            onStreamingUpdate(streamingParts)
+            lastStreamingUpdateAt = now
+            hasEmittedContentInIteration = true
         }
 
         var iteration = 0
@@ -885,28 +984,21 @@ class ChatRepositoryImpl(
             }
 
             var hasToolCall = false
-            currentContent = ""
-            rawContent = ""
+            currentContent = StringBuilder()
+            lastStreamingUpdateAt = 0L
+            hasEmittedContentInIteration = false
 
             flow.collect { chunk ->
                 when (chunk) {
                     is StreamChunk.Content -> {
-                        rawContent += chunk.text
                         // 使用正则处理器处理流式内容
                         val processedText = if (regexProcessor != null) {
                             regexProcessor.processChunk(chunk.text)
                         } else {
                             chunk.text
                         }
-                        currentContent += processedText
-
-                        // 流式更新
-                        val streamingParts = mutableListOf<MessagePart>()
-                        if (currentContent.isNotEmpty()) {
-                            streamingParts.add(MessagePart.Text(currentContent))
-                        }
-                        streamingParts.addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
-                        onStreamingUpdate(streamingParts)
+                        currentContent.append(processedText)
+                        emitStreamingUpdate()
                     }
                     is StreamChunk.ToolCall -> {
                         hasToolCall = true
@@ -921,6 +1013,7 @@ class ChatRepositoryImpl(
                     }
                 }
             }
+            emitStreamingUpdate(force = true)
 
             if (!hasToolCall || pendingToolCalls.isNullOrEmpty()) {
                 break
@@ -930,7 +1023,7 @@ class ChatRepositoryImpl(
 
             messages.add(ChatMessage(
                 role = ProviderMessageRole.ASSISTANT,
-                content = currentContent.ifEmpty { null } ?: "",
+                content = currentContent.toString(),
                 toolCalls = toolCalls
             ))
 
@@ -977,12 +1070,7 @@ class ChatRepositoryImpl(
             }
 
             // 流式更新
-            val streamingParts = mutableListOf<MessagePart>()
-            if (currentContent.isNotEmpty()) {
-                streamingParts.add(MessagePart.Text(currentContent))
-            }
-            streamingParts.addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
-            onStreamingUpdate(streamingParts)
+            emitStreamingUpdate(force = true)
 
             pendingToolCalls = null
         }
@@ -991,19 +1079,21 @@ class ChatRepositoryImpl(
         if (regexProcessor != null) {
             val remainingContent = regexProcessor.flush()
             if (remainingContent.isNotEmpty()) {
-                currentContent += remainingContent
+                currentContent.append(remainingContent)
+                emitStreamingUpdate(force = true)
             }
         }
 
         // 构建最终 parts
         val finalParts = mutableListOf<MessagePart>()
-        if (currentContent.isNotEmpty()) {
-            finalParts.add(MessagePart.Text(currentContent))
+        val finalContent = currentContent.toString()
+        if (finalContent.isNotEmpty()) {
+            finalParts.add(MessagePart.Text(finalContent))
         }
         finalParts.addAll(allParts.filterIsInstance<MessagePart.ToolCall>())
         finalParts.addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
 
-        return Quadruple(currentContent, inputTokens, outputTokens, finalParts)
+        return Quadruple(finalContent, inputTokens, outputTokens, finalParts)
     }
 
     // 辅助数据类：四元组
@@ -1031,7 +1121,12 @@ class ChatRepositoryImpl(
         }
     }
 
-    private suspend fun getMessagesForAI(chatId: String, systemPrompt: String?): MutableList<ChatMessage> {
+    private suspend fun getMessagesForAI(
+        chatId: String,
+        systemPrompt: String?,
+        contextMessageSize: Int,
+        includeMediaForMessageId: String? = null
+    ): MutableList<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
 
         // 添加系统提示
@@ -1042,10 +1137,50 @@ class ChatRepositoryImpl(
         }
 
         // 添加历史消息（支持多模态）
-        for (entity in messageDao.getMessagesByChatIdOnce(chatId)) {
+        appendMessageEntitiesForAI(
+            target = messages,
+            entities = getContextMessageEntities(chatId, contextMessageSize),
+            includeMediaForMessageId = includeMediaForMessageId
+        )
+
+        return messages
+    }
+
+    private suspend fun getContextMessageEntities(
+        chatId: String,
+        contextMessageSize: Int
+    ): List<MessageEntity> {
+        return if (contextMessageSize <= 0) {
+            messageDao.getMessagesByChatIdOnce(chatId)
+        } else {
+            messageDao.getRecentMessagesByChatIdOnce(chatId, contextMessageSize.coerceAtLeast(1))
+        }
+    }
+
+    private suspend fun getContextMessageEntitiesUpTo(
+        chatId: String,
+        upToTimestamp: Long,
+        contextMessageSize: Int
+    ): List<MessageEntity> {
+        return if (contextMessageSize <= 0) {
+            messageDao.getMessagesUpTo(chatId, upToTimestamp)
+        } else {
+            messageDao.getMessagesUpTo(chatId, upToTimestamp, contextMessageSize.coerceAtLeast(1))
+        }
+    }
+
+    private suspend fun appendMessageEntitiesForAI(
+        target: MutableList<ChatMessage>,
+        entities: List<MessageEntity>,
+        includeMediaForMessageId: String? = null
+    ) {
+        for (entity in entities) {
             val message = entity.toMessage()
             val providerMessage = when (entity.role) {
-                "user" -> buildUserChatMessage(message)
+                "user" -> buildUserChatMessage(
+                    message = message,
+                    includeMedia = entity.id == includeMediaForMessageId
+                )
                 "assistant" -> buildAssistantChatMessage(message)
                 "tool" -> ChatMessage(
                     role = ProviderMessageRole.TOOL,
@@ -1056,10 +1191,29 @@ class ChatRepositoryImpl(
                     content = message.getTextContent()
                 )
             }
-            messages.add(providerMessage)
+            target.add(providerMessage)
         }
+    }
 
-        return messages
+    private fun buildStreamingParts(
+        currentContent: String,
+        allParts: List<MessagePart>
+    ): List<MessagePart> {
+        return buildList {
+            if (currentContent.isNotEmpty()) {
+                add(MessagePart.Text(currentContent))
+            }
+            addAll(allParts.filterIsInstance<MessagePart.ToolResult>())
+        }
+    }
+
+    private fun List<MessageEntity>.takeThroughMessage(messageId: String): List<MessageEntity> {
+        val index = indexOfFirst { it.id == messageId }
+        return if (index < 0) emptyList() else take(index + 1)
+    }
+
+    private fun ChatConfig?.resolvedContextMessageSize(): Int {
+        return this?.contextMessageSize ?: DEFAULT_CONTEXT_MESSAGE_SIZE
     }
 
     private fun buildAssistantChatMessage(message: Message): ChatMessage {
@@ -1096,9 +1250,12 @@ class ChatRepositoryImpl(
         )
     }
 
-    private suspend fun buildUserChatMessage(message: Message): ChatMessage {
+    private suspend fun buildUserChatMessage(
+        message: Message,
+        includeMedia: Boolean
+    ): ChatMessage {
         val textContent = message.getTextContent()
-        val contentParts = buildUserContentParts(message)
+        val contentParts = buildUserContentParts(message, includeMedia)
         return ChatMessage(
             role = ProviderMessageRole.USER,
             content = textContent,
@@ -1106,7 +1263,10 @@ class ChatRepositoryImpl(
         )
     }
 
-    private suspend fun buildUserContentParts(message: Message): List<MessageContent>? = withContext(Dispatchers.IO) {
+    private suspend fun buildUserContentParts(
+        message: Message,
+        includeMedia: Boolean
+    ): List<MessageContent>? = withContext(Dispatchers.IO) {
         val parts = mutableListOf<MessageContent>()
 
         val text = message.getTextContent()
@@ -1116,6 +1276,12 @@ class ChatRepositoryImpl(
 
         // 图片
         message.parts.filterIsInstance<MessagePart.Image>().forEach { image ->
+            if (!includeMedia) {
+                parts.add(
+                    MessageContent.Text("（历史图片已省略：${image.fileName ?: image.filePath}）")
+                )
+                return@forEach
+            }
             val filePath = image.filePath
             if (filePath.isBlank()) return@forEach
             val file = File(filePath)
@@ -1135,6 +1301,12 @@ class ChatRepositoryImpl(
 
         // 视频（仅 Gemini 支持；其他服务商降级为文字提示）
         message.parts.filterIsInstance<MessagePart.Video>().forEach { video ->
+            if (!includeMedia) {
+                parts.add(
+                    MessageContent.Text("（历史视频已省略：${video.fileName ?: video.filePath}）")
+                )
+                return@forEach
+            }
             val filePath = video.filePath
             if (filePath.isBlank()) return@forEach
 
@@ -1207,10 +1379,34 @@ class ChatRepositoryImpl(
             groupActivationStrategy = message.groupMetadata?.activationStrategy?.name,
             groupGenerationId = message.groupMetadata?.generationId,
             variantsJson = if (message.variants.isNotEmpty()) variantsToJson(message.variants) else null,
-            selectedVariantIndex = message.selectedVariantIndex
+            selectedVariantIndex = message.selectedVariantIndex,
+            isBookmarked = message.isBookmarked,
+            replyToMessageId = message.replyToMessageId,
+            replyPreview = message.replyPreview
         )
 
         messageDao.insertMessage(entity)
+        upsertSearchIndexForMessage(entity)
+    }
+
+    private suspend fun upsertSearchIndexesForMessages(messages: List<MessageEntity>) {
+        val indexes = messages.map(::toSearchIndex)
+        if (indexes.isNotEmpty()) {
+            messageDao.upsertSearchIndexes(indexes)
+        }
+    }
+
+    private suspend fun upsertSearchIndexForMessage(message: MessageEntity) {
+        messageDao.upsertSearchIndex(toSearchIndex(message))
+    }
+
+    private fun toSearchIndex(message: MessageEntity): MessageSearchIndexEntity {
+        return MessageSearchIndexEntity(
+            messageId = message.id,
+            chatId = message.chatId,
+            normalizedText = MessageSearchMapper.buildIndexText(message),
+            updatedAt = message.timestamp
+        )
     }
 
     /**
@@ -1298,7 +1494,8 @@ class ChatRepositoryImpl(
         id = id,
         title = title,
         createdAt = createdAt,
-        updatedAt = updatedAt
+        updatedAt = updatedAt,
+        isPinned = isPinned
     )
 
     private fun MessageEntity.toMessage(): Message {
@@ -1326,7 +1523,10 @@ class ChatRepositoryImpl(
             providerId = providerId,
             groupMetadata = toGroupMetadata(),
             variants = variants,
-            selectedVariantIndex = selectedVariantIndex
+            selectedVariantIndex = selectedVariantIndex,
+            isBookmarked = isBookmarked,
+            replyToMessageId = replyToMessageId,
+            replyPreview = replyPreview
         )
     }
 
@@ -1349,5 +1549,10 @@ class ChatRepositoryImpl(
 
     private fun GroupMessageMetadata.newGeneration(): GroupMessageMetadata {
         return copy(generationId = UUID.randomUUID().toString())
+    }
+
+    private companion object {
+        const val DEFAULT_CONTEXT_MESSAGE_SIZE = 64
+        const val STREAMING_UPDATE_INTERVAL_MS = 96L
     }
 }

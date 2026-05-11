@@ -119,7 +119,9 @@ class ChatViewModel(
         modelName: String? = null,
         providerId: String? = null,
         shouldRecordTokens: Boolean = true,
-        regexRules: List<RegexRuleData> = emptyList()
+        regexRules: List<RegexRuleData> = emptyList(),
+        enabledSkillIds: List<String> = emptyList(),
+        contextMessageSize: Int = 64
     ) {
         val config = ChatConfig(
             systemPrompt = systemPrompt,
@@ -127,7 +129,9 @@ class ChatViewModel(
             modelName = modelName,
             providerId = providerId,
             shouldRecordTokens = shouldRecordTokens,
-            regexRules = regexRules
+            regexRules = regexRules,
+            enabledSkillIds = enabledSkillIds,
+            contextMessageSize = contextMessageSize
         )
         setChatConfig(config)
     }
@@ -160,10 +164,22 @@ class ChatViewModel(
      * 发送消息
      * @param chatId 聊天ID，null表示新建聊天
      */
-    fun sendMessage(chatId: String?, content: String, mediaParts: List<MessagePart> = emptyList()) {
+    fun sendMessage(
+        chatId: String?,
+        content: String,
+        mediaParts: List<MessagePart> = emptyList(),
+        replyToMessageId: String? = null,
+        replyPreview: String? = null
+    ) {
         if (chatId == null) {
             // 懒创建模式
-            messageSender.sendMessageToNewChat(content, _chatConfig.value, mediaParts) { newChatId ->
+            messageSender.sendMessageToNewChat(
+                content = content,
+                config = _chatConfig.value,
+                mediaParts = mediaParts,
+                replyToMessageId = replyToMessageId,
+                replyPreview = replyPreview
+            ) { newChatId ->
                 // 聊天创建后，更新 ID
                 if (_actualChatId.value == null) {
                     attachChat(newChatId)
@@ -171,7 +187,14 @@ class ChatViewModel(
             }
         } else {
             // 已有聊天
-            messageSender.sendMessage(chatId, content, _chatConfig.value, mediaParts)
+            messageSender.sendMessage(
+                chatId = chatId,
+                content = content,
+                config = _chatConfig.value,
+                mediaParts = mediaParts,
+                replyToMessageId = replyToMessageId,
+                replyPreview = replyPreview
+            )
         }
     }
 
@@ -265,6 +288,27 @@ class ChatViewModel(
     fun deleteMessage(messageId: String) {
         viewModelScope.launch {
             repository.deleteMessage(messageId)
+        }
+    }
+
+    fun toggleBookmark(message: Message) {
+        viewModelScope.launch {
+            repository.updateMessageBookmarked(message.id, !message.isBookmarked)
+        }
+    }
+
+    fun createBranchFromMessage(messageId: String, onCreated: (String) -> Unit) {
+        viewModelScope.launch {
+            when (val result = repository.createBranchFromMessage(messageId)) {
+                is com.tchat.core.util.Result.Success -> {
+                    attachChat(result.data.id)
+                    onCreated(result.data.id)
+                }
+                is com.tchat.core.util.Result.Error -> {
+                    _errorMessage.value = result.exception.message ?: "创建分支失败"
+                }
+                is com.tchat.core.util.Result.Loading -> Unit
+            }
         }
     }
 

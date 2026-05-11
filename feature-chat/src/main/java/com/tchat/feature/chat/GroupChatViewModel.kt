@@ -9,6 +9,7 @@ import com.tchat.data.repository.ChatRepository
 import com.tchat.data.repository.GroupChatRepository
 import com.tchat.data.tool.Tool
 import com.tchat.data.util.RegexRuleData
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -36,6 +37,12 @@ class GroupChatViewModel(
     private val _currentSpeakerId = MutableStateFlow<String?>(null)
     val currentSpeakerId: StateFlow<String?> = _currentSpeakerId.asStateFlow()
 
+    private val _autoModeRunning = MutableStateFlow(false)
+    val autoModeRunning: StateFlow<Boolean> = _autoModeRunning.asStateFlow()
+
+    private val _autoModeRemainingRounds = MutableStateFlow(0)
+    val autoModeRemainingRounds: StateFlow<Int> = _autoModeRemainingRounds.asStateFlow()
+
     // 错误信息（用于显示 Snackbar）
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
@@ -60,6 +67,7 @@ class GroupChatViewModel(
     private var currentChatId: String? = null
     private var olderMessages: List<Message> = emptyList()
     private var recentMessages: List<Message> = emptyList()
+    private var autoModeJob: Job? = null
 
     // Flow订阅的Job
     private var groupLoadJob: Job? = null
@@ -144,6 +152,14 @@ class GroupChatViewModel(
             }
         }
 
+        viewModelScope.launch {
+            messageSender.completedMessages.collect { message ->
+                if (message?.role == MessageRole.ASSISTANT) {
+                    scheduleAutoModeContinuation(message)
+                }
+            }
+        }
+
         // 加载群聊成员
         membersLoadJob = viewModelScope.launch {
             groupChatRepository.getMembersFlow(groupChatId).collect { members ->
@@ -186,7 +202,9 @@ class GroupChatViewModel(
         modelName: String? = null,
         providerId: String? = null,
         shouldRecordTokens: Boolean = true,
-        regexRules: List<RegexRuleData> = emptyList()
+        regexRules: List<RegexRuleData> = emptyList(),
+        enabledSkillIds: List<String> = emptyList(),
+        contextMessageSize: Int = 64
     ) {
         val config = ChatConfig(
             systemPrompt = systemPrompt,
@@ -194,7 +212,9 @@ class GroupChatViewModel(
             modelName = modelName,
             providerId = providerId,
             shouldRecordTokens = shouldRecordTokens,
-            regexRules = regexRules
+            regexRules = regexRules,
+            enabledSkillIds = enabledSkillIds,
+            contextMessageSize = contextMessageSize
         )
         setChatConfig(config)
     }
@@ -257,7 +277,8 @@ class GroupChatViewModel(
 
                 // 3. 如果启用了自动模式，可以继续触发下一个助手
                 if (groupChat.autoModeEnabled) {
-                    // TODO: 实现自动模式逻辑
+                    _autoModeRunning.value = true
+                    _autoModeRemainingRounds.value = MAX_AUTO_MODE_ROUNDS
                 }
             } catch (e: Exception) {
                 _errorMessage.value = e.message ?: "发送消息失败"
@@ -380,12 +401,35 @@ class GroupChatViewModel(
         _errorMessage.value = null
     }
 
+    fun pauseAutoMode() {
+        autoModeJob?.cancel()
+        autoModeJob = null
+        _autoModeRunning.value = false
+    }
+
+    fun resumeAutoMode() {
+        val groupChat = _currentGroupChat.value ?: return
+        if (!groupChat.autoModeEnabled) return
+        _autoModeRemainingRounds.value = MAX_AUTO_MODE_ROUNDS
+        _autoModeRunning.value = true
+        (_uiState.value as? ChatUiState.Success)
+            ?.messages
+            ?.lastOrNull { it.role == MessageRole.ASSISTANT && it.groupMetadata?.groupId == groupChat.id }
+            ?.let(::scheduleAutoModeContinuation)
+    }
+
     /**
      * 删除消息
      */
     fun deleteMessage(messageId: String) {
         viewModelScope.launch {
             chatRepository.deleteMessage(messageId)
+        }
+    }
+
+    fun toggleBookmark(message: Message) {
+        viewModelScope.launch {
+            chatRepository.updateMessageBookmarked(message.id, !message.isBookmarked)
         }
     }
 
@@ -424,6 +468,44 @@ class GroupChatViewModel(
         messagesLoadJob?.cancel()
         streamingObserveJob?.cancel()
         uiStateObserveJob?.cancel()
+        autoModeJob?.cancel()
+    }
+
+    private fun scheduleAutoModeContinuation(completedMessage: Message) {
+        val groupChat = _currentGroupChat.value ?: return
+        val groupChatId = currentGroupChatId ?: return
+        val chatId = currentChatId ?: _actualChatId.value ?: return
+        val metadata = completedMessage.groupMetadata ?: return
+        if (metadata.groupId != groupChatId || groupChat.id != groupChatId) return
+        if (!groupChat.autoModeEnabled || !_autoModeRunning.value) return
+        if (_autoModeRemainingRounds.value <= 0) {
+            _autoModeRunning.value = false
+            return
+        }
+
+        autoModeJob?.cancel()
+        autoModeJob = viewModelScope.launch {
+            delay(groupChat.autoModeDelay.coerceAtLeast(1) * 1000L)
+            if (!_autoModeRunning.value || messageSender.isSending(chatId)) return@launch
+
+            val nextSpeakerId = groupChatRepository.selectNextSpeaker(
+                groupId = groupChatId,
+                lastSpeakerId = metadata.assistantId,
+                userMessage = AUTO_MODE_PROMPT
+            ) ?: groupChatRepository.getEnabledMembers(groupChatId)
+                .firstOrNull { it.assistantId != metadata.assistantId }
+                ?.assistantId
+                ?: return@launch
+
+            _currentSpeakerId.value = nextSpeakerId
+            _autoModeRemainingRounds.value = (_autoModeRemainingRounds.value - 1).coerceAtLeast(0)
+            messageSender.sendMessage(
+                chatId = chatId,
+                content = AUTO_MODE_PROMPT,
+                config = resolveChatConfig(nextSpeakerId)
+            )
+            groupChatRepository.updateLastActiveTime(groupChatId)
+        }
     }
 
     private fun attachChat(chatId: String) {
@@ -472,6 +554,7 @@ class GroupChatViewModel(
                 .distinctBy { Triple(it.pattern, it.replacement, it.order) },
             enabledSkillIds = (baseConfig.enabledSkillIds + assistantConfig.enabledSkillIds)
                 .distinct(),
+            contextMessageSize = assistantConfig.contextMessageSize,
             groupMetadata = assistantConfig.groupMetadata?.copy(
                 generationId = java.util.UUID.randomUUID().toString()
             ) ?: baseConfig.groupMetadata
@@ -506,5 +589,7 @@ class GroupChatViewModel(
 
     private companion object {
         const val PAGE_SIZE = 100
+        const val MAX_AUTO_MODE_ROUNDS = 6
+        const val AUTO_MODE_PROMPT = "[自动模式] 请作为下一位群聊成员，基于上文继续推进讨论。"
     }
 }

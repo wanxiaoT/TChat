@@ -24,8 +24,8 @@ import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 
 /**
  * 正则表达式规则管理页面
@@ -140,7 +140,7 @@ fun RegexRulesScreen(
         ) {
 
             item {
-                AppSectionCard(
+                SettingsGroupCard(
                     title = "我的规则",
                     description = "规则越精确，清理过程越可控。建议按单一职责拆分而不是写成巨型表达式。"
                 ) {
@@ -192,7 +192,7 @@ private fun RegexRuleCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    AppSectionSurface {
+    SettingsSurface {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)

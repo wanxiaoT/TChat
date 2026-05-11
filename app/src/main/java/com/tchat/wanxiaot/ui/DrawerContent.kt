@@ -1,17 +1,19 @@
 package com.tchat.wanxiaot.ui
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
@@ -22,36 +24,52 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import com.tchat.designsystem.ConversationListItem
+import com.tchat.designsystem.Spacing
+import com.tchat.designsystem.TChatModalBottomSheet
 import com.tchat.data.model.Chat
+import com.tchat.data.model.ChatSearchResult
 import com.tchat.data.model.GroupChat
+import com.tchat.data.model.MessageRole
 import com.tchat.wanxiaot.settings.ProviderConfig
-import com.composables.icons.lucide.Bot
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Users
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
 fun DrawerContent(
     chats: List<Chat>,
-    groupChats: List<GroupChat> = emptyList(),
     currentChatId: String?,
-    currentGroupChatId: String? = null,
     currentProviderName: String,
     currentProviderId: String,
     providers: List<ProviderConfig>,
     onChatSelected: (String) -> Unit,
-    onGroupChatSelected: (String) -> Unit = {},
     onNewChat: () -> Unit,
     onDeleteChat: (String) -> Unit,
+    onToggleChatPinned: (Chat) -> Unit,
+    onSearchMessages: suspend (String) -> List<ChatSearchResult> = { emptyList() },
+    onSearchResultSelected: (ChatSearchResult) -> Unit = {},
+    bookmarkedMessages: List<ChatSearchResult> = emptyList(),
     onSettingsClick: () -> Unit,
     onProviderSelected: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    groupChats: List<GroupChat> = emptyList(),
+    currentGroupChatId: String? = null,
+    onGroupChatSelected: (String) -> Unit = {}
 ) {
     var showProviderDialog by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var messageSearchResults by remember { mutableStateOf<List<ChatSearchResult>>(emptyList()) }
+    var isSearchingMessages by remember { mutableStateOf(false) }
+    var messageSearchError by remember { mutableStateOf<String?>(null) }
+    val currentOnSearchMessages by rememberUpdatedState(onSearchMessages)
 
     // 根据搜索词过滤聊天记录
     val filteredChats = remember(chats, searchQuery) {
@@ -70,6 +88,30 @@ fun DrawerContent(
         }
     }
 
+    LaunchedEffect(searchQuery) {
+        val trimmedQuery = searchQuery.trim()
+        if (trimmedQuery.isBlank()) {
+            messageSearchResults = emptyList()
+            messageSearchError = null
+            isSearchingMessages = false
+            return@LaunchedEffect
+        }
+
+        delay(250)
+        isSearchingMessages = true
+        messageSearchError = null
+        runCatching {
+            currentOnSearchMessages(trimmedQuery)
+        }.onSuccess { results ->
+            messageSearchResults = results
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
+            messageSearchResults = emptyList()
+            messageSearchError = error.message ?: "搜索失败"
+        }
+        isSearchingMessages = false
+    }
+
     // 服务商选择抽屉
     if (showProviderDialog) {
         ProviderSelectionSheet(
@@ -86,15 +128,15 @@ fun DrawerContent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = Spacing.md, vertical = Spacing.md),
+        verticalArrangement = Arrangement.spacedBy(Spacing.md)
     ) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 2.dp),
             color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(22.dp),
+            shape = MaterialTheme.shapes.large,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
             tonalElevation = 0.dp,
             shadowElevation = 0.dp
@@ -102,9 +144,9 @@ fun DrawerContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+                    .padding(start = Spacing.lg, end = Spacing.sm, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(Spacing.md)
             ) {
                 Icon(
                     Icons.Outlined.Search,
@@ -169,9 +211,31 @@ fun DrawerContent(
 
         LazyColumn(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
             contentPadding = PaddingValues(vertical = 2.dp)
         ) {
+            val hasSearchQuery = searchQuery.isNotBlank()
+
+            if (!hasSearchQuery && bookmarkedMessages.isNotEmpty()) {
+                item {
+                    DrawerSectionLabel(text = "收藏")
+                }
+
+                items(bookmarkedMessages, key = { "bookmark_${it.messageId}" }) { result ->
+                    MessageSearchResultItem(
+                        result = result,
+                        onClick = { onSearchResultSelected(result) }
+                    )
+                }
+
+                item {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f),
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                }
+            }
+
             if (filteredGroupChats.isNotEmpty()) {
                 item {
                     DrawerSectionLabel(text = "群聊")
@@ -200,12 +264,46 @@ fun DrawerContent(
             }
 
             items(filteredChats, key = { it.id }) { chat ->
-                ChatHistoryItem(
-                    chat = chat,
-                    isSelected = chat.id == currentChatId && currentGroupChatId == null,
-                    onClick = { onChatSelected(chat.id) },
-                    onDelete = { onDeleteChat(chat.id) }
+                        ChatHistoryItem(
+                            chat = chat,
+                            isSelected = chat.id == currentChatId && currentGroupChatId == null,
+                            onClick = { onChatSelected(chat.id) },
+                            onDelete = { onDeleteChat(chat.id) },
+                            onTogglePinned = { onToggleChatPinned(chat) }
                 )
+            }
+
+            if (hasSearchQuery) {
+                if (messageSearchResults.isNotEmpty()) {
+                    item {
+                        DrawerSectionLabel(text = "消息内容")
+                    }
+
+                    items(messageSearchResults, key = { "message_${it.messageId}" }) { result ->
+                        MessageSearchResultItem(
+                            result = result,
+                            onClick = { onSearchResultSelected(result) }
+                        )
+                    }
+                }
+
+                if (isSearchingMessages) {
+                    item {
+                        MessageSearchStatus(text = "搜索消息中...")
+                    }
+                } else if (messageSearchError != null) {
+                    item {
+                        MessageSearchStatus(text = messageSearchError ?: "搜索失败")
+                    }
+                } else if (
+                    filteredGroupChats.isEmpty() &&
+                    filteredChats.isEmpty() &&
+                    messageSearchResults.isEmpty()
+                ) {
+                    item {
+                        MessageSearchStatus(text = "没有找到相关聊天或消息")
+                    }
+                }
             }
         }
 
@@ -213,7 +311,7 @@ fun DrawerContent(
             onClick = { showProviderDialog = true },
             modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
             tonalElevation = 0.dp,
             shadowElevation = 0.dp
@@ -221,7 +319,7 @@ fun DrawerContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                    .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -251,7 +349,7 @@ fun DrawerContent(
         Surface(
             onClick = onSettingsClick,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surface,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
             tonalElevation = 0.dp
@@ -259,9 +357,9 @@ fun DrawerContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                    .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(Spacing.md)
             ) {
                 Surface(
                     shape = CircleShape,
@@ -320,22 +418,20 @@ fun ProviderSelectionSheet(
 ) {
     val sheetState = rememberModalBottomSheetState()
 
-    ModalBottomSheet(
+    TChatModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        dragHandle = { BottomSheetDefaults.DragHandle() }
+        sheetState = sheetState
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 32.dp)
+                .padding(bottom = Spacing.xxl)
         ) {
             // 标题
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                    .padding(horizontal = Spacing.xl, vertical = Spacing.sm),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -352,13 +448,13 @@ fun ProviderSelectionSheet(
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
             if (providers.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
+                        .padding(Spacing.xl),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -370,8 +466,8 @@ fun ProviderSelectionSheet(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    contentPadding = PaddingValues(horizontal = Spacing.lg),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
                     items(providers, key = { it.id }) { provider ->
                         ProviderSelectionItem(
@@ -470,21 +566,11 @@ fun GroupChatHistoryItem(
 
     DrawerConversationCard(
         title = groupChat.name.ifEmpty { "未命名群聊" },
-        subtitle = "${groupChat.memberIds.size} 位成员 • ${dateFormat.format(Date(groupChat.updatedAt))}",
+        subtitle = "${groupChat.memberIds.size} 位成员",
+        timestamp = dateFormat.format(Date(groupChat.updatedAt)),
         isSelected = isSelected,
         onClick = onClick,
-        leadingIcon = {
-            Icon(
-                imageVector = Lucide.Users,
-                contentDescription = null,
-                tint = if (isSelected) {
-                    MaterialTheme.colorScheme.onSecondaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.size(20.dp)
-            )
-        }
+        avatarName = groupChat.name
     )
 }
 
@@ -493,129 +579,212 @@ fun ChatHistoryItem(
     chat: Chat,
     isSelected: Boolean,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onTogglePinned: () -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
 
     DrawerConversationCard(
         title = chat.title,
-        subtitle = dateFormat.format(Date(chat.updatedAt)),
+        subtitle = if (chat.isPinned) "置顶会话" else "AI 聊天",
+        timestamp = dateFormat.format(Date(chat.updatedAt)),
         isSelected = isSelected,
         onClick = onClick,
-        leadingIcon = {
-            Icon(
-                imageVector = Lucide.Bot,
-                contentDescription = null,
-                tint = if (isSelected) {
-                    MaterialTheme.colorScheme.onSecondaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.size(20.dp)
-            )
-        },
-        trailingContent = {
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier.size(34.dp)
-            ) {
+        avatarName = chat.title,
+        onDelete = onDelete,
+        onTogglePinned = onTogglePinned,
+        trailingContent = if (chat.isPinned) {
+            {
                 Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "删除",
-                    modifier = Modifier.size(18.dp),
-                    tint = if (isSelected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.72f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
+                    imageVector = Icons.Default.PushPin,
+                    contentDescription = "已置顶",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary
                 )
             }
+        } else {
+            null
         }
     )
 }
 
 @Composable
+private fun MessageSearchResultItem(
+    result: ChatSearchResult,
+    onClick: () -> Unit
+) {
+    val dateFormat = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
+    val roleLabel = when (result.role) {
+        MessageRole.USER -> "用户"
+        MessageRole.ASSISTANT -> result.groupAssistantName ?: "助手"
+        MessageRole.SYSTEM -> "系统"
+        MessageRole.TOOL -> "工具"
+    }
+    val modelLabel = result.modelName?.takeIf { it.isNotBlank() }
+    val subtitle = buildString {
+        append(roleLabel)
+        if (modelLabel != null) {
+            append(" · ")
+            append(modelLabel)
+        }
+        append(" · ")
+        append(result.snippet)
+    }
+
+    DrawerConversationCard(
+        title = result.chatTitle.ifEmpty { "未命名聊天" },
+        subtitle = subtitle,
+        timestamp = dateFormat.format(Date(result.timestamp)),
+        isSelected = false,
+        onClick = onClick,
+        avatarName = result.chatTitle
+    )
+}
+
+@Composable
+private fun MessageSearchStatus(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
 private fun DrawerConversationCard(
     title: String,
     subtitle: String,
+    timestamp: String,
     isSelected: Boolean,
     onClick: () -> Unit,
-    leadingIcon: @Composable () -> Unit,
+    avatarName: String,
+    onDelete: (() -> Unit)? = null,
+    onTogglePinned: (() -> Unit)? = null,
     trailingContent: @Composable (() -> Unit)? = null
 ) {
-    val containerColor = if (isSelected) {
-        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.22f)
-    } else {
-        MaterialTheme.colorScheme.surface
+    val density = LocalDensity.current
+    var showActionMenu by remember { mutableStateOf(false) }
+    val menuOffset = with(density) {
+        IntOffset(
+            x = -Spacing.lg.roundToPx(),
+            y = (-56).dp.roundToPx()
+        )
     }
-    val borderColor = if (isSelected) {
-        MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f)
+    val longClickAction: (() -> Unit)? = if (onDelete != null) {
+        {
+            showActionMenu = true
+        }
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)
+        null
     }
-    val titleColor = if (isSelected) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    val subtitleColor = if (isSelected) {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.EndToStart -> false
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    if (onTogglePinned != null) {
+                        onTogglePinned()
+                    }
+                    false
+                }
+                SwipeToDismissBoxValue.Settled -> false
+            }
+        }
+    )
 
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        color = containerColor,
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, borderColor),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = if (isSelected) {
-                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.10f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f)
-                },
-                modifier = Modifier.size(38.dp)
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = onTogglePinned != null,
+        enableDismissFromEndToStart = false,
+        backgroundContent = {
+            val value = dismissState.dismissDirection
+            val backgroundColor = when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primaryContainer
+                SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.surfaceContainer
+                SwipeToDismissBoxValue.Settled -> MaterialTheme.colorScheme.surfaceContainer
+            }
+            val icon = when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> Icons.Default.PushPin
+                SwipeToDismissBoxValue.EndToStart -> Icons.Default.PushPin
+                SwipeToDismissBoxValue.Settled -> Icons.Default.PushPin
+            }
+            val alignment = when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
+                SwipeToDismissBoxValue.EndToStart -> Alignment.CenterStart
+                SwipeToDismissBoxValue.Settled -> Alignment.CenterStart
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(backgroundColor)
+                    .padding(horizontal = Spacing.lg),
+                contentAlignment = alignment
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        }
+    ) {
+        Box {
+            ConversationListItem(
+                name = title,
+                timestamp = timestamp,
+                preview = subtitle,
+                modifier = Modifier.combinedClickable(
+                    onClick = onClick,
+                    onLongClick = longClickAction,
+                    onLongClickLabel = if (onDelete != null) "显示操作菜单" else null
+                ),
+                isSelected = isSelected,
+                avatarUrl = null,
+                onClick = null,
+                trailing = {
+                    trailingContent?.invoke()
+                }
+            )
+
+            if (showActionMenu && onDelete != null) {
+                Popup(
+                    alignment = Alignment.TopEnd,
+                    offset = menuOffset,
+                    onDismissRequest = { showActionMenu = false },
+                    properties = PopupProperties(focusable = true)
                 ) {
-                    leadingIcon()
+                    Surface(
+                        modifier = Modifier.widthIn(min = 144.dp),
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 6.dp,
+                        shadowElevation = 8.dp
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "删除",
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            onClick = {
+                                showActionMenu = false
+                                onDelete()
+                            }
+                        )
+                    }
                 }
             }
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title.ifBlank { "未命名会话" },
-                    style = MaterialTheme.typography.titleSmall,
-                    color = titleColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = subtitleColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            trailingContent?.invoke()
         }
     }
 }

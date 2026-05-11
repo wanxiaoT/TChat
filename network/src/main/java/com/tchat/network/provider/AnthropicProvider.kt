@@ -98,8 +98,8 @@ class AnthropicProvider(
         // 工具调用构建器
         val toolCallsBuilder = mutableMapOf<Int, ToolCallBuilder>()
 
-        // 收集完整响应
-        val responseContent = StringBuilder()
+        // 收集有限响应体用于调试日志，避免长输出占用过多内存
+        val responseContent = NetworkLogger.newBodyCapture()
 
         val call = client.newCall(request)
         activeCalls += call

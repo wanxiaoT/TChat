@@ -2,6 +2,7 @@ package com.tchat.feature.chat
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.LruCache
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -16,11 +17,37 @@ internal fun rememberScaledBitmap(
 ): Bitmap? {
     val resolvedTargetSize = targetSizePx.coerceAtLeast(1)
     val bitmapState by produceState<Bitmap?>(initialValue = null, filePath, resolvedTargetSize) {
+        val cacheKey = "$filePath#$resolvedTargetSize"
+        BitmapMemoryCache.get(cacheKey)?.let { cached ->
+            value = cached
+            return@produceState
+        }
+
         value = withContext(Dispatchers.IO) {
-            decodeSampledBitmap(filePath, resolvedTargetSize)
+            decodeSampledBitmap(filePath, resolvedTargetSize)?.also { bitmap ->
+                BitmapMemoryCache.put(cacheKey, bitmap)
+            }
         }
     }
     return bitmapState
+}
+
+private object BitmapMemoryCache {
+    private const val MAX_CACHE_BYTES = 24 * 1024 * 1024
+
+    private val cache = object : LruCache<String, Bitmap>(MAX_CACHE_BYTES) {
+        override fun sizeOf(key: String, value: Bitmap): Int {
+            return value.byteCount
+        }
+    }
+
+    fun get(key: String): Bitmap? = cache.get(key)
+
+    fun put(key: String, bitmap: Bitmap) {
+        if (bitmap.byteCount <= MAX_CACHE_BYTES) {
+            cache.put(key, bitmap)
+        }
+    }
 }
 
 private fun decodeSampledBitmap(filePath: String, targetSizePx: Int): Bitmap? {

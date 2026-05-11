@@ -76,7 +76,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
@@ -438,7 +438,7 @@ fun LogcatScreen(
         ) {
 
             if (!showTopBar) {
-                AppSectionSurface {
+                SettingsSurface {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -476,7 +476,7 @@ fun LogcatScreen(
             }
 
             if (selectedLevel != null) {
-                AppSectionSurface {
+                SettingsSurface {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -504,7 +504,7 @@ fun LogcatScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Box(modifier = Modifier.widthIn(max = 240.dp)) {
-                        AppSectionSurface {
+                        SettingsSurface {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -541,7 +541,7 @@ fun LogcatScreen(
 
                     val horizontalScrollState = rememberScrollState()
 
-                    AppSectionSurface(
+                    SettingsSurface(
                         modifier = Modifier.weight(1f)
                     ) {
                         Row(

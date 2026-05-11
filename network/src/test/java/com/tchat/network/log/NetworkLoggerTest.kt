@@ -53,4 +53,18 @@ class NetworkLoggerTest {
         assertEquals(-1L, requestId)
         assertTrue(NetworkLogger.getLogs().isEmpty())
     }
+
+    @Test
+    fun `body capture bounds streamed response content`() {
+        NetworkLogger.setEnabledForTests(true)
+        val capture = NetworkLogger.newBodyCapture()
+
+        repeat(20) {
+            capture.append("x".repeat(500))
+        }
+
+        val captured = capture.toString()
+        assertTrue(captured.length < 5000)
+        assertTrue(captured.contains("[truncated"))
+    }
 }

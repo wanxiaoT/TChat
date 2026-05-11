@@ -59,6 +59,10 @@ class KnowledgeRepositoryImpl(
         return itemDao.getItemById(id)
     }
 
+    override suspend fun getItemsByIds(ids: List<String>): List<KnowledgeItemEntity> {
+        return if (ids.isEmpty()) emptyList() else itemDao.getItemsByIds(ids)
+    }
+
     override suspend fun getItemsByStatus(status: ProcessingStatus): List<KnowledgeItemEntity> {
         return itemDao.getItemsByStatus(status.name)
     }

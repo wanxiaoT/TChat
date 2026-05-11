@@ -78,9 +78,10 @@ import com.tchat.wanxiaot.settings.RegexRule
 import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import kotlinx.coroutines.launch
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -148,7 +149,7 @@ fun AssistantDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
 
-                AppSectionSurface {
+                SettingsSurface {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -270,7 +271,7 @@ private fun AssistantSelectableRow(
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    AppSectionSurface {
+    SettingsSurface {
         androidx.compose.material3.Surface(
             onClick = onClick,
             color = if (selected) {
@@ -327,7 +328,7 @@ private fun BasicSettingsTab(
     onUpdate: (Assistant) -> Unit
 ) {
     AssistantTabColumn {
-        AppSectionCard(
+        SettingsGroupCard(
             modifier = Modifier.padding(horizontal = 16.dp),
             title = "基础信息",
             description = "明确这个助手的名称与输出边界，方便在列表中快速区分。"
@@ -341,7 +342,7 @@ private fun BasicSettingsTab(
             )
         }
 
-        AppSectionCard(
+        SettingsGroupCard(
             modifier = Modifier.padding(horizontal = 16.dp),
             title = "模型参数",
             description = "这些设置只影响当前助手，不会覆盖全局服务商默认值。"
@@ -366,7 +367,7 @@ private fun BasicSettingsTab(
                     steps = 19,
                     modifier = Modifier.fillMaxWidth()
                 )
-                AppPill(text = "当前值 ${String.format("%.1f", temp)}")
+                AppPill(text = "当前值 ${String.format(Locale.ROOT, "%.1f", temp)}")
             }
 
             HorizontalDivider()
@@ -391,7 +392,7 @@ private fun BasicSettingsTab(
                     steps = 9,
                     modifier = Modifier.fillMaxWidth()
                 )
-                AppPill(text = "当前值 ${String.format("%.1f", topP)}")
+                AppPill(text = "当前值 ${String.format(Locale.ROOT, "%.1f", topP)}")
             }
 
             HorizontalDivider()
@@ -502,7 +503,7 @@ private fun PromptSettingsTab(
     onUpdate: (Assistant) -> Unit
 ) {
     AssistantTabColumn {
-        AppSectionCard(
+        SettingsGroupCard(
             modifier = Modifier.padding(horizontal = 16.dp),
             title = "系统提示词",
             description = "把角色、语气、边界和输出格式写清楚，能显著降低后续跑偏。"
@@ -559,7 +560,7 @@ private fun LocalToolsTab(
     }
 
     AssistantTabColumn {
-        AppSectionCard(
+        SettingsGroupCard(
             modifier = Modifier.padding(horizontal = 16.dp),
             title = "本地工具",
             description = "启用后，助手可以直接调用对应能力。涉及文件访问的工具需要额外授权。"
@@ -592,7 +593,7 @@ private fun LocalToolsTab(
                 }
 
                 if (isFileSystem) {
-                    AppSectionSurface {
+                    SettingsSurface {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -683,7 +684,7 @@ private fun McpToolsTab(
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
         } else {
-            AppSectionCard(
+            SettingsGroupCard(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 title = "MCP 工具",
                 description = "只开启当前助手真正需要的 MCP 服务，避免工具噪声过高。"
@@ -794,7 +795,7 @@ private fun KnowledgeBaseTab(
     val context = LocalContext.current
 
     AssistantTabColumn {
-        AppSectionCard(
+        SettingsGroupCard(
             modifier = Modifier.padding(horizontal = 16.dp),
             title = "知识库配置",
             description = "绑定后，助手会基于当前知识库检索内容。Embedding 服务与对话模型完全独立。"
@@ -832,7 +833,7 @@ private fun KnowledgeBaseTab(
 
         if (assistant.knowledgeBaseId != null) {
             val boundBase = knowledgeBases.find { it.id == assistant.knowledgeBaseId }
-            AppSectionCard(
+            SettingsGroupCard(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 title = "当前绑定状态"
             ) {
@@ -914,7 +915,7 @@ private fun RegexRulesTab(
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
         } else {
-            AppSectionCard(
+            SettingsGroupCard(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 title = "正则规则",
                 description = "用于在流式输出时实时清理回复内容，只保留当前助手真正需要的规则。"

@@ -29,8 +29,8 @@ import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppIconTile
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import com.tchat.wanxiaot.util.CloudBackupInfo
 import com.tchat.wanxiaot.util.CloudBackupManager
 import kotlinx.coroutines.launch
@@ -46,8 +46,8 @@ import java.io.FileOutputStream
 fun ExportImportScreenEnhanced(
     settingsManager: SettingsManager,
     onBackClick: () -> Unit,
-    showTopBar: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showTopBar: Boolean = true
 ) {
     val context = LocalContext.current
     val viewModel = remember(context, settingsManager) {
@@ -428,7 +428,7 @@ fun ExportImportScreenEnhanced(
                     contentAlignment = Alignment.Center
                 ) {
                     Box(modifier = Modifier.widthIn(max = 280.dp)) {
-                        AppSectionSurface {
+                        SettingsSurface {
                             Column(
                                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -704,17 +704,17 @@ private fun ExportImportSectionConnected(
     onEncryptionEnabledChange: (Boolean) -> Unit,
     onEncryptionPasswordChange: (String) -> Unit,
     onExportFile: () -> Unit,
-    onExportQRCode: (() -> Unit)? = null,
     onImportFile: () -> Unit,
+    modifier: Modifier = Modifier,
+    onExportQRCode: (() -> Unit)? = null,
     onImportQRCode: (() -> Unit)? = null,
     supportsQRCode: Boolean = true,
-    requiresEncryption: Boolean = false,
-    modifier: Modifier = Modifier
+    requiresEncryption: Boolean = false
 ) {
     var showExportOptions by remember { mutableStateOf(false) }
     var showImportOptions by remember { mutableStateOf(false) }
 
-    AppSectionCard(
+    SettingsGroupCard(
         modifier = modifier,
         title = title,
         description = description
@@ -1231,7 +1231,7 @@ private fun DatabaseBackupSection(
 ) {
     var showRestoreConfirmDialog by remember { mutableStateOf(false) }
 
-    AppSectionCard(
+    SettingsGroupCard(
         modifier = modifier,
         title = "数据库备份",
         description = "备份或恢复完整数据库，包含聊天记录、助手与知识库等核心数据。"
@@ -1357,7 +1357,7 @@ private fun CloudBackupSection(
     isLoadingList: Boolean,
     modifier: Modifier = Modifier
 ) {
-    AppSectionCard(
+    SettingsGroupCard(
         modifier = modifier,
         title = "云备份",
         description = "将本地备份同步到 Cloudflare R2，并查看云端历史归档。"
@@ -1521,7 +1521,7 @@ private fun CloudBackupItem(
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
-    AppSectionSurface {
+    SettingsSurface {
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)

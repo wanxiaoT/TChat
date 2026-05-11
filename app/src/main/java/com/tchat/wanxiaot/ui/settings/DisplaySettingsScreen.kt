@@ -1,15 +1,14 @@
 package com.tchat.wanxiaot.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -25,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Sparkles
@@ -37,8 +37,8 @@ import com.tchat.wanxiaot.i18n.strings
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,36 +65,38 @@ fun DisplaySettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
 
             item {
-                AppSectionCard(
+                SettingsGroupCard(
                     title = "聊天工具栏",
-                    description = "打开或关闭具体入口，并通过上下箭头调整顺序。"
+                    description = "打开或关闭具体入口，并通过上下箭头调整顺序。",
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
                 ) {
                     toolbarSettings.items.forEachIndexed { index, config ->
                         val isFirst = index == 0
                         val isLast = index == toolbarSettings.items.lastIndex
 
-                        AppSectionSurface {
+                        SettingsSurface {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = getToolbarItemIcon(config.item),
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
                                 )
                                 Column(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .padding(start = 14.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        .padding(start = 10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
                                 ) {
                                     Text(
                                         text = getToolbarItemTitle(config.item),
@@ -115,38 +117,37 @@ fun DisplaySettingsScreen(
                                         }
                                     )
                                 }
-                                Box(contentAlignment = Alignment.CenterEnd) {
-                                    Column(
-                                        horizontalAlignment = Alignment.End,
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Switch(
-                                            checked = config.visible,
-                                            onCheckedChange = { checked ->
-                                                updateToolbarSettings { current ->
-                                                    current.copy(
-                                                        items = current.items.map {
-                                                            if (it.item == config.item) it.copy(visible = checked) else it
-                                                        }
-                                                    )
-                                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Switch(
+                                        checked = config.visible,
+                                        onCheckedChange = { checked ->
+                                            updateToolbarSettings { current ->
+                                                current.copy(
+                                                    items = current.items.map {
+                                                        if (it.item == config.item) it.copy(visible = checked) else it
+                                                    }
+                                                )
                                             }
-                                        )
-                                        RowButtons(
-                                            moveUpEnabled = !isFirst,
-                                            moveDownEnabled = !isLast,
-                                            onMoveUp = {
-                                                updateToolbarSettings { current ->
-                                                    current.copy(items = move(current.items, index, index - 1))
-                                                }
-                                            },
-                                            onMoveDown = {
-                                                updateToolbarSettings { current ->
-                                                    current.copy(items = move(current.items, index, index + 1))
-                                                }
+                                        },
+                                        modifier = Modifier.scale(0.86f)
+                                    )
+                                    RowButtons(
+                                        moveUpEnabled = !isFirst,
+                                        moveDownEnabled = !isLast,
+                                        onMoveUp = {
+                                            updateToolbarSettings { current ->
+                                                current.copy(items = move(current.items, index, index - 1))
                                             }
-                                        )
-                                    }
+                                        },
+                                        onMoveDown = {
+                                            updateToolbarSettings { current ->
+                                                current.copy(items = move(current.items, index, index + 1))
+                                            }
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -165,19 +166,29 @@ private fun RowButtons(
     onMoveDown: () -> Unit
 ) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(0.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onMoveUp, enabled = moveUpEnabled) {
+        IconButton(
+            onClick = onMoveUp,
+            enabled = moveUpEnabled,
+            modifier = Modifier.size(36.dp)
+        ) {
             Icon(
                 imageVector = Icons.Default.KeyboardArrowUp,
-                contentDescription = null
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
             )
         }
-        IconButton(onClick = onMoveDown, enabled = moveDownEnabled) {
+        IconButton(
+            onClick = onMoveDown,
+            enabled = moveDownEnabled,
+            modifier = Modifier.size(36.dp)
+        ) {
             Icon(
                 imageVector = Icons.Default.KeyboardArrowDown,
-                contentDescription = null
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
             )
         }
     }

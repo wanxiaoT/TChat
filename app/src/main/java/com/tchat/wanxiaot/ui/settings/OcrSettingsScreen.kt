@@ -41,8 +41,8 @@ import com.tchat.wanxiaot.settings.OcrSettings
 import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,7 +78,7 @@ fun OcrSettingsScreen(
                 .padding(16.dp)
         ) {
 
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "识别模型",
                 description = "用于打野助手框选屏幕内容进行 OCR（识别并提取 API Key / URL）。"
             ) {
@@ -114,7 +114,7 @@ fun OcrSettingsScreen(
             if (selectedModel == OcrModel.AI_VISION) {
                 Spacer(modifier = Modifier.height(16.dp))
 
-                AppSectionCard(
+                SettingsGroupCard(
                     title = "AI 提供商配置",
                     description = "当使用 AI Vision 时，需要额外指定服务商、模型和识别提示词。"
                 ) {
@@ -196,7 +196,7 @@ fun OcrSettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            AppSectionCard(title = "提示") {
+            SettingsGroupCard(title = "提示") {
                 Text(
                     text = "首次使用 OCR 需要授权「录屏/屏幕捕获」权限。",
                     style = MaterialTheme.typography.bodySmall,

@@ -9,6 +9,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.util.Collections
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -31,7 +32,7 @@ class OpenAIEmbeddingProvider(
         .protocols(listOf(Protocol.HTTP_1_1))
         .build()
 
-    private var currentCall: Call? = null
+    private val activeCalls = Collections.synchronizedSet(mutableSetOf<Call>())
 
     override suspend fun embed(texts: List<String>, model: String): List<FloatArray> = withContext(Dispatchers.IO) {
         // OpenAI API 限制每次最多 2048 个输入，这里按 100 个分批处理
@@ -50,14 +51,16 @@ class OpenAIEmbeddingProvider(
         val jsonBody = buildRequestBody(texts, model)
         val request = buildRequest(jsonBody)
 
-        currentCall = client.newCall(request)
+        val call = client.newCall(request)
+        activeCalls.add(call)
 
         continuation.invokeOnCancellation {
-            currentCall?.cancel()
+            call.cancel()
         }
 
-        currentCall?.enqueue(object : Callback {
+        call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
+                activeCalls.remove(call)
                 if (!continuation.isCompleted) {
                     continuation.resumeWithException(
                         EmbeddingException.NetworkError("网络连接失败: ${e.message}", e)
@@ -84,13 +87,18 @@ class OpenAIEmbeddingProvider(
                     }
                 } finally {
                     response.close()
+                    activeCalls.remove(call)
                 }
             }
         })
     }
 
     override fun cancel() {
-        currentCall?.cancel()
+        synchronized(activeCalls) {
+            activeCalls.toList()
+        }.forEach { call ->
+            call.cancel()
+        }
     }
 
     private fun buildRequestBody(texts: List<String>, model: String): String {

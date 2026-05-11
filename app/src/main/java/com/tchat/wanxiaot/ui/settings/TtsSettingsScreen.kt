@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -21,8 +22,8 @@ import com.composables.icons.lucide.Square
 import com.tchat.data.tts.TtsService
 import com.tchat.wanxiaot.settings.TtsSettings
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import java.util.Locale
 
 /**
  * TTS 设置页面
@@ -73,7 +74,7 @@ fun TtsSettingsScreen(
                 .verticalScroll(rememberScrollState())
         ) {
 
-            AppSectionCard(
+            SettingsGroupCard(
                 modifier = Modifier.padding(top = 14.dp),
                 title = "基础开关"
             ) {
@@ -81,6 +82,7 @@ fun TtsSettingsScreen(
                 ListItem(
                     headlineContent = { Text("启用语音朗读") },
                     supportingContent = { Text("开启后可朗读 AI 回复内容") },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     trailingContent = {
                         Switch(
                             checked = ttsSettings.enabled,
@@ -91,12 +93,13 @@ fun TtsSettingsScreen(
                     }
                 )
 
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                TtsSettingsDivider()
 
                 // 自动朗读开关
                 ListItem(
                     headlineContent = { Text("自动朗读") },
                     supportingContent = { Text("AI 回复完成后自动开始朗读") },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     trailingContent = {
                         Switch(
                             checked = ttsSettings.autoSpeak,
@@ -109,7 +112,7 @@ fun TtsSettingsScreen(
                 )
             }
 
-            AppSectionCard(
+            SettingsGroupCard(
                 modifier = Modifier.padding(top = 14.dp),
                 title = "引擎与声音参数",
                 description = "选择系统引擎，并调整语速和音调。"
@@ -138,28 +141,29 @@ fun TtsSettingsScreen(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp)
+                                .padding(vertical = 2.dp)
                                 .clickable(enabled = ttsSettings.enabled) {
                                     onSettingsChange(ttsSettings.copy(enginePackage = engine.packageName))
                                 },
-                            shape = MaterialTheme.shapes.large,
-                            border = BorderStroke(
-                                width = if (isSelected) 2.dp else 1.dp,
-                                color = if (isSelected)
-                                    MaterialTheme.colorScheme.primary
-                                else
-                                    MaterialTheme.colorScheme.outlineVariant
-                            ),
+                            shape = MaterialTheme.shapes.medium,
+                            border = if (isSelected) {
+                                BorderStroke(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
+                                )
+                            } else {
+                                null
+                            },
                             color = if (isSelected)
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.18f)
                             else
-                                MaterialTheme.colorScheme.surface,
+                                Color.Transparent,
                             tonalElevation = 0.dp
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(16.dp),
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 RadioButton(
@@ -188,7 +192,7 @@ fun TtsSettingsScreen(
                                 }
                                 if (engine.isDefault && engine.packageName.isNotBlank()) {
                                     Surface(
-                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f),
                                         shape = MaterialTheme.shapes.small
                                     ) {
                                         Text(
@@ -210,7 +214,7 @@ fun TtsSettingsScreen(
                 }
             }
 
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            TtsSettingsDivider()
 
             // 语速设置
             Column(
@@ -228,7 +232,7 @@ fun TtsSettingsScreen(
                         style = MaterialTheme.typography.bodyLarge
                     )
                     Text(
-                        text = String.format("%.1fx", ttsSettings.speechRate),
+                        text = String.format(Locale.ROOT, "%.1fx", ttsSettings.speechRate),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -260,7 +264,7 @@ fun TtsSettingsScreen(
                 }
             }
 
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            TtsSettingsDivider()
 
             // 音调设置
             Column(
@@ -278,7 +282,7 @@ fun TtsSettingsScreen(
                         style = MaterialTheme.typography.bodyLarge
                     )
                     Text(
-                        text = String.format("%.1f", ttsSettings.pitch),
+                        text = String.format(Locale.ROOT, "%.1f", ttsSettings.pitch),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -310,7 +314,7 @@ fun TtsSettingsScreen(
                 }
             }
 
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            TtsSettingsDivider()
 
             // 测试朗读
             Column(
@@ -350,9 +354,11 @@ fun TtsSettingsScreen(
                                 actualTtsService.updateSettings(
                                     rate = ttsSettings.speechRate,
                                     pitchValue = ttsSettings.pitch,
-                                    locale = java.util.Locale.forLanguageTag(ttsSettings.language)
+                                    locale = Locale.forLanguageTag(ttsSettings.language)
                                 )
-                                actualTtsService.speak("你好，这是语音朗读测试。当前语速为 ${String.format("%.1f", ttsSettings.speechRate)} 倍，音调为 ${String.format("%.1f", ttsSettings.pitch)}。")
+                                val speechRateText = String.format(Locale.ROOT, "%.1f", ttsSettings.speechRate)
+                                val pitchText = String.format(Locale.ROOT, "%.1f", ttsSettings.pitch)
+                                actualTtsService.speak("你好，这是语音朗读测试。当前语速为 $speechRateText 倍，音调为 $pitchText。")
                             }
                         },
                         enabled = isAvailable,
@@ -411,19 +417,25 @@ fun TtsSettingsScreen(
                 }
             }
 
-            AppSectionCard(
+            SettingsGroupCard(
                 modifier = Modifier.padding(top = 14.dp, bottom = 16.dp),
                 title = "关于 TTS 引擎"
             ) {
-                AppSectionSurface {
-                    Text(
-                        text = "本功能使用系统内置的 TTS 引擎。如需更好的语音效果，可在系统设置中安装第三方 TTS 引擎（如 Google TTS、讯飞语音等）。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(14.dp)
-                    )
-                }
+                Text(
+                    text = "本功能使用系统内置的 TTS 引擎。如需更好的语音效果，可在系统设置中安装第三方 TTS 引擎（如 Google TTS、讯飞语音等）。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
+}
+
+@Composable
+private fun TtsSettingsDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f)
+    )
 }

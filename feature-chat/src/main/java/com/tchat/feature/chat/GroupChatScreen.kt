@@ -4,8 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.speech.tts.TextToSpeech
-import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -36,10 +34,10 @@ import com.tchat.data.model.Assistant
 import com.tchat.data.model.ChatToolbarSettings
 import com.tchat.data.model.MessagePart
 import com.tchat.data.tool.Tool
+import com.tchat.data.tts.TtsService
 import com.tchat.data.util.RegexRuleData
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import java.util.Locale
 
 /**
  * 群聊对话界面
@@ -92,6 +90,8 @@ fun GroupChatScreen(
     val currentGroupChat by viewModel.currentGroupChat.collectAsStateWithLifecycle()
     val groupMembers by viewModel.groupMembers.collectAsStateWithLifecycle()
     val currentSpeakerId by viewModel.currentSpeakerId.collectAsStateWithLifecycle()
+    val autoModeRunning by viewModel.autoModeRunning.collectAsStateWithLifecycle()
+    val autoModeRemainingRounds by viewModel.autoModeRemainingRounds.collectAsStateWithLifecycle()
 
     var inputText by remember { mutableStateOf("") }
     var draftMediaParts by remember { mutableStateOf<List<MessagePart>>(emptyList()) }
@@ -106,23 +106,7 @@ fun GroupChatScreen(
     // Coroutine scope
     val scope = rememberCoroutineScope()
     var initialScrollChatKey by remember { mutableStateOf<String?>(null) }
-
-    // TTS 初始化
-    var tts by remember { mutableStateOf<TextToSpeech?>(null) }
-    var isTtsReady by remember { mutableStateOf(false) }
-
-    DisposableEffect(Unit) {
-        tts = TextToSpeech(context) { status ->
-            isTtsReady = status == TextToSpeech.SUCCESS
-            if (isTtsReady) {
-                tts?.language = Locale.getDefault()
-            }
-        }
-        onDispose {
-            tts?.stop()
-            tts?.shutdown()
-        }
-    }
+    val ttsService = remember(context) { TtsService.getInstance(context) }
 
     // 复制到剪贴板
     val onCopy: (String) -> Unit = { content ->
@@ -139,8 +123,8 @@ fun GroupChatScreen(
 
     // 朗读
     val onSpeak: (String) -> Unit = { content ->
-        if (isTtsReady) {
-            tts?.speak(content, TextToSpeech.QUEUE_FLUSH, null, null)
+        if (ttsService.isAvailable()) {
+            ttsService.speak(content)
         } else {
             scope.launch {
                 snackbarHostState.showSnackbar(
@@ -256,10 +240,16 @@ fun GroupChatScreen(
         )
     }
 
-    // 群聊页面使用 adjustResize，让系统统一处理 IME 顶起，避免 OEM 设备重复位移
-    SoftInputModeEffect(SoftInputAdjustResize)
+    // Chat 页面统一禁止系统 resize，由 Compose 按 IME inset 移动输入区，避免重复顶起。
+    SoftInputModeEffect(SoftInputAdjustNothing)
+    val density = LocalDensity.current
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.ime.only(WindowInsetsSides.Bottom))
+    ) {
         ChatBackdrop(modifier = Modifier.matchParentSize())
 
         var inputAreaHeightPx by remember { mutableIntStateOf(0) }
@@ -327,11 +317,15 @@ fun GroupChatScreen(
                     onCopy = onCopy,
                     onSpeak = onSpeak,
                     onShare = onShare,
-                    onDelete = onDelete
+                    onDelete = onDelete,
+                    onToggleBookmark = { message ->
+                        viewModel.toggleBookmark(message)
+                    }
                 )
 
                 // 输入区域（工具栏 + 助手选择器 + 输入框），固定在底部并跟随 IME 上移
                 ChatComposerDock(
+                    imeVisible = imeVisible,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .onSizeChanged { inputAreaHeightPx = it.height }
@@ -340,6 +334,15 @@ fun GroupChatScreen(
                     AnimatedVisibility(visible = isDeepResearching) {
                         GroupDeepResearchIndicator(
                             text = deepResearchInProgressText
+                        )
+                    }
+
+                    AnimatedVisibility(visible = currentGroupChat?.autoModeEnabled == true) {
+                        AutoModeControl(
+                            running = autoModeRunning,
+                            remainingRounds = autoModeRemainingRounds,
+                            onPause = { viewModel.pauseAutoMode() },
+                            onResume = { viewModel.resumeAutoMode() }
                         )
                     }
 
@@ -359,7 +362,7 @@ fun GroupChatScreen(
                     }
 
                     // 工具栏
-                    if (availableModels.isNotEmpty()) {
+                    if (availableModels.isNotEmpty() && !imeVisible) {
                         InputToolbar(
                             availableModels = availableModels,
                             currentModel = currentModel,
@@ -588,6 +591,47 @@ private fun GroupDeepResearchIndicator(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
+        }
+    }
+}
+
+@Composable
+private fun AutoModeControl(
+    running: Boolean,
+    remainingRounds: Int,
+    onPause: () -> Unit,
+    onResume: () -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (running) "自动模式运行中" else "自动模式已暂停",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                Text(
+                    text = "剩余自动轮次：$remainingRounds",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f)
+                )
+            }
+            TextButton(onClick = if (running) onPause else onResume) {
+                Text(if (running) "暂停" else "继续")
+            }
         }
     }
 }

@@ -59,6 +59,9 @@ class ImGuiSurfaceView @JvmOverloads constructor(
         if (!initialized || !ImGuiBridge.isLibraryLoaded) return false
 
         val action = event.actionMasked
+        if (action == MotionEvent.ACTION_UP) {
+            performClick()
+        }
         val x = event.x
         val y = event.y
         val pointerId = event.getPointerId(event.actionIndex)
@@ -79,6 +82,11 @@ class ImGuiSurfaceView @JvmOverloads constructor(
             Log.e(TAG, "Error in nativeWantCaptureMouse: ${e.message}")
             super.onTouchEvent(event)
         }
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
     }
 
     fun shutdown() {

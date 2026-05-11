@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.io.File
+import java.util.PriorityQueue
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -140,20 +141,38 @@ class KnowledgeService(
                 return@withContext emptyList()
             }
 
-            // 计算相似度并排序
-            val results = chunks.mapNotNull { chunk ->
+            val candidateLimit = topK.coerceAtLeast(1)
+            val topCandidates = PriorityQueue<ScoredChunk>(
+                compareBy<ScoredChunk> { it.score }
+            )
+
+            chunks.forEach { chunk ->
                 val chunkEmbedding = jsonToFloatArray(chunk.embedding)
                 val score = VectorUtils.cosineSimilarity(queryEmbedding, chunkEmbedding)
 
                 if (score >= threshold) {
-                    val item = repository.getItemById(chunk.itemId)
-                    SearchResult(chunk, item, score)
-                } else {
-                    null
+                    if (topCandidates.size < candidateLimit) {
+                        topCandidates.offer(ScoredChunk(chunk, score))
+                    } else if (topCandidates.peek()?.let { score > it.score } == true) {
+                        topCandidates.poll()
+                        topCandidates.offer(ScoredChunk(chunk, score))
+                    }
                 }
             }
+
+            val candidates = topCandidates
+                .toList()
                 .sortedByDescending { it.score }
-                .take(topK)
+            val itemsById = repository
+                .getItemsByIds(candidates.map { it.chunk.itemId }.distinct())
+                .associateBy { it.id }
+            val results = candidates.map { candidate ->
+                SearchResult(
+                    chunk = candidate.chunk,
+                    item = itemsById[candidate.chunk.itemId],
+                    score = candidate.score
+                )
+            }
 
             Log.d(TAG, "Search found ${results.size} results for query: $query")
             results
@@ -162,6 +181,11 @@ class KnowledgeService(
             emptyList()
         }
     }
+
+    private data class ScoredChunk(
+        val chunk: KnowledgeChunkEntity,
+        val score: Float
+    )
 
     /**
      * 加载条目内容

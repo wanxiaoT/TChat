@@ -27,7 +27,6 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,11 +44,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tchat.data.model.Assistant
+import com.tchat.designsystem.TChatModalBottomSheet
 import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppIconTile
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import com.tchat.wanxiaot.ui.components.AppSheetSurface
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -172,7 +172,7 @@ private fun AssistantItem(
     onCopy: () -> Unit,
     onDelete: () -> Unit
 ) {
-    AppSectionSurface(
+    SettingsSurface(
         modifier = Modifier.fillMaxWidth()
     ) {
         androidx.compose.material3.Surface(
@@ -268,10 +268,9 @@ private fun CreateAssistantSheet(
 ) {
     var name by remember { mutableStateOf("") }
 
-    ModalBottomSheet(
+    TChatModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = androidx.compose.ui.graphics.Color.Transparent
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
         AppSheetSurface(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)

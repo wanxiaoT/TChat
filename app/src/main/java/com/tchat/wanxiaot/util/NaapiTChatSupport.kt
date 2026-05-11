@@ -20,6 +20,7 @@ object NaapiTChatSupport {
 
     private const val PREFS_NAME = "naapi_tchat"
     private const val KEY_APP_DEVICE_ID = "app_device_id"
+    private const val KEY_PENDING_ORDER = "pending_order"
 
     fun getOrCreateDeviceId(context: Context): String {
         val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -63,6 +64,50 @@ object NaapiTChatSupport {
             put("android_version", Build.VERSION.RELEASE.orEmpty())
             put("sdk_int", Build.VERSION.SDK_INT)
             put("app_version", BuildConfig.VERSION_NAME)
+        }
+    }
+
+    fun savePendingOrder(context: Context, order: NaapiPendingOrder) {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val payload = JSONObject().apply {
+            put("endpoint", order.endpoint)
+            put("order_no", order.orderNo)
+            put("poll_token", order.pollToken)
+            put("pay_url", order.payUrl)
+            put("plan_id", order.planId)
+            put("created_at", order.createdAt)
+        }
+        prefs.edit().putString(KEY_PENDING_ORDER, payload.toString()).apply()
+    }
+
+    fun loadPendingOrder(context: Context): NaapiPendingOrder? {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val raw = prefs.getString(KEY_PENDING_ORDER, null).orEmpty()
+        if (raw.isBlank()) return null
+        return runCatching {
+            val obj = JSONObject(raw)
+            NaapiPendingOrder(
+                endpoint = obj.optString("endpoint", DEFAULT_ENDPOINT).ifBlank { DEFAULT_ENDPOINT },
+                orderNo = obj.optString("order_no"),
+                pollToken = obj.optString("poll_token"),
+                payUrl = obj.optString("pay_url"),
+                planId = obj.optLong("plan_id", 0L),
+                createdAt = obj.optLong("created_at", 0L)
+            ).takeIf {
+                it.orderNo.isNotBlank() && it.pollToken.isNotBlank() && it.payUrl.isNotBlank()
+            }
+        }.getOrNull()
+    }
+
+    fun clearPendingOrder(context: Context, orderNo: String? = null) {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (orderNo.isNullOrBlank()) {
+            prefs.edit().remove(KEY_PENDING_ORDER).apply()
+            return
+        }
+        val current = loadPendingOrder(context)
+        if (current?.orderNo == orderNo) {
+            prefs.edit().remove(KEY_PENDING_ORDER).apply()
         }
     }
 
@@ -151,4 +196,13 @@ data class NaapiActivationResult(
     val message: String,
     val gatewayKey: String? = null,
     val gatewayBaseUrl: String? = null
+)
+
+data class NaapiPendingOrder(
+    val endpoint: String,
+    val orderNo: String,
+    val pollToken: String,
+    val payUrl: String,
+    val planId: Long,
+    val createdAt: Long
 )

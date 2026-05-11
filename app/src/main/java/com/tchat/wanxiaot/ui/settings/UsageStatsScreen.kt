@@ -47,7 +47,8 @@ import com.tchat.wanxiaot.settings.ProviderConfig
 import com.tchat.wanxiaot.settings.TokenRecordingStatus
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionCard
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -174,7 +175,7 @@ private fun TokenRecordingControlCard(
     onStatusChange: (TokenRecordingStatus) -> Unit,
     onClear: () -> Unit
 ) {
-    AppSectionCard(
+    SettingsGroupCard(
         title = "Token 记录控制",
         description = "可以临时暂停、彻底关闭，或直接清空现有统计。"
     ) {
@@ -256,7 +257,7 @@ private fun TokenRecordingControlCard(
 
 @Composable
 private fun TokenStatsCard(stats: UsageStats) {
-    AppSectionCard(
+    SettingsGroupCard(
         title = "Token 统计",
         description = "输入、输出与总量概览。"
     ) {
@@ -274,7 +275,7 @@ private fun TokenStatsCard(stats: UsageStats) {
 
 @Composable
 private fun ProviderStatsCard(stats: UsageStats, providers: List<ProviderConfig>) {
-    AppSectionCard(
+    SettingsGroupCard(
         title = "按提供商统计",
         description = "看清不同服务商的调用占比与 Token 分布。"
     ) {
@@ -320,7 +321,7 @@ private fun ProviderStatsCard(stats: UsageStats, providers: List<ProviderConfig>
 
 @Composable
 private fun ModelStatsCard(stats: UsageStats) {
-    AppSectionCard(
+    SettingsGroupCard(
         title = "模型调用统计",
         description = "定位调用最频繁的模型，便于后续做成本和策略优化。"
     ) {
@@ -376,8 +377,8 @@ private fun StatRow(
 
 private fun formatNumber(number: Long): String {
     return when {
-        number >= 1_000_000 -> String.format("%.2fM", number / 1_000_000.0)
-        number >= 1_000 -> String.format("%.2fK", number / 1_000.0)
+        number >= 1_000_000 -> String.format(Locale.ROOT, "%.2fM", number / 1_000_000.0)
+        number >= 1_000 -> String.format(Locale.ROOT, "%.2fK", number / 1_000.0)
         else -> number.toString()
     }
 }

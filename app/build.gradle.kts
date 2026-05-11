@@ -30,8 +30,12 @@ android {
             }
         }
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
     compileOptions {
@@ -64,6 +68,7 @@ dependencies {
     implementation(project(":data"))
     implementation(project(":network"))
     implementation(project(":feature-chat"))
+    implementation(project(":design-system"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

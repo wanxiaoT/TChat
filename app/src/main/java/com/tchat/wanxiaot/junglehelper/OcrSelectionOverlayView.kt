@@ -113,6 +113,9 @@ class OcrSelectionOverlayView(
                     endY = event.y
                     isSelecting = false
                     invalidate()
+                    if (event.actionMasked == MotionEvent.ACTION_UP) {
+                        performClick()
+                    }
 
                     val left = min(startX, endX).toInt()
                     val top = min(startY, endY).toInt()
@@ -128,6 +131,10 @@ class OcrSelectionOverlayView(
             }
             return super.onTouchEvent(event)
         }
+
+        override fun performClick(): Boolean {
+            super.performClick()
+            return true
+        }
     }
 }
-

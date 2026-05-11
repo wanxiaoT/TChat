@@ -74,6 +74,7 @@ internal fun ChatBackdrop(modifier: Modifier = Modifier) {
 @Composable
 internal fun ChatComposerDock(
     modifier: Modifier = Modifier,
+    imeVisible: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -81,11 +82,20 @@ internal fun ChatComposerDock(
     val borderColor = colorScheme.outlineVariant.copy(alpha = 0.42f)
     val overlayTop = Color.White.copy(alpha = 0.22f)
     val overlayBottom = colorScheme.surfaceColorAtElevation(2.dp).copy(alpha = 0.76f)
+    val outerTopPadding = if (imeVisible) 4.dp else 8.dp
+    val outerBottomPadding = if (imeVisible) 2.dp else 8.dp
+    val contentVerticalPadding = if (imeVisible) 4.dp else 6.dp
+    val itemSpacing = if (imeVisible) 2.dp else 4.dp
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(
+                start = 10.dp,
+                top = outerTopPadding,
+                end = 10.dp,
+                bottom = outerBottomPadding
+            ),
         shape = ComposerDockShape,
         color = containerColor,
         border = BorderStroke(1.dp, borderColor),
@@ -105,8 +115,8 @@ internal fun ChatComposerDock(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                    .padding(vertical = contentVerticalPadding),
+                verticalArrangement = Arrangement.spacedBy(itemSpacing),
                 content = content
             )
         }

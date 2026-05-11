@@ -45,7 +45,7 @@ import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionCard
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
 import com.tchat.wanxiaot.util.NaapiDeviceInfo
 import com.tchat.wanxiaot.util.NaapiLicenseClient
 import com.tchat.wanxiaot.util.NaapiOrderRecord
@@ -167,7 +167,7 @@ fun OfficialServiceScreen(
         ) {
 
             message?.let {
-                AppSectionCard(
+                SettingsGroupCard(
                     title = "提示",
                     description = it
                 ) {}
@@ -177,7 +177,7 @@ fun OfficialServiceScreen(
 
             UsageLogsCard(usageLogs, isLoading)
 
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "设备管理",
                 description = "展示当前许可证关联的设备。服务端支持吊销、重置与限速时，这里会同步展示。"
             ) {
@@ -197,7 +197,7 @@ fun OfficialServiceScreen(
 
             OrdersCard(orders, isLoading)
 
-            AppSectionCard(
+            SettingsGroupCard(
                 title = "操作",
                 description = "余额刷新在本页完成，续费、套餐升级与发票页面由 t.naapi.cc 提供。"
             ) {
@@ -245,7 +245,7 @@ private fun UsageLogsCard(
     logs: List<NaapiUsageLogItem>,
     isLoading: Boolean
 ) {
-    AppSectionCard(
+    SettingsGroupCard(
         title = "最近请求",
         description = "展示官方服务最近的模型调用、费用与 token 统计。"
     ) {
@@ -255,7 +255,7 @@ private fun UsageLogsCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            return@AppSectionCard
+            return@SettingsGroupCard
         }
         logs.take(8).forEachIndexed { index, item ->
             UsageLogRow(item)
@@ -269,7 +269,7 @@ private fun OrdersCard(
     orders: List<NaapiOrderRecord>,
     isLoading: Boolean
 ) {
-    AppSectionCard(
+    SettingsGroupCard(
         title = "订单记录",
         description = "显示最近的套餐购买与支付状态。"
     ) {
@@ -279,7 +279,7 @@ private fun OrdersCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            return@AppSectionCard
+            return@SettingsGroupCard
         }
         orders.take(6).forEachIndexed { index, order ->
             OrderRecordRow(order)
@@ -372,7 +372,7 @@ private fun OrderRecordRow(order: NaapiOrderRecord) {
 
 @Composable
 private fun SummaryCard(summary: NaapiUsageSummary?) {
-    AppSectionCard(
+    SettingsGroupCard(
         title = "用量透明",
         description = "余额、今日、本月与请求数。"
     ) {
@@ -382,7 +382,7 @@ private fun SummaryCard(summary: NaapiUsageSummary?) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            return@AppSectionCard
+            return@SettingsGroupCard
         }
 
         StatRow("剩余额度", formatCurrency(summary.balanceAmount, summary.currency), true)

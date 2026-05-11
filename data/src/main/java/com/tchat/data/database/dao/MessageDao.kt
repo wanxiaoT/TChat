@@ -2,6 +2,7 @@ package com.tchat.data.database.dao
 
 import androidx.room.*
 import com.tchat.data.database.entity.MessageEntity
+import com.tchat.data.database.entity.MessageSearchIndexEntity
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -15,6 +16,33 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE chatId = :chatId ORDER BY timestamp ASC")
     suspend fun getMessagesByChatIdOnce(chatId: String): List<MessageEntity>
+
+    @Query(
+        """
+        SELECT * FROM (
+            SELECT * FROM messages
+            WHERE chatId = :chatId
+            ORDER BY timestamp DESC
+            LIMIT :limit
+        ) ORDER BY timestamp ASC
+        """
+    )
+    suspend fun getRecentMessagesByChatIdOnce(chatId: String, limit: Int): List<MessageEntity>
+
+    @Query("SELECT * FROM messages WHERE chatId = :chatId AND timestamp <= :upToTimestamp ORDER BY timestamp ASC")
+    suspend fun getMessagesUpTo(chatId: String, upToTimestamp: Long): List<MessageEntity>
+
+    @Query(
+        """
+        SELECT * FROM (
+            SELECT * FROM messages
+            WHERE chatId = :chatId AND timestamp <= :upToTimestamp
+            ORDER BY timestamp DESC
+            LIMIT :limit
+        ) ORDER BY timestamp ASC
+        """
+    )
+    suspend fun getMessagesUpTo(chatId: String, upToTimestamp: Long, limit: Int): List<MessageEntity>
 
     @Query(
         """
@@ -47,11 +75,74 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE id = :messageId")
     suspend fun getMessageById(messageId: String): MessageEntity?
 
+    @Query(
+        """
+        SELECT
+            messages.id AS messageId,
+            messages.chatId AS chatId,
+            chats.title AS chatTitle,
+            messages.role AS role,
+            messages.partsJson AS partsJson,
+            messages.timestamp AS timestamp,
+            messages.modelName AS modelName,
+            messages.providerId AS providerId,
+            messages.groupId AS groupId,
+            messages.groupAssistantName AS groupAssistantName,
+            messages.variantsJson AS variantsJson,
+            messages.selectedVariantIndex AS selectedVariantIndex,
+            messages.isBookmarked AS isBookmarked,
+            messages.replyToMessageId AS replyToMessageId,
+            messages.replyPreview AS replyPreview
+        FROM messages
+        INNER JOIN message_search_index ON message_search_index.messageId = messages.id
+        INNER JOIN chats ON chats.id = messages.chatId
+        WHERE
+            message_search_index.normalizedText LIKE :pattern ESCAPE '\'
+            OR LOWER(chats.title) LIKE :pattern ESCAPE '\'
+        ORDER BY messages.timestamp DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun searchMessages(pattern: String, limit: Int): List<MessageSearchRow>
+
+    @Query(
+        """
+        SELECT
+            messages.id AS messageId,
+            messages.chatId AS chatId,
+            chats.title AS chatTitle,
+            messages.role AS role,
+            messages.partsJson AS partsJson,
+            messages.timestamp AS timestamp,
+            messages.modelName AS modelName,
+            messages.providerId AS providerId,
+            messages.groupId AS groupId,
+            messages.groupAssistantName AS groupAssistantName,
+            messages.variantsJson AS variantsJson,
+            messages.selectedVariantIndex AS selectedVariantIndex,
+            messages.isBookmarked AS isBookmarked,
+            messages.replyToMessageId AS replyToMessageId,
+            messages.replyPreview AS replyPreview
+        FROM messages
+        INNER JOIN chats ON chats.id = messages.chatId
+        WHERE messages.isBookmarked = 1
+        ORDER BY messages.timestamp DESC
+        LIMIT :limit
+        """
+    )
+    fun observeBookmarkedMessages(limit: Int): Flow<List<MessageSearchRow>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: MessageEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessages(messages: List<MessageEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSearchIndex(index: MessageSearchIndexEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSearchIndexes(indexes: List<MessageSearchIndexEntity>)
 
     @Update
     suspend fun updateMessage(message: MessageEntity)
@@ -64,6 +155,9 @@ interface MessageDao {
 
     @Query("UPDATE messages SET selectedVariantIndex = :selectedIndex WHERE id = :messageId")
     suspend fun updateSelectedVariant(messageId: String, selectedIndex: Int)
+
+    @Query("UPDATE messages SET isBookmarked = :isBookmarked WHERE id = :messageId")
+    suspend fun updateMessageBookmarked(messageId: String, isBookmarked: Boolean)
 
     @Query("DELETE FROM messages WHERE id = :messageId")
     suspend fun deleteMessage(messageId: String)
@@ -91,6 +185,15 @@ interface MessageDao {
     // 清空所有token统计数据
     @Query("UPDATE messages SET inputTokens = 0, outputTokens = 0, tokensPerSecond = 0.0, firstTokenLatency = 0 WHERE role = 'assistant'")
     suspend fun clearAllTokenStats()
+
+    @Query("SELECT COUNT(*) FROM messages WHERE groupId = :groupId AND role = 'assistant'")
+    suspend fun getAssistantMessageCountByGroup(groupId: String): Int
+
+    @Query("SELECT groupAssistantId, COUNT(*) AS count FROM messages WHERE groupId = :groupId AND role = 'assistant' AND groupAssistantId IS NOT NULL GROUP BY groupAssistantId")
+    suspend fun getAssistantMessageCountsByGroup(groupId: String): List<GroupAssistantMessageCount>
+
+    @Query("SELECT MAX(timestamp) FROM messages WHERE groupId = :groupId")
+    suspend fun getLastGroupMessageTimestamp(groupId: String): Long?
 }
 
 /**
@@ -109,4 +212,30 @@ data class ProviderUsageStat(
     val inputTokens: Long,
     val outputTokens: Long,
     val messageCount: Int
+)
+
+/**
+ * 全局消息搜索原始结果。
+ */
+data class MessageSearchRow(
+    val messageId: String,
+    val chatId: String,
+    val chatTitle: String,
+    val role: String,
+    val partsJson: String,
+    val timestamp: Long,
+    val modelName: String?,
+    val providerId: String?,
+    val groupId: String?,
+    val groupAssistantName: String?,
+    val variantsJson: String?,
+    val selectedVariantIndex: Int,
+    val isBookmarked: Boolean,
+    val replyToMessageId: String?,
+    val replyPreview: String?
+)
+
+data class GroupAssistantMessageCount(
+    val groupAssistantId: String,
+    val count: Int
 )

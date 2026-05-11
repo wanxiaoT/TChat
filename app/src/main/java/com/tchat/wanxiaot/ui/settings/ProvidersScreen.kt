@@ -2,7 +2,6 @@ package com.tchat.wanxiaot.ui.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -26,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.BrainCircuit
@@ -41,15 +41,17 @@ import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppIconTile
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import com.tchat.wanxiaot.ui.components.QRCodeScannerScreen
+import com.tchat.designsystem.LocalReducedMotion
+import com.tchat.designsystem.Motion
 
 /**
  * 服务商页面状态
  */
 private sealed class ProvidersPageState {
     data object List : ProvidersPageState()
-    data class Edit(val provider: ProviderConfig?) : ProvidersPageState()
+    data class Edit(val provider: ProviderConfig?, val isNew: Boolean) : ProvidersPageState()
     data object Scan : ProvidersPageState()
 }
 
@@ -74,6 +76,7 @@ fun ProvidersScreen(
 ) {
     val settings by settingsManager.settings.collectAsStateWithLifecycle()
     var pageState by remember { mutableStateOf<ProvidersPageState>(ProvidersPageState.List) }
+    val reducedMotion = LocalReducedMotion.current
 
     BackHandler {
         when (pageState) {
@@ -85,23 +88,22 @@ fun ProvidersScreen(
     AnimatedContent(
         targetState = pageState,
         transitionSpec = {
-            val animationDuration = 200
             when {
                 targetState is ProvidersPageState.List -> {
                     slideInHorizontally(
-                        animationSpec = tween(animationDuration),
+                        animationSpec = Motion.snapIfReduced(reducedMotion, Motion.pageTransition<IntOffset>()),
                         initialOffsetX = { -it }
                     ) togetherWith slideOutHorizontally(
-                        animationSpec = tween(animationDuration),
+                        animationSpec = Motion.snapIfReduced(reducedMotion, Motion.pageTransition<IntOffset>()),
                         targetOffsetX = { it }
                     )
                 }
                 else -> {
                     slideInHorizontally(
-                        animationSpec = tween(animationDuration),
+                        animationSpec = Motion.snapIfReduced(reducedMotion, Motion.pageTransition<IntOffset>()),
                         initialOffsetX = { it }
                     ) togetherWith slideOutHorizontally(
-                        animationSpec = tween(animationDuration),
+                        animationSpec = Motion.snapIfReduced(reducedMotion, Motion.pageTransition<IntOffset>()),
                         targetOffsetX = { -it }
                     )
                 }
@@ -115,10 +117,10 @@ fun ProvidersScreen(
                     settingsManager = settingsManager,
                     settings = settings,
                     onBack = onBack,
-                    onAddNew = { pageState = ProvidersPageState.Edit(null) },
-                    onAddOfficial = { pageState = ProvidersPageState.Edit(createOfficialProviderDraft()) },
+                    onAddNew = { pageState = ProvidersPageState.Edit(null, isNew = true) },
+                    onAddOfficial = { pageState = ProvidersPageState.Edit(createOfficialProviderDraft(), isNew = true) },
                     onScan = { pageState = ProvidersPageState.Scan },
-                    onEditProvider = { provider -> pageState = ProvidersPageState.Edit(provider) },
+                    onEditProvider = { provider -> pageState = ProvidersPageState.Edit(provider, isNew = false) },
                     showTopBar = showTopBar
                 )
             }
@@ -128,14 +130,16 @@ fun ProvidersScreen(
                     settingsManager = settingsManager,
                     onBack = { pageState = ProvidersPageState.List },
                     onSave = { provider ->
-                        if (state.provider != null) {
+                        val exists = settingsManager.settings.value.providers.any { it.id == provider.id }
+                        if (exists) {
                             settingsManager.updateProvider(provider)
                         } else {
                             settingsManager.addProvider(provider)
                         }
                         pageState = ProvidersPageState.List
                     },
-                    onDelete = if (state.provider != null) {
+                    isNewProvider = state.isNew,
+                    onDelete = if (!state.isNew && state.provider != null) {
                         { settingsManager.deleteProvider(state.provider.id) }
                     } else null
                 )
@@ -489,7 +493,7 @@ private fun ProviderListItem(
     isCurrentProvider: Boolean,
     onClick: () -> Unit
 ) {
-    AppSectionSurface {
+    SettingsSurface {
         Surface(
             onClick = onClick,
             color = if (isCurrentProvider) {
@@ -598,7 +602,7 @@ private fun ProviderCard(
         CardSize.LARGE -> 16.dp
     }
 
-    AppSectionSurface {
+    SettingsSurface {
         Surface(
             onClick = onClick,
             color = if (isCurrentProvider) {
@@ -763,7 +767,7 @@ private fun ProviderCard(
 private fun OfficialServicePrompt(
     onClick: () -> Unit
 ) {
-    AppSectionSurface {
+    SettingsSurface {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

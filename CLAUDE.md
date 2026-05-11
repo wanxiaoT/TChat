@@ -2,6 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Source Boundary
+
+- **App source**: `C:\Users\Administrator\AndroidStudioProjects\TChat`
+  - Open source Android client.
+  - This repository may contain client UI, public API paths, public HTTPS
+    endpoints, and app-side integration logic.
+
+- **Server backend source**: `C:\1Git\tchat对接naapi方案\naapi-tchat-backend`
+  - Closed source.
+  - Contains backend code, billing logic, license logic, payment handling,
+    NewAPI integration, admin tooling, deployment files, and server-only
+    configuration.
+  - Do not copy backend source, backend deployment logic, backend secrets,
+    NewAPI admin credentials, payment secrets, database files, private keys, or
+    production environment configuration into this Android open-source
+    repository.
+
+- TChat official NAAPI service requests must go to `https://t.naapi.cc`; the
+  Android app must not directly connect to `naapi.cc`.
+
 ## Build Commands
 
 ```bash

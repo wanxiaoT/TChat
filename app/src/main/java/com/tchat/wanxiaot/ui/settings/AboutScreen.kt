@@ -42,8 +42,8 @@ import com.tchat.wanxiaot.BuildConfig
 import com.tchat.wanxiaot.R
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 import com.tchat.wanxiaot.update.ApkInstaller
 import com.tchat.wanxiaot.update.UpdateDialog
 import com.tchat.wanxiaot.update.UpdateInfo
@@ -84,7 +84,7 @@ fun AboutScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            AppSectionSurface {
+            SettingsSurface {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -128,7 +128,7 @@ fun AboutScreen(
                 }
             }
 
-            AppSectionCard(title = "项目入口") {
+            SettingsGroupCard(title = "项目入口") {
                 AboutActionRow(
                     title = "检查更新",
                     subtitle = checkUpdateError ?: "当前版本: ${BuildConfig.VERSION_NAME}",
@@ -209,7 +209,7 @@ fun AboutScreen(
                 )
             }
 
-            AppSectionCard(title = "开发者") {
+            SettingsGroupCard(title = "开发者") {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,

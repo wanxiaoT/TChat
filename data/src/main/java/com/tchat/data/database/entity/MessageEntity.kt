@@ -25,7 +25,8 @@ import androidx.room.PrimaryKey
         Index(value = ["chatId"]),
         Index(value = ["chatId", "timestamp"]),
         Index(value = ["role", "providerId"]),
-        Index(value = ["role", "modelName"])
+        Index(value = ["role", "modelName"]),
+        Index(value = ["isBookmarked", "timestamp"])
     ]
 )
 data class MessageEntity(
@@ -52,5 +53,8 @@ data class MessageEntity(
     val groupGenerationId: String? = null,
     // 变体支持（JSON 格式存储）
     val variantsJson: String? = null,
-    val selectedVariantIndex: Int = 0
+    val selectedVariantIndex: Int = 0,
+    val isBookmarked: Boolean = false,
+    val replyToMessageId: String? = null,
+    val replyPreview: String? = null
 )

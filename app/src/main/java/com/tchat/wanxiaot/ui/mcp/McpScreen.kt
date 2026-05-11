@@ -51,8 +51,8 @@ import com.tchat.data.model.McpServerType
 import com.tchat.wanxiaot.ui.components.AppEmptyState
 import com.tchat.wanxiaot.ui.components.AppPageScaffold
 import com.tchat.wanxiaot.ui.components.AppPill
-import com.tchat.wanxiaot.ui.components.AppSectionCard
-import com.tchat.wanxiaot.ui.components.AppSectionSurface
+import com.tchat.wanxiaot.ui.components.SettingsGroupCard
+import com.tchat.wanxiaot.ui.components.SettingsSurface
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -180,7 +180,7 @@ private fun McpServerCard(
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
 
-    AppSectionSurface {
+    SettingsSurface {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -343,7 +343,7 @@ private fun McpServerDialog(
                     singleLine = true
                 )
 
-                AppSectionCard(title = "传输类型") {
+                SettingsGroupCard(title = "传输类型") {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = type == McpServerType.SSE,

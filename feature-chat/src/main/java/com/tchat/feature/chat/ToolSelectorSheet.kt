@@ -20,7 +20,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -44,6 +43,8 @@ import com.composables.icons.lucide.ShieldCheck
 import com.tchat.data.model.LocalToolOption
 import com.tchat.data.model.LocalToolOption.Companion.description
 import com.tchat.data.model.LocalToolOption.Companion.displayName
+import com.tchat.designsystem.Spacing
+import com.tchat.designsystem.TChatModalBottomSheet
 
 /**
  * 工具选择抽屉
@@ -90,16 +91,15 @@ fun ToolSelectorSheet(
         }
     }
 
-    ModalBottomSheet(
+    TChatModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface
+        sheetState = sheetState
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp)
+                .padding(horizontal = Spacing.lg)
+                .padding(bottom = Spacing.xxl)
         ) {
             // 标题
             Text(
@@ -108,7 +108,7 @@ fun ToolSelectorSheet(
                 color = MaterialTheme.colorScheme.onSurface
             )
             
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
             
             Text(
                 text = "启用工具后，AI可以在对话中调用这些功能",
@@ -116,7 +116,7 @@ fun ToolSelectorSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(Spacing.lg))
 
             // 工具列表
             allTools.forEach { tool ->
@@ -147,7 +147,7 @@ fun ToolSelectorSheet(
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
             // 已启用数量提示
             if (enabledTools.isNotEmpty()) {
