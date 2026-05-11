@@ -79,6 +79,7 @@ import com.tchat.data.repository.impl.SkillRepositoryImpl
 import com.tchat.wanxiaot.ui.skill.SkillScreen
 import com.tchat.wanxiaot.ui.skill.SkillDetailScreen
 import com.tchat.wanxiaot.ui.skill.SkillViewModel
+import com.tchat.wanxiaot.ui.ssh.SshProfilesScreen
 import kotlinx.coroutines.launch
 
 // 平板模式的最小宽度阈值
@@ -168,6 +169,14 @@ private fun getAllSettingsItems(): List<SettingsItemData> = listOf(
         subtitle = strings.settingsMcpDesc,
         icon = SettingsIcon.Lucide(Lucide.Cloud),
         targetPage = SettingsSubPage.MCP
+    ),
+    SettingsItemData(
+        id = "ssh_profiles",
+        group = strings.settingsGeneral,
+        title = "SSH 配置",
+        subtitle = "本地保存 SSH profile，供 SSH 只读工具使用",
+        icon = SettingsIcon.Lucide(Lucide.KeyRound),
+        targetPage = SettingsSubPage.SSH_PROFILES
     ),
     SettingsItemData(
         id = "deep_research",
@@ -280,6 +289,7 @@ private fun isSettingsItemSelected(itemId: String, currentSubPage: SettingsSubPa
         "official_service" -> currentSubPage is SettingsSubPage.OFFICIAL_SERVICE
         "knowledge" -> currentSubPage is SettingsSubPage.KNOWLEDGE || currentSubPage is SettingsSubPage.KNOWLEDGE_DETAIL
         "mcp" -> currentSubPage is SettingsSubPage.MCP
+        "ssh_profiles" -> currentSubPage is SettingsSubPage.SSH_PROFILES
         "deep_research" -> currentSubPage is SettingsSubPage.DEEP_RESEARCH
         "regex_rules" -> currentSubPage is SettingsSubPage.REGEX_RULES
         "skills" -> currentSubPage is SettingsSubPage.SKILLS || currentSubPage is SettingsSubPage.SKILL_DETAIL
@@ -315,6 +325,7 @@ private sealed class SettingsSubPage {
     data object KNOWLEDGE : SettingsSubPage()
     data class KNOWLEDGE_DETAIL(val id: String) : SettingsSubPage()
     data object MCP : SettingsSubPage()
+    data object SSH_PROFILES : SettingsSubPage()
     data object USAGE_STATS : SettingsSubPage()
     data object DEEP_RESEARCH : SettingsSubPage()
     data object REGEX_RULES : SettingsSubPage()
@@ -691,6 +702,12 @@ private fun TabletSettingsLayout(
                             showTopBar = false
                         )
                     }
+                    is SettingsSubPage.SSH_PROFILES -> {
+                        SshProfilesScreen(
+                            onBack = { onSubPageChange(SettingsSubPage.MAIN) },
+                            showTopBar = false
+                        )
+                    }
                     is SettingsSubPage.USAGE_STATS -> {
                         val settings by settingsManager.settings.collectAsStateWithLifecycle()
                         UsageStatsScreen(
@@ -1014,6 +1031,11 @@ private fun PhoneSettingsLayout(
                 }
                 McpScreen(
                     viewModel = viewModel,
+                    onBack = { onSubPageChange(SettingsSubPage.MAIN) }
+                )
+            }
+            is SettingsSubPage.SSH_PROFILES -> {
+                SshProfilesScreen(
                     onBack = { onSubPageChange(SettingsSubPage.MAIN) }
                 )
             }

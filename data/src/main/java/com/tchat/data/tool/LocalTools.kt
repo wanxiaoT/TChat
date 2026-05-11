@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import com.tchat.data.ssh.SshLocalTools
 import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
@@ -23,6 +24,7 @@ import java.time.format.DateTimeFormatter
  * - 文件操作需要考虑Android存储权限
  */
 class LocalTools(private val context: Context) {
+    private val sshLocalTools by lazy { SshLocalTools(context) }
 
     /**
      * 文件读取工具
@@ -563,6 +565,11 @@ class LocalTools(private val context: Context) {
     fun getSleepTools(): List<Tool> = listOf(sleepTool)
 
     /**
+     * 获取 SSH 只读工具
+     */
+    fun getSshReadOnlyTools(): List<Tool> = sshLocalTools.getReadOnlyTools()
+
+    /**
      * 根据 LocalToolOption 列表获取对应的工具
      */
     fun getToolsForOptions(options: List<com.tchat.data.model.LocalToolOption>): List<Tool> {
@@ -572,6 +579,7 @@ class LocalTools(private val context: Context) {
                 is com.tchat.data.model.LocalToolOption.WebFetch -> getWebFetchTools()
                 is com.tchat.data.model.LocalToolOption.SystemInfo -> getSystemInfoTools()
                 is com.tchat.data.model.LocalToolOption.Sleep -> getSleepTools()
+                is com.tchat.data.model.LocalToolOption.SshReadOnly -> getSshReadOnlyTools()
             }
         }
     }
@@ -579,7 +587,11 @@ class LocalTools(private val context: Context) {
     /**
      * 获取所有可用的工具
      */
-    fun getAllTools(): List<Tool> = getFileSystemTools() + getWebFetchTools() + getSystemInfoTools() + getSleepTools()
+    fun getAllTools(): List<Tool> = getFileSystemTools() +
+        getWebFetchTools() +
+        getSystemInfoTools() +
+        getSleepTools() +
+        getSshReadOnlyTools()
 
     /**
      * 根据工具名称执行工具
@@ -594,6 +606,12 @@ class LocalTools(private val context: Context) {
             "web_fetch" -> webFetchTool
             "get_system_info" -> systemInfoTool
             "sleep" -> sleepTool
+            "ssh_list_profiles" -> sshLocalTools.listProfilesTool
+            "ssh_test_connection" -> sshLocalTools.testConnectionTool
+            "ssh_list_dir" -> sshLocalTools.listDirectoryTool
+            "ssh_read_file" -> sshLocalTools.readFileTool
+            "ssh_tail_log" -> sshLocalTools.tailLogTool
+            "ssh_exec_readonly" -> sshLocalTools.execReadonlyTool
             else -> return JSONObject().apply {
                 put("success", false)
                 put("error", "未知工具: $name")

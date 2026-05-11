@@ -290,6 +290,7 @@ private fun getToolIcon(tool: LocalToolOption): ImageVector = when (tool) {
     is LocalToolOption.WebFetch -> Lucide.Globe
     is LocalToolOption.SystemInfo -> Lucide.HardDrive
     is LocalToolOption.Sleep -> Lucide.Hourglass
+    is LocalToolOption.SshReadOnly -> Lucide.ShieldCheck
 }
 
 // ========== 权限帮助函数 ==========

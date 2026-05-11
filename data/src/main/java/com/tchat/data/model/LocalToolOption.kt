@@ -24,6 +24,11 @@ sealed class LocalToolOption(val id: String) {
      */
     data object Sleep : LocalToolOption("sleep")
 
+    /**
+     * SSH 只读工具 - 使用用户 Android 本地配置的 SSH profile 执行只读查看操作
+     */
+    data object SshReadOnly : LocalToolOption("ssh_readonly")
+
     companion object {
         /**
          * 获取所有可用的工具选项
@@ -32,7 +37,8 @@ sealed class LocalToolOption(val id: String) {
             FileSystem,
             WebFetch,
             SystemInfo,
-            Sleep
+            Sleep,
+            SshReadOnly
         )
 
         /**
@@ -43,6 +49,7 @@ sealed class LocalToolOption(val id: String) {
             "web_fetch" -> WebFetch
             "system_info" -> SystemInfo
             "sleep" -> Sleep
+            "ssh_readonly" -> SshReadOnly
             else -> null
         }
 
@@ -54,6 +61,7 @@ sealed class LocalToolOption(val id: String) {
             is WebFetch -> "网页抓取"
             is SystemInfo -> "系统信息"
             is Sleep -> "延迟回复"
+            is SshReadOnly -> "SSH 只读"
         }
 
         /**
@@ -64,6 +72,7 @@ sealed class LocalToolOption(val id: String) {
             is WebFetch -> "获取网页内容和数据"
             is SystemInfo -> "获取设备信息和存储状态"
             is Sleep -> "延迟指定时间后继续回复"
+            is SshReadOnly -> "使用本地 SSH profile 查看远程目录、文件、日志和只读命令结果"
         }
     }
 }
