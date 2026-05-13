@@ -319,7 +319,12 @@ data class ProviderConfig(
         }
     }
 
-    fun resolvedEndpoint(): String = endpoint.ifBlank { providerType.defaultEndpoint }
+    fun resolvedEndpoint(): String {
+        val base = endpoint.ifBlank { providerType.defaultEndpoint }
+        if (providerType != AIProviderType.NAAPI_TCHAT) return base
+        val normalized = base.trim().trimEnd('/').ifBlank { AIProviderType.NAAPI_TCHAT.defaultEndpoint }
+        return if (normalized.endsWith("/v1")) normalized else "$normalized/v1"
+    }
 
     fun resolvedApiPath(): String = apiPath.ifBlank { providerType.defaultApiPath }
 

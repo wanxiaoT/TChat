@@ -44,6 +44,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -455,6 +456,7 @@ private fun TabletSettingsLayout(
     groupChatRepository: GroupChatRepositoryImpl,
     skillRepository: SkillRepositoryImpl
 ) {
+    val context = LocalContext.current
     // 搜索状态
     var showSearchBar by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -740,8 +742,8 @@ private fun TabletSettingsLayout(
                         val historyRepository = remember(database) {
                             DeepResearchHistoryRepository(database.deepResearchHistoryDao())
                         }
-                        val viewModel = remember(settingsManager, historyRepository) {
-                            DeepResearchViewModel(settingsManager, historyRepository)
+                        val viewModel = remember(settingsManager, historyRepository, context) {
+                            DeepResearchViewModel(settingsManager, context, historyRepository)
                         }
                         DeepResearchScreen(
                             viewModel = viewModel,
@@ -914,6 +916,7 @@ private fun PhoneSettingsLayout(
     groupChatRepository: GroupChatRepositoryImpl,
     skillRepository: SkillRepositoryImpl
 ) {
+    val context = LocalContext.current
     val mainListState = rememberLazyListState()
     val mainPressTracker = remember { SettingsScrollPressTracker() }
     val reducedMotion = LocalReducedMotion.current
@@ -1072,8 +1075,8 @@ private fun PhoneSettingsLayout(
                 val historyRepository = remember(database) {
                     DeepResearchHistoryRepository(database.deepResearchHistoryDao())
                 }
-                val viewModel = remember(settingsManager, historyRepository) {
-                    DeepResearchViewModel(settingsManager, historyRepository)
+                val viewModel = remember(settingsManager, historyRepository, context) {
+                    DeepResearchViewModel(settingsManager, context, historyRepository)
                 }
                 DeepResearchScreen(
                     viewModel = viewModel,

@@ -67,7 +67,7 @@ class NaapiLicenseClient(
         context: Context,
         endpoint: String,
         planId: Long,
-        paymentProvider: String = "epay"
+        paymentProvider: String = "alipay"
     ): NaapiCreateOrderResult = withContext(Dispatchers.IO) {
         val requestBody = JSONObject().apply {
             put("plan_id", planId)
@@ -368,6 +368,11 @@ class NaapiLicenseClient(
                             supportsVision = item.optBoolean("supports_vision", item.optBoolean("supportsVision", false)),
                             supportsTools = item.optBoolean("supports_tools", item.optBoolean("supportsTools", false)),
                             supportsResponses = item.optBoolean("supports_responses", item.optBoolean("supportsResponses", false)),
+                            supportsImageGeneration = item.optBoolean(
+                                "supports_image_generation",
+                                item.optBoolean("supportsImageGeneration", false)
+                            ),
+                            supportsEmbedding = item.optBoolean("supports_embedding", item.optBoolean("supportsEmbedding", false)),
                             speed = item.optString("speed", ""),
                             quality = item.optString("quality", ""),
                             costLevel = item.optString("cost_level").ifBlank { item.optString("costLevel", "") },
@@ -531,6 +536,8 @@ data class NaapiModelCatalogItem(
     val supportsVision: Boolean,
     val supportsTools: Boolean,
     val supportsResponses: Boolean,
+    val supportsImageGeneration: Boolean,
+    val supportsEmbedding: Boolean,
     val speed: String,
     val quality: String,
     val costLevel: String,

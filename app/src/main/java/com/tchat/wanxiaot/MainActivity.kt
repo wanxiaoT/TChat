@@ -2,6 +2,7 @@ package com.tchat.wanxiaot
 
 import android.os.Bundle
 import android.util.Log
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -65,7 +66,6 @@ import com.tchat.network.provider.AIProviderFactory
 import com.tchat.network.provider.CustomParams
 import com.tchat.network.provider.EmbeddingProviderFactory
 import com.tchat.wanxiaot.settings.AIProviderType
-import com.tchat.wanxiaot.settings.ProviderAuthType
 import com.tchat.wanxiaot.settings.SettingsManager
 import com.tchat.wanxiaot.settings.TtsEngineType as AppTtsEngineType
 import com.tchat.data.util.RegexRuleData
@@ -389,14 +389,7 @@ fun MainScreen(
                     AIProviderType.OLLAMA -> AIProviderFactory.ProviderType.OPENAI
                     AIProviderType.NAAPI_TCHAT -> AIProviderFactory.ProviderType.OPENAI
                 }
-                val extraHeaders = if (
-                    currentProvider.providerType == AIProviderType.NAAPI_TCHAT &&
-                    currentProvider.authType != ProviderAuthType.GATEWAY_KEY
-                ) {
-                    NaapiTChatSupport.withDeviceHeader(context, currentProvider.customHeaders)
-                } else {
-                    currentProvider.customHeaders
-                }
+                val extraHeaders = NaapiTChatSupport.requestHeadersForProvider(context, currentProvider)
                 val modelParams = currentProvider.modelCustomParams[selectedModel]?.let { params ->
                     CustomParams(
                         temperature = params.temperature,
@@ -522,8 +515,8 @@ fun MainScreen(
                 val historyRepository = remember(database) {
                     DeepResearchHistoryRepository(database.deepResearchHistoryDao())
                 }
-                val deepResearchViewModel = remember(settingsManager, historyRepository) {
-                    DeepResearchViewModel(settingsManager, historyRepository)
+                val deepResearchViewModel = remember(settingsManager, historyRepository, context) {
+                    DeepResearchViewModel(settingsManager, context, historyRepository)
                 }
                 DeepResearchScreen(
                     viewModel = deepResearchViewModel,
@@ -906,7 +899,8 @@ fun MainScreen(
                                         deepResearchReturnChatId = actualGroupChatId ?: currentChatId
                                         startDeepResearch(
                                             query = query,
-                                            settingsManager = settingsManager
+                                            settingsManager = settingsManager,
+                                            context = context
                                         )
                                     } else {
                                         currentNavState = MainNavState.DEEP_RESEARCH
@@ -1048,7 +1042,8 @@ fun MainScreen(
                                         deepResearchReturnChatId = actualChatId ?: currentChatId
                                         startDeepResearch(
                                             query = query,
-                                            settingsManager = settingsManager
+                                            settingsManager = settingsManager,
+                                            context = context
                                         )
                                     } else {
                                         // 没有输入，打开深度研究页面
@@ -1252,7 +1247,8 @@ private suspend fun getEmbeddingProviderForKnowledgeBase(
  */
 private fun startDeepResearch(
     query: String,
-    settingsManager: SettingsManager
+    settingsManager: SettingsManager,
+    context: Context
 ) {
     val settings = settingsManager.settings.value
     val deepResearchSettings = settings.deepResearchSettings
@@ -1263,7 +1259,7 @@ private fun startDeepResearch(
     }
 
     // 获取 AI Provider
-    val aiProvider = getAIProviderForDeepResearch(settingsManager) ?: return
+    val aiProvider = getAIProviderForDeepResearch(settingsManager, context) ?: return
 
     // 创建搜索服务
     val webSearchService = WebSearchServiceFactory.create(
@@ -1295,7 +1291,8 @@ private fun startDeepResearch(
  * 获取深度研究使用的 AI Provider
  */
 private fun getAIProviderForDeepResearch(
-    settingsManager: SettingsManager
+    settingsManager: SettingsManager,
+    context: Context
 ): com.tchat.network.provider.AIProvider? {
     val settings = settingsManager.settings.value
     val deepResearchSettings = settings.deepResearchSettings
@@ -1319,10 +1316,10 @@ private fun getAIProviderForDeepResearch(
     return AIProviderFactory.create(
         providerType = providerConfig.providerType.name.lowercase(),
         apiKey = providerConfig.apiKey,
-        baseUrl = providerConfig.endpoint.ifBlank { null },
+        baseUrl = providerConfig.resolvedEndpoint(),
         model = providerConfig.selectedModel.ifEmpty {
             providerConfig.availableModels.firstOrNull() ?: ""
         },
-        extraHeaders = providerConfig.customHeaders
+        extraHeaders = NaapiTChatSupport.requestHeadersForProvider(context, providerConfig)
     )
 }

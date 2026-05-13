@@ -4,6 +4,9 @@ import android.content.Context
 import android.os.Build
 import android.provider.Settings
 import com.tchat.wanxiaot.BuildConfig
+import com.tchat.wanxiaot.settings.AIProviderType
+import com.tchat.wanxiaot.settings.ProviderAuthType
+import com.tchat.wanxiaot.settings.ProviderConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -39,6 +42,40 @@ object NaapiTChatSupport {
 
     fun withDeviceHeader(context: Context, headers: Map<String, String>): Map<String, String> {
         return headers + this.headers(context)
+    }
+
+    fun requestHeadersForProvider(context: Context, provider: ProviderConfig): Map<String, String> {
+        return requestHeadersFor(
+            context = context,
+            providerType = provider.providerType,
+            authType = provider.authType,
+            headers = provider.customHeaders
+        )
+    }
+
+    fun requestHeadersFor(
+        context: Context,
+        providerType: AIProviderType,
+        authType: ProviderAuthType,
+        headers: Map<String, String>
+    ): Map<String, String> {
+        return when {
+            providerType == AIProviderType.NAAPI_TCHAT &&
+                authType != ProviderAuthType.GATEWAY_KEY &&
+                authType != ProviderAuthType.NONE -> {
+                withDeviceHeader(context, headers - DEVICE_HEADER)
+            }
+            providerType == AIProviderType.NAAPI_TCHAT -> headers - DEVICE_HEADER
+            else -> headers
+        }
+    }
+
+    fun persistableCustomHeaders(providerType: AIProviderType, headers: Map<String, String>): Map<String, String> {
+        return if (providerType == AIProviderType.NAAPI_TCHAT) {
+            headers - DEVICE_HEADER
+        } else {
+            headers
+        }
     }
 
     fun maskedDeviceId(context: Context): String {

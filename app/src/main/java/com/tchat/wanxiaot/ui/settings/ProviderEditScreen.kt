@@ -139,6 +139,7 @@ fun ProviderEditScreen(
     var isPollingNaapiOrder by remember { mutableStateOf(false) }
     var showNaapiPlanDialog by remember { mutableStateOf(false) }
     var naapiPlans by remember { mutableStateOf<List<NaapiPlan>>(emptyList()) }
+    var selectedNaapiPaymentProvider by remember { mutableStateOf(NAAPI_PAYMENT_OPTIONS.first().id) }
     var naapiLicenseMessage by remember { mutableStateOf<String?>(null) }
     var naapiLicenseSuccess by remember { mutableStateOf<Boolean?>(null) }
     var naapiPendingOrder by remember(context) { mutableStateOf(NaapiTChatSupport.loadPendingOrder(context)) }
@@ -156,6 +157,9 @@ fun ProviderEditScreen(
     val naapiLicenseClient = remember(httpClient) { NaapiLicenseClient(httpClient) }
     val isNaapiProvider = providerType == AIProviderType.NAAPI_TCHAT
     val isNaapiLicenseBusy = isLoadingNaapiPlans || isCreatingNaapiOrder || isPollingNaapiOrder
+    val selectedNaapiPaymentOption = NAAPI_PAYMENT_OPTIONS.firstOrNull {
+        it.id == selectedNaapiPaymentProvider
+    } ?: NAAPI_PAYMENT_OPTIONS.first()
     var hasPersistedProvider by remember(providerId, isNew) { mutableStateOf(!isNew) }
 
     fun buildCurrentProvider(): ProviderConfig {
@@ -180,11 +184,7 @@ fun ProviderEditScreen(
             availableModels = savedModels,
             modelCapabilities = modelCapabilities,
             modelCustomParams = modelCustomParams,
-            customHeaders = if (providerType == AIProviderType.NAAPI_TCHAT && authType != ProviderAuthType.GATEWAY_KEY) {
-                NaapiTChatSupport.withDeviceHeader(context, customHeaders)
-            } else {
-                customHeaders - NaapiTChatSupport.DEVICE_HEADER
-            },
+            customHeaders = NaapiTChatSupport.persistableCustomHeaders(providerType, customHeaders),
             apiKeys = apiKeys,
             multiKeyEnabled = multiKeyEnabled,
             keySelectionStrategy = keySelectionStrategy,
@@ -216,7 +216,8 @@ fun ProviderEditScreen(
     }
 
     fun applyNaapiModelCatalog(catalog: List<NaapiModelCatalogItem>) {
-        val models = catalog.map { it.id.trim() }.filter { it.isNotBlank() }.distinct()
+        val chatCatalog = catalog.filter { it.isChatModel() }
+        val models = chatCatalog.map { it.id.trim() }.filter { it.isNotBlank() }.distinct()
         val catalogCapabilities = catalog.associate { item ->
             item.id to ModelCapabilityConfig(
                 modelName = item.id,
@@ -226,6 +227,8 @@ fun ProviderEditScreen(
                 supportsVision = item.supportsVision,
                 supportsTools = item.supportsTools,
                 supportsResponses = item.supportsResponses,
+                supportsImageGeneration = item.supportsImageGeneration,
+                supportsEmbedding = item.supportsEmbedding,
                 speed = item.speed,
                 quality = item.quality,
                 costLevel = item.costLevel,
@@ -269,12 +272,11 @@ fun ProviderEditScreen(
 
     BackHandler { onBack() }
 
-    LaunchedEffect(providerType) {
+    LaunchedEffect(providerType, authType) {
         if (providerType == AIProviderType.NAAPI_TCHAT &&
-            authType != ProviderAuthType.GATEWAY_KEY &&
-            customHeaders[NaapiTChatSupport.DEVICE_HEADER].isNullOrBlank()
+            customHeaders.containsKey(NaapiTChatSupport.DEVICE_HEADER)
         ) {
-            customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+            customHeaders = customHeaders - NaapiTChatSupport.DEVICE_HEADER
         }
     }
 
@@ -302,7 +304,7 @@ fun ProviderEditScreen(
             redeemCode = licenseCode
             apiKey = licenseCode
             authType = ProviderAuthType.LICENSE_CODE
-            customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+            customHeaders = customHeaders - NaapiTChatSupport.DEVICE_HEADER
             naapiActivationMessage = "已写入许可证，当前设备可使用"
         } else if (gatewayKey.isNotBlank()) {
             apiKey = gatewayKey
@@ -313,7 +315,7 @@ fun ProviderEditScreen(
             redeemCode = redeemCodeFromOrder
             apiKey = redeemCodeFromOrder
             authType = ProviderAuthType.BEARER
-            customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+            customHeaders = customHeaders - NaapiTChatSupport.DEVICE_HEADER
             naapiActivationMessage = "已写入兑换码，可继续激活设备"
         }
         serviceMode = ServiceMode.OFFICIAL
@@ -342,6 +344,12 @@ fun ProviderEditScreen(
                     applyPaidNaapiOrder(status, order)
                     return
                 }
+                if (normalizedStatus == "paid_but_pending_account") {
+                    naapiPendingOrder = order
+                    naapiLicenseSuccess = false
+                    naapiLicenseMessage = "支付已确认，但自动开通暂未完成。订单 ${status.orderNo} 已保存，可稍后继续查询或联系支持处理。"
+                    return
+                }
                 if (normalizedStatus in setOf("failed", "cancelled", "canceled", "refunded")) {
                     NaapiTChatSupport.clearPendingOrder(context, order.orderNo)
                     naapiPendingOrder = null
@@ -349,7 +357,11 @@ fun ProviderEditScreen(
                     naapiLicenseMessage = "订单 ${status.orderNo} 状态为 ${status.status}"
                     return
                 }
-                naapiLicenseMessage = "等待支付确认：${status.status}（已查询 ${attempt} 次，可离开本页后回来继续）"
+                naapiLicenseMessage = if (normalizedStatus == "provisioning") {
+                    "支付已确认，正在开通服务（已查询 ${attempt} 次，可离开本页后回来继续）"
+                } else {
+                    "等待支付确认：${status.status}（已查询 ${attempt} 次，可离开本页后回来继续）"
+                }
                 delay(2_000)
             }
         } catch (e: CancellationException) {
@@ -392,12 +404,14 @@ fun ProviderEditScreen(
                 if (endpoint.isBlank()) {
                     endpoint = NaapiTChatSupport.DEFAULT_ENDPOINT
                 }
-                customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+                customHeaders = customHeaders - NaapiTChatSupport.DEVICE_HEADER
 
+                val paymentOption = selectedNaapiPaymentOption
                 val order = naapiLicenseClient.createLicenseOrder(
                     context = context,
                     endpoint = endpoint,
-                    planId = plan.id
+                    planId = plan.id,
+                    paymentProvider = paymentOption.id
                 )
                 val pendingOrder = NaapiPendingOrder(
                     endpoint = endpoint,
@@ -414,7 +428,7 @@ fun ProviderEditScreen(
 
                 val openedPayPage = openNaapiPayPage(pendingOrder)
                 naapiLicenseMessage = if (openedPayPage) {
-                    "订单 ${order.orderNo} 已创建，请在支付页完成付款"
+                    "订单 ${order.orderNo} 已创建，请使用${paymentOption.label}完成付款"
                 } else {
                     "订单 ${order.orderNo} 已创建，但支付页未打开"
                 }
@@ -481,7 +495,7 @@ fun ProviderEditScreen(
                     showNaapiPlanDialog = false
                 }
             },
-            title = { Text("选择 NAAPI 套餐") },
+            title = { Text("选择套餐和支付方案") },
             text = {
                 Column(
                     modifier = Modifier.heightIn(max = 460.dp),
@@ -492,6 +506,70 @@ fun ProviderEditScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
+                    Text(
+                        text = "支付方案",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        NAAPI_PAYMENT_OPTIONS.forEach { option ->
+                            val selected = selectedNaapiPaymentProvider == option.id
+                            Surface(
+                                onClick = {
+                                    if (!isNaapiLicenseBusy) {
+                                        selectedNaapiPaymentProvider = option.id
+                                    }
+                                },
+                                enabled = !isNaapiLicenseBusy,
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                },
+                                shape = MaterialTheme.shapes.medium,
+                                tonalElevation = if (selected) 2.dp else 0.dp
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    RadioButton(
+                                        selected = selected,
+                                        onClick = null,
+                                        enabled = !isNaapiLicenseBusy
+                                    )
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Text(
+                                            text = option.label,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (selected) {
+                                                MaterialTheme.colorScheme.onPrimaryContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            }
+                                        )
+                                        Text(
+                                            text = option.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (selected) {
+                                                MaterialTheme.colorScheme.onPrimaryContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     androidx.compose.foundation.lazy.LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1111,11 +1189,7 @@ fun ProviderEditScreen(
                                                 authHeaderPrefix = "Bearer "
                                             }
                                         }
-                                        customHeaders = if (type == AIProviderType.NAAPI_TCHAT && authType != ProviderAuthType.GATEWAY_KEY) {
-                                            NaapiTChatSupport.withDeviceHeader(context, customHeaders)
-                                        } else {
-                                            customHeaders - NaapiTChatSupport.DEVICE_HEADER
-                                        }
+                                        customHeaders = NaapiTChatSupport.persistableCustomHeaders(type, customHeaders)
                                         naapiActivationMessage = null
                                         naapiActivationSuccess = null
                                         naapiLicenseMessage = null
@@ -1308,7 +1382,7 @@ fun ProviderEditScreen(
                                                 isActivatingNaapi = true
                                                 naapiActivationMessage = null
                                                 naapiActivationSuccess = null
-                                                customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+                                                customHeaders = customHeaders - NaapiTChatSupport.DEVICE_HEADER
                                                 val credential = redeemCode.ifBlank { apiKey }
                                                 val result = if (credential.trim().startsWith("TCHAT-LIC-", ignoreCase = true)) {
                                                     naapiLicenseClient.bindLicenseDevice(
@@ -1332,7 +1406,7 @@ fun ProviderEditScreen(
                                                         apiKey = credential.trim()
                                                         redeemCode = credential.trim()
                                                         authType = ProviderAuthType.LICENSE_CODE
-                                                        customHeaders = NaapiTChatSupport.withDeviceHeader(context, customHeaders)
+                                                        customHeaders = customHeaders - NaapiTChatSupport.DEVICE_HEADER
                                                         billingMode = ProviderBillingMode.NAAPI_LICENSE
                                                     } else {
                                                         result.gatewayKey?.takeIf { it.isNotBlank() }?.let {
@@ -1539,7 +1613,12 @@ fun ProviderEditScreen(
                                             modelsPath = modelsPath.ifBlank { providerType.defaultModelsPath },
                                             authHeaderName = authHeaderName,
                                             authHeaderValue = authHeaderValueFor(authType, authHeaderPrefix, apiKey),
-                                            extraHeaders = customHeaders
+                                            extraHeaders = NaapiTChatSupport.requestHeadersFor(
+                                                context = context,
+                                                providerType = providerType,
+                                                authType = authType,
+                                                headers = customHeaders
+                                            )
                                         )
                                         connectionTestSuccess = true
                                         connectionTestMessage = "连通测试通过"
@@ -1958,15 +2037,12 @@ fun ProviderEditScreen(
                                                 modelsPath = modelsPath.ifBlank { providerType.defaultModelsPath },
                                                 authHeaderName = authHeaderName,
                                                 authHeaderValue = authHeaderValueFor(authType, authHeaderPrefix, modelFetchKey),
-                                                extraHeaders = if (providerType == AIProviderType.NAAPI_TCHAT) {
-                                                    if (authType == ProviderAuthType.GATEWAY_KEY) {
-                                                        customHeaders
-                                                    } else {
-                                                        NaapiTChatSupport.withDeviceHeader(context, customHeaders)
-                                                    }
-                                                } else {
-                                                    customHeaders
-                                                }
+                                                extraHeaders = NaapiTChatSupport.requestHeadersFor(
+                                                    context = context,
+                                                    providerType = providerType,
+                                                    authType = authType,
+                                                    headers = customHeaders
+                                                )
                                             )
                                             fetchedModels = models
                                             showModelPicker = true
@@ -2732,6 +2808,14 @@ private fun ParamInputItem(
 
 private val API_KEY_SPLIT_REGEX = "[\\s,]+".toRegex()
 
+private fun NaapiModelCatalogItem.isChatModel(): Boolean {
+    val normalizedCategory = category.trim().lowercase()
+    return !supportsEmbedding &&
+        !supportsImageGeneration &&
+        normalizedCategory != "embedding" &&
+        normalizedCategory != "image"
+}
+
 private fun formatNaapiPrice(amount: Int, currency: String): String {
     if (amount <= 0) return "免费"
     val major = amount / 100.0
@@ -2769,6 +2853,30 @@ private fun ApiKeyStatus.displayLabel(): String {
         ApiKeyStatus.RATE_LIMITED -> "限流"
     }
 }
+
+private data class NaapiPaymentOption(
+    val id: String,
+    val label: String,
+    val description: String
+)
+
+private val NAAPI_PAYMENT_OPTIONS = listOf(
+    NaapiPaymentOption(
+        id = "alipay",
+        label = "支付宝",
+        description = "默认支付宝支付方案"
+    ),
+    NaapiPaymentOption(
+        id = "alipay2",
+        label = "支付宝2",
+        description = "备用支付宝支付方案"
+    ),
+    NaapiPaymentOption(
+        id = "wxpay",
+        label = "微信支付",
+        description = "微信支付方案"
+    )
+)
 
 private fun KeySelectionStrategy.displayLabel(): String {
     return when (this) {

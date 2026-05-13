@@ -44,6 +44,7 @@ import com.tchat.wanxiaot.ocr.OcrCredentialExtractor
 import com.tchat.wanxiaot.ocr.OcrResultBus
 import com.tchat.wanxiaot.settings.OcrModel
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.wanxiaot.util.NaapiTChatSupport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -662,9 +663,9 @@ class JungleHelperService : Service() {
         val visionService = VisionOcrService(
             providerType = provider.providerType.name.lowercase(),
             apiKey = provider.apiKey,
-            baseUrl = provider.endpoint,
+            baseUrl = provider.resolvedEndpoint(),
             model = ocrSettings.aiModel.ifEmpty { provider.selectedModel },
-            extraHeaders = provider.customHeaders
+            extraHeaders = NaapiTChatSupport.requestHeadersForProvider(this, provider)
         )
 
         return withContext(Dispatchers.IO) {

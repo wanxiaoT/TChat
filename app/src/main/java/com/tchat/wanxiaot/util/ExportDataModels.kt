@@ -158,7 +158,10 @@ data class ProvidersExportData(
             providerJson.put("selectedModel", provider.selectedModel)
             providerJson.put("availableModels", JSONArray(provider.availableModels))
             providerJson.put("modelCapabilities", modelCapabilitiesToJson(provider.modelCapabilities))
-            providerJson.put("customHeaders", stringMapToJson(provider.customHeaders))
+            providerJson.put(
+                "customHeaders",
+                stringMapToJson(NaapiTChatSupport.persistableCustomHeaders(provider.providerType, provider.customHeaders))
+            )
 
             // 序列化模型自定义参数
             val paramsJson = JSONObject()
@@ -370,7 +373,10 @@ data class ApiConfigExportData(
         json.put("selectedModel", provider.selectedModel)
         json.put("availableModels", JSONArray(provider.availableModels))
         json.put("modelCapabilities", modelCapabilitiesToJson(provider.modelCapabilities))
-        json.put("customHeaders", stringMapToJson(provider.customHeaders))
+        json.put(
+            "customHeaders",
+            stringMapToJson(NaapiTChatSupport.persistableCustomHeaders(provider.providerType, provider.customHeaders))
+        )
 
         // 序列化模型自定义参数
         val paramsJson = JSONObject()

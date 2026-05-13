@@ -1,5 +1,6 @@
 package com.tchat.wanxiaot.ui.deepresearch
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tchat.data.deepresearch.DeepResearchManager
@@ -16,6 +17,7 @@ import com.tchat.network.provider.AIProvider
 import com.tchat.network.provider.AIProviderFactory
 import com.tchat.wanxiaot.settings.DeepResearchSettings
 import com.tchat.wanxiaot.settings.SettingsManager
+import com.tchat.wanxiaot.util.NaapiTChatSupport
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -25,8 +27,10 @@ import kotlinx.coroutines.launch
  */
 class DeepResearchViewModel(
     private val settingsManager: SettingsManager,
+    context: Context,
     private val historyRepository: DeepResearchHistoryRepository? = null
 ) : ViewModel() {
+    private val appContext = context.applicationContext
 
     init {
         // 初始化 Manager 的历史记录 Repository
@@ -238,9 +242,9 @@ class DeepResearchViewModel(
         return AIProviderFactory.create(
             providerType = providerConfig.providerType.name.lowercase(),
             apiKey = providerConfig.apiKey,
-            baseUrl = providerConfig.endpoint.ifBlank { null },
+            baseUrl = providerConfig.resolvedEndpoint(),
             model = providerConfig.selectedModel.ifEmpty { providerConfig.availableModels.firstOrNull() ?: "" },
-            extraHeaders = providerConfig.customHeaders
+            extraHeaders = NaapiTChatSupport.requestHeadersForProvider(appContext, providerConfig)
         )
     }
 }
